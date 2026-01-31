@@ -272,14 +272,7 @@ const {
 
 ## Contributing
 
-See [AGENTS.md](./AGENTS.md) for development guidelines.
-
-1. Fork the repository
-2. Create feature branch: `git checkout -b feature/amazing-feature`
-3. Run tests: `just test`
-4. Commit changes: `git commit -m 'Add amazing feature'`
-5. Push: `git push origin feature/amazing-feature`
-6. Open Pull Request
+Contributions welcome! Fork the repo, create a feature branch, run `just test`, and open a PR.
 
 ## License
 
