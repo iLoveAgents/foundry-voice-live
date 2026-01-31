@@ -28,6 +28,7 @@ import { toolRegistry, useToolExecution, ModalController } from "./tools";
 
 // Import from the published React library
 import { useVoiceLive, VoiceLiveAvatar, createVoiceLiveConfig, withTransparentBackground } from "@iloveagents/foundry-voice-live-react";
+import type { VoiceLiveEvent } from "@iloveagents/foundry-voice-live-react";
 
 function App(): JSX.Element {
   const styles = useAppStyles();
@@ -60,7 +61,7 @@ function App(): JSX.Element {
   );
 
   // Temporary ref for sendEvent to avoid circular dependency
-  const sendEventRef = useRef<(event: Record<string, unknown>) => void>(() => {});
+  const sendEventRef = useRef<(event: VoiceLiveEvent) => void>(() => {});
 
   // Tool execution hook
   const { executeTool } = useToolExecution(

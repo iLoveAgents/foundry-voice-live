@@ -16,13 +16,14 @@
  */
 
 import { useCallback } from "react";
+import type { VoiceLiveEvent } from "@iloveagents/foundry-voice-live-react";
 import { toolHandlers, ModalController, ToolResult } from "./toolHandlers";
 
 /**
  * Voice Live API Event Sender
  * Function to send events to the Voice Live API WebSocket
  */
-export type EventSender = (event: Record<string, unknown>) => void;
+export type EventSender = (event: VoiceLiveEvent) => void;
 
 /**
  * Tool Execution Hook

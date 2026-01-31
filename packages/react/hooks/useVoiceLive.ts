@@ -50,6 +50,7 @@ import { useState, useRef, useCallback, useEffect } from 'react';
 import type {
   UseVoiceLiveConfig,
   UseVoiceLiveReturn,
+  VoiceLiveEvent,
 } from '../types/voiceLive';
 import { buildSessionConfig, buildAgentSessionConfig } from '../utils/sessionBuilder';
 import { useAudioCapture } from './useAudioCapture';
@@ -106,8 +107,7 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
   const isAgentModeRef = useRef<boolean>(false);
 
   // Keep a stable ref for sendEvent to use in audio capture callback
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const sendEventRef = useRef<(event: any) => void>();
+  const sendEventRef = useRef<(event: VoiceLiveEvent) => void>();
 
   /**
    * Handle audio data from microphone
@@ -140,8 +140,7 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
   /**
    * Send an event to the Voice Live API
    */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const sendEvent = useCallback((event: any) => {
+  const sendEvent = useCallback((event: VoiceLiveEvent): void => {
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
       // Skip logging for verbose events
       const skipSendLogging = [
@@ -355,7 +354,9 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
    * Handle WebSocket messages
    */
   const handleMessage = useCallback(
-    async (event: MessageEvent) => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    async (event: MessageEvent): Promise<void> => {
+      // Using any for parsed JSON since events have various structures
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const data: any = JSON.parse(event.data);
 
