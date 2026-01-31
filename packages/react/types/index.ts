@@ -10,6 +10,9 @@
 // Export all comprehensive types from voiceLive.ts
 export * from './voiceLive';
 
+// Import types needed for legacy interfaces
+import type { Tool } from './voiceLive';
+
 // ==================== Legacy Types (for backward compatibility) ====================
 
 // ==================== Voice Live API Events ====================
@@ -20,7 +23,7 @@ export * from './voiceLive';
 export interface VoiceLiveEvent {
   type: string;
   event_id?: string;
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 /**
@@ -37,7 +40,7 @@ export interface VoiceLiveSession {
   };
   input_audio_format?: string;
   output_audio_format?: string;
-  tools?: any[];
+  tools?: Tool[];
   avatar?: AvatarConfig;
 }
 
@@ -89,7 +92,7 @@ export interface VoiceLiveConfig {
   /** Voice name for TTS (e.g., "en-US-Ava:DragonHDLatestNeural") */
   voiceName?: string;
   /** Tool definitions for function calling */
-  tools?: any[];
+  tools?: Tool[];
   /** Custom session configuration overrides */
   sessionConfig?: Partial<VoiceLiveSession>;
 }

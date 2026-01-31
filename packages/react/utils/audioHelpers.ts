@@ -2,6 +2,8 @@
  * Audio utility functions for Voice Live API
  */
 
+import type { VoiceLiveEvent } from '../types';
+
 /**
  * Convert ArrayBuffer to base64 string safely (without stack overflow)
  * Uses chunking to avoid spreading large arrays
@@ -49,7 +51,7 @@ export function arrayBufferToBase64(buffer: ArrayBuffer): string {
  * });
  * ```
  */
-export function createAudioDataCallback(sendEvent: (event: any) => void) {
+export function createAudioDataCallback(sendEvent: (event: VoiceLiveEvent) => void) {
   return (audioData: ArrayBuffer) => {
     const base64Audio = arrayBufferToBase64(audioData);
     sendEvent({

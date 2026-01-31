@@ -133,7 +133,7 @@ export const VoiceLiveAvatar: React.FC<VoiceLiveAvatarProps> = ({
       video.srcObject = videoStream;
       video.autoplay = true;
 
-      const handleLoadedMetadata = () => {
+      const handleLoadedMetadata = (): void => {
         // Start chroma key processing for transparent background
         if (transparentBackground && canvas) {
           chromaKeyProcessorRef.current = createChromaKeyProcessor(
@@ -170,7 +170,7 @@ export const VoiceLiveAvatar: React.FC<VoiceLiveAvatarProps> = ({
       audio.autoplay = true;
 
       if (onAudioReady) {
-        const handleAudioLoaded = () => {
+        const handleAudioLoaded = (): void => {
           onAudioReady();
         };
         audio.addEventListener('loadedmetadata', handleAudioLoaded);
@@ -194,7 +194,7 @@ export const VoiceLiveAvatar: React.FC<VoiceLiveAvatarProps> = ({
   /**
    * Handle mouse movement for control visibility
    */
-  const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+  const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>): void => {
     if (!showControls) return;
 
     const containerHeight = e.currentTarget.clientHeight;
@@ -203,7 +203,7 @@ export const VoiceLiveAvatar: React.FC<VoiceLiveAvatarProps> = ({
     setShowControlsState(mouseY > containerHeight * 0.75);
   };
 
-  const handleMouseLeave = () => {
+  const handleMouseLeave = (): void => {
     setShowControlsState(false);
   };
 

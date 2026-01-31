@@ -18,6 +18,7 @@ import type {
   VoiceConfig,
   StandardVoice,
   TurnDetectionConfig,
+  Tool,
 } from '../types/voiceLive';
 
 // ============================================================================
@@ -694,7 +695,7 @@ export function withoutTranscription(
  * ```
  */
 export function withTools(
-  tools: any[],
+  tools: Tool[],
   config: Partial<VoiceLiveSessionConfig> = {}
 ): Partial<VoiceLiveSessionConfig> {
   return {

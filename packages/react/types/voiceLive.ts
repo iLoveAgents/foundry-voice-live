@@ -16,7 +16,7 @@
 export interface VoiceLiveEvent {
   type: string;
   event_id?: string;
-  [key: string]: any; // Additional event-specific properties
+  [key: string]: unknown; // Additional event-specific properties
 }
 
 // ============================================================================
@@ -47,7 +47,7 @@ export type KnownVoiceLiveModel =
  * Voice Live model - extensible to support future models
  * Use any string, but known models provide better type hints
  */
-export type VoiceLiveModel = KnownVoiceLiveModel | (string & {});
+export type VoiceLiveModel = KnownVoiceLiveModel | (string & Record<string, never>);
 
 /**
  * Connection configuration for Voice Live API
@@ -790,7 +790,7 @@ export interface UseVoiceLiveConfig {
   /**
    * Event handler for all Voice Live events
    */
-  onEvent?: (event: any) => void;
+  onEvent?: (event: VoiceLiveEvent) => void;
 
   /**
    * Tool executor for function calling
@@ -839,7 +839,7 @@ export interface UseVoiceLiveReturn {
   stopMic: () => void;
 
   /** Send an event to the API */
-  sendEvent: (event: any) => void;
+  sendEvent: (event: VoiceLiveEvent) => void;
 
   /** Update session configuration */
   updateSession: (config: Partial<VoiceLiveSessionConfig>) => void;
@@ -880,6 +880,6 @@ export interface AgentServiceConfig {
 
   // Lifecycle & handlers
   autoConnect?: boolean;
-  onEvent?: (event: any) => void;
+  onEvent?: (event: VoiceLiveEvent) => void;
   toolExecutor?: (name: string, args: string, callId: string) => void;
 }

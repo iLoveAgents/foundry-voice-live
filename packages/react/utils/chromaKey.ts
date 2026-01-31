@@ -259,7 +259,7 @@ export function createChromaKeyProcessor(
   let animationFrameId: number | null = null;
 
   // Render loop
-  const processFrame = () => {
+  const processFrame = (): void => {
     if (!video.paused && !video.ended) {
       gl.texImage2D(
         gl.TEXTURE_2D,
@@ -275,7 +275,7 @@ export function createChromaKeyProcessor(
   };
 
   // Start processing when video plays
-  const onPlay = () => processFrame();
+  const onPlay = (): void => { processFrame(); };
   video.addEventListener("play", onPlay);
 
   return {
