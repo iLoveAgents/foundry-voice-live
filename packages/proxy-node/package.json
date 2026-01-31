@@ -1,0 +1,101 @@
+{
+  "name": "@iloveagents/foundry-voice-live-proxy-node",
+  "version": "1.2.0",
+  "description": "Secure WebSocket proxy server for Microsoft Foundry Voice Live API with Express and Docker support",
+  "keywords": [
+    "microsoft",
+    "foundry",
+    "voice-live",
+    "azure",
+    "proxy",
+    "websocket",
+    "avatar",
+    "agent",
+    "msal",
+    "authentication",
+    "typescript",
+    "express",
+    "docker",
+    "security",
+    "node"
+  ],
+  "author": {
+    "name": "Christian Glessner",
+    "email": "christian@iloveagents.ai",
+    "url": "https://iloveagents.ai"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/iloveagents/foundry-voice-live.git",
+    "directory": "packages/proxy-node"
+  },
+  "homepage": "https://github.com/iloveagents/foundry-voice-live#readme",
+  "bugs": {
+    "url": "https://github.com/iloveagents/foundry-voice-live/issues"
+  },
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "type": "module",
+  "bin": {
+    "foundry-voice-live-proxy": "./dist/index.js"
+  },
+  "files": [
+    "dist/",
+    "LICENSE",
+    "README.md",
+    ".env.example",
+    "Dockerfile",
+    "docker-compose.yml"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "tsc && node --watch dist/index.js",
+    "dev:ts": "tsx watch src/index.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "lint": "eslint . --ext .ts,.tsx,.js,.cjs,.mjs",
+    "lint:fix": "eslint . --ext .ts,.tsx,.js,.cjs,.mjs --fix",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "clean": "rm -rf dist",
+    "docker:build": "docker build -t foundry-voice-live-proxy .",
+    "docker:run": "docker run -p 8080:8080 --env-file .env foundry-voice-live-proxy"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "applicationinsights": "^3.12.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.0",
+    "express": "^4.18.2",
+    "express-rate-limit": "^7.1.5",
+    "express-ws": "^5.0.2",
+    "helmet": "^7.1.0",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.17",
+    "@types/express": "^4.17.21",
+    "@types/express-ws": "^3.0.4",
+    "@types/node": "^20.11.0",
+    "@types/ws": "^8.5.10",
+    "@vitest/coverage-v8": "^2.1.9",
+    "@typescript-eslint/eslint-plugin": "^8.11.0",
+    "@typescript-eslint/parser": "^8.11.0",
+    "typescript-eslint": "^8.11.0",
+    "eslint": "^9.14.0",
+    "eslint-config-prettier": "^9.1.0",
+    "prettier": "^3.3.3",
+    "tsx": "^4.7.0",
+    "typescript": "^5.3.3",
+    "vitest": "^2.1.9"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

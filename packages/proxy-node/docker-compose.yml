@@ -1,0 +1,49 @@
+version: "3.8"
+
+services:
+  foundry-voice-live-proxy:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: foundry-voice-live-proxy
+    ports:
+      - "${PORT:-8080}:8080"
+    environment:
+      # Server Configuration
+      - PORT=8080
+      - API_VERSION=${API_VERSION:-2025-10-01}
+
+      # Azure Configuration (Required)
+      - AZURE_AI_FOUNDRY_RESOURCE=${AZURE_AI_FOUNDRY_RESOURCE}
+
+      # Standard Mode: Voice & Avatar (Optional)
+      - AZURE_SPEECH_KEY=${AZURE_SPEECH_KEY}
+
+      # Agent Service Mode (Optional)
+      - AGENT_ID=${AGENT_ID}
+      - PROJECT_NAME=${PROJECT_NAME}
+
+      # Security Configuration
+      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-http://localhost:3000}
+      - RATE_LIMIT_WINDOW_MS=${RATE_LIMIT_WINDOW_MS:-60000}
+      - RATE_LIMIT_MAX_REQUESTS=${RATE_LIMIT_MAX_REQUESTS:-100}
+      - MAX_CONNECTIONS=${MAX_CONNECTIONS:-1000}
+    restart: unless-stopped
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "require('http').get('http://localhost:8080/health', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})",
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - foundry-voice-live-network
+
+networks:
+  foundry-voice-live-network:
+    driver: bridge

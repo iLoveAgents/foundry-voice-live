@@ -1,0 +1,88 @@
+{
+  "name": "@iloveagents/foundry-voice-live-react",
+  "version": "0.2.0",
+  "description": "React library for Microsoft Foundry Voice Live API. Full TypeScript support with optimized presets and configuration helpers.",
+  "keywords": [
+    "microsoft",
+    "foundry",
+    "voice-live",
+    "azure",
+    "react",
+    "typescript",
+    "voice-ai",
+    "realtime-ai",
+    "gpt-realtime",
+    "speech-to-text",
+    "text-to-speech",
+    "avatar",
+    "webrtc",
+    "react-hooks"
+  ],
+  "author": {
+    "name": "Christian Glessner",
+    "email": "christian@iloveagents.ai",
+    "url": "https://iloveagents.ai"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/iloveagents/foundry-voice-live.git",
+    "directory": "packages/react"
+  },
+  "bugs": {
+    "url": "https://github.com/iloveagents/foundry-voice-live/issues"
+  },
+  "homepage": "https://github.com/iloveagents/foundry-voice-live#readme",
+  "main": "./dist/index.js",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "build:watch": "tsup --watch",
+    "dev": "tsup --watch",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "eslint . --ext .ts,.tsx",
+    "lint:fix": "eslint . --ext .ts,.tsx --fix",
+    "format": "prettier --write \"**/*.{ts,tsx,json,md}\"",
+    "format:check": "prettier --check \"**/*.{ts,tsx,json,md}\"",
+    "prepublishOnly": "pnpm run build && pnpm run typecheck && pnpm run test"
+  },
+  "peerDependencies": {
+    "react": ">=16.8.0",
+    "react-dom": ">=16.8.0"
+  },
+  "devDependencies": {
+    "@testing-library/react": "^14.0.0",
+    "@testing-library/jest-dom": "^6.0.0",
+    "@types/react": "^18.2.0",
+    "@types/react-dom": "^18.2.0",
+    "@typescript-eslint/eslint-plugin": "^6.0.0",
+    "@typescript-eslint/parser": "^6.0.0",
+    "@vitest/ui": "^1.0.0",
+    "eslint": "^8.0.0",
+    "eslint-plugin-react": "^7.33.0",
+    "eslint-plugin-react-hooks": "^4.6.0",
+    "jsdom": "^23.0.0",
+    "prettier": "^3.0.0",
+    "tsup": "^8.0.0",
+    "typescript": "^5.0.0",
+    "vitest": "^1.0.0"
+  },
+  "sideEffects": false,
+  "publishConfig": {
+    "access": "public"
+  }
+}

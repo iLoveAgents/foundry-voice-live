@@ -1,0 +1,72 @@
+name: Publish to npm (Manual)
+
+on:
+  workflow_dispatch:
+    inputs:
+      package:
+        description: 'Package to publish'
+        required: true
+        type: choice
+        options:
+          - all
+          - react
+          - proxy-node
+      dry_run:
+        description: 'Dry run (no actual publish)'
+        required: false
+        type: boolean
+        default: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build
+        run: pnpm -r run build
+
+      - name: Test
+        run: pnpm -r run test
+
+      - name: Publish React package
+        if: ${{ inputs.package == 'all' || inputs.package == 'react' }}
+        run: |
+          if [ "${{ inputs.dry_run }}" == "true" ]; then
+            pnpm --filter @iloveagents/foundry-voice-live-react publish --dry-run
+          else
+            pnpm --filter @iloveagents/foundry-voice-live-react publish --access public --no-git-checks
+          fi
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Publish Proxy package
+        if: ${{ inputs.package == 'all' || inputs.package == 'proxy-node' }}
+        run: |
+          if [ "${{ inputs.dry_run }}" == "true" ]; then
+            pnpm --filter @iloveagents/foundry-voice-live-proxy-node publish --dry-run
+          else
+            pnpm --filter @iloveagents/foundry-voice-live-proxy-node publish --access public --no-git-checks
+          fi
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

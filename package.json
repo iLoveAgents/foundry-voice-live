@@ -1,0 +1,27 @@
+{
+  "name": "foundry-voice-live",
+  "version": "1.0.0",
+  "private": true,
+  "description": "SDK and tools for Microsoft Foundry Voice Live API - real-time voice interactions with AI agents",
+  "keywords": [
+    "microsoft",
+    "foundry",
+    "voice-live",
+    "azure",
+    "speech",
+    "ai",
+    "voice",
+    "realtime",
+    "websocket"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/iloveagents/foundry-voice-live.git"
+  },
+  "author": "Christian Glessner <christian@iloveagents.ai>",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "packageManager": "pnpm@9.15.0"
+}
