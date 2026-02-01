@@ -4,23 +4,29 @@
 # Stage 1: Build
 FROM node:20-alpine AS builder
 
+# Install pnpm
+RUN corepack enable && corepack prepare pnpm@latest --activate
+
 WORKDIR /app
 
 # Copy package files
-COPY package*.json ./
+COPY package.json pnpm-lock.yaml ./
 COPY tsconfig.json ./
 
 # Install dependencies
-RUN npm ci
+RUN pnpm install --frozen-lockfile
 
 # Copy source code
 COPY src ./src
 
 # Build TypeScript
-RUN npm run build
+RUN pnpm run build
 
 # Stage 2: Production
 FROM node:20-alpine
+
+# Install pnpm
+RUN corepack enable && corepack prepare pnpm@latest --activate
 
 # Add security: non-root user
 RUN addgroup -g 1001 -S nodejs && \
@@ -33,11 +39,10 @@ ENV NODE_ENV=production \
   HUSKY=0
 
 # Copy package files
-COPY package*.json ./
+COPY package.json pnpm-lock.yaml ./
 
 # Install production dependencies only, skip lifecycle scripts (e.g., husky)
-RUN npm ci --omit=dev --ignore-scripts && \
-  npm cache clean --force
+RUN pnpm install --prod --frozen-lockfile --ignore-scripts
 
 # Copy built application from builder
 COPY --from=builder /app/dist ./dist
