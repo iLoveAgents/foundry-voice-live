@@ -44,7 +44,7 @@ export interface ProxyConfig {
   port: number;
   apiVersion: string;
   azureResourceName: string;
-  azureSpeechKey?: string; // Optional: for anonymous API key auth
+  foundryApiKey?: string; // Optional: for anonymous API key auth
 }
 
 /**
@@ -63,8 +63,8 @@ export interface SecurityConfig {
 export interface EnvironmentConfig {
   PORT?: string;
   API_VERSION?: string;
-  AZURE_AI_FOUNDRY_RESOURCE?: string;
-  AZURE_SPEECH_KEY?: string;
+  FOUNDRY_RESOURCE_NAME?: string;
+  FOUNDRY_API_KEY?: string;
   AGENT_ID?: string;
   PROJECT_NAME?: string;
   ALLOWED_ORIGINS?: string;

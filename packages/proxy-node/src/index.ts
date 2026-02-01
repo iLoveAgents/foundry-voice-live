@@ -91,8 +91,8 @@ const { app } = expressWs(express());
 const config: ProxyConfig = {
   port: parseInt(process.env.PORT || "8080", 10),
   apiVersion: process.env.API_VERSION || "2025-10-01",
-  azureResourceName: process.env.AZURE_AI_FOUNDRY_RESOURCE || "",
-  azureSpeechKey: process.env.AZURE_SPEECH_KEY,
+  azureResourceName: process.env.FOUNDRY_RESOURCE_NAME || "",
+  foundryApiKey: process.env.FOUNDRY_API_KEY,
 };
 
 const securityConfig: SecurityConfig = {
@@ -105,7 +105,7 @@ const securityConfig: SecurityConfig = {
 };
 
 if (!config.azureResourceName) {
-  logger.error("Error: AZURE_AI_FOUNDRY_RESOURCE required in .env");
+  logger.error("Error: FOUNDRY_RESOURCE_NAME required in .env");
   process.exit(1);
 }
 
@@ -225,16 +225,16 @@ function buildAzureUrl(query: QueryParams): AzureConnectionConfig {
 
   // Option 2: API key auth (from backend .env)
   // Proxy job: Hide API key on server (not exposed to browser)
-  if (config.azureSpeechKey) {
+  if (config.foundryApiKey) {
     logger.info("[Proxy] Auth: API key (shared)");
     return {
-      url: `${base}&model=${model}&api-key=${encodeURIComponent(config.azureSpeechKey)}`,
+      url: `${base}&model=${model}&api-key=${encodeURIComponent(config.foundryApiKey)}`,
       headers: {},
     };
   }
 
   throw new Error(
-    "Standard mode requires either token parameter (MSAL) or AZURE_SPEECH_KEY in .env"
+    "Standard mode requires either token parameter (MSAL) or FOUNDRY_API_KEY in .env"
   );
 }
 

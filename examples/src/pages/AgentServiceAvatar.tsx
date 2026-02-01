@@ -32,7 +32,7 @@ export default function AgentServiceAvatar(): JSX.Element {
 
   // Check if Agent Service is configured
   const agentConfigured =
-    import.meta.env.VITE_AGENT_ID && import.meta.env.VITE_PROJECT_NAME;
+    import.meta.env.VITE_FOUNDRY_AGENT_ID && import.meta.env.VITE_FOUNDRY_PROJECT_NAME;
 
   // Acquire access token for Agent Service
   const acquireToken = async (): Promise<void> => {
@@ -92,8 +92,8 @@ export default function AgentServiceAvatar(): JSX.Element {
   }, [accounts]);
 
   // Build proxy URL with token and agent parameters
-  const agentId = import.meta.env.VITE_AGENT_ID;
-  const projectName = import.meta.env.VITE_PROJECT_NAME;
+  const agentId = import.meta.env.VITE_FOUNDRY_AGENT_ID;
+  const projectName = import.meta.env.VITE_FOUNDRY_PROJECT_NAME;
 
   const proxyUrl =
     accessToken && agentId && projectName
@@ -241,10 +241,10 @@ export default function AgentServiceAvatar(): JSX.Element {
             </p>
             <ul>
               <li>
-                <code>VITE_AGENT_ID</code> - Azure AI Foundry Agent ID
+                <code>VITE_FOUNDRY_AGENT_ID</code> - Azure AI Foundry Agent ID
               </li>
               <li>
-                <code>VITE_PROJECT_NAME</code> - Azure AI Foundry Project Name
+                <code>VITE_FOUNDRY_PROJECT_NAME</code> - Azure AI Foundry Project Name
               </li>
             </ul>
             <p>These are required for Agent mode and passed to the proxy URL.</p>

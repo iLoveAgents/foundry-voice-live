@@ -96,12 +96,12 @@ describe("Microsoft Foundry Voice Live Proxy", () => {
 
   describe("Configuration Validation", () => {
     it("should validate required environment variables", () => {
-      const azureResourceName = process.env.AZURE_AI_FOUNDRY_RESOURCE || "";
+      const foundryResourceName = process.env.FOUNDRY_RESOURCE_NAME || "";
 
-      if (!azureResourceName) {
+      if (!foundryResourceName) {
         expect(() => {
-          throw new Error("AZURE_AI_FOUNDRY_RESOURCE required in .env");
-        }).toThrow("AZURE_AI_FOUNDRY_RESOURCE required in .env");
+          throw new Error("FOUNDRY_RESOURCE_NAME required in .env");
+        }).toThrow("FOUNDRY_RESOURCE_NAME required in .env");
       }
     });
 

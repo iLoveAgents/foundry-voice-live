@@ -9,8 +9,8 @@ export function VoiceAdvanced(): JSX.Element {
   // Advanced configuration with all major options
   const config = createVoiceLiveConfig({
     connection: {
-      resourceName: import.meta.env.VITE_AZURE_AI_FOUNDRY_RESOURCE,
-      apiKey: import.meta.env.VITE_AZURE_SPEECH_KEY,
+      resourceName: import.meta.env.VITE_FOUNDRY_RESOURCE_NAME,
+      apiKey: import.meta.env.VITE_FOUNDRY_API_KEY,
     },
     session: {
       instructions: 'You are a helpful assistant. Keep responses brief and friendly.',

@@ -104,9 +104,8 @@ npx @iloveagents/foundry-voice-live-proxy-node
 
 # Or with Docker
 docker run -p 8080:8080 \
-  -e AZURE_REGION=westus2 \
-  -e AZURE_RESOURCE_NAME=your-resource \
-  -e AZURE_API_KEY=your-key \
+  -e FOUNDRY_RESOURCE_NAME=your-resource \
+  -e FOUNDRY_API_KEY=your-key \
   ghcr.io/iloveagents/foundry-voice-live-proxy
 ```
 
@@ -181,7 +180,7 @@ just publish-dry  # Preview npm publish
 
 ```
 ┌─────────────────────────────────────────┐
-│            Your Application              │
+│            Your Application             │
 └─────────────────────────────────────────┘
                     │
                     ▼

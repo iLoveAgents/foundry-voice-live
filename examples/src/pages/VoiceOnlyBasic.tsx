@@ -15,8 +15,8 @@ export function VoiceOnlyBasic(): JSX.Element {
   // Create Voice Live configuration
   const config = createVoiceLiveConfig({
     connection: {
-      resourceName: import.meta.env.VITE_AZURE_AI_FOUNDRY_RESOURCE,
-      apiKey: import.meta.env.VITE_AZURE_SPEECH_KEY,
+      resourceName: import.meta.env.VITE_FOUNDRY_RESOURCE_NAME,
+      apiKey: import.meta.env.VITE_FOUNDRY_API_KEY,
     }
   });
 

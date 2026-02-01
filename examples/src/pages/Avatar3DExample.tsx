@@ -196,8 +196,8 @@ export function Avatar3DExample(): JSX.Element {
   // ---------------------------------------------------------------------------
   const config = createVoiceLiveConfig({
     connection: {
-      resourceName: import.meta.env.VITE_AZURE_AI_FOUNDRY_RESOURCE,
-      apiKey: import.meta.env.VITE_AZURE_SPEECH_KEY,
+      resourceName: import.meta.env.VITE_FOUNDRY_RESOURCE_NAME,
+      apiKey: import.meta.env.VITE_FOUNDRY_API_KEY,
     },
     session: withViseme({
       instructions: 'You are a friendly 3D avatar assistant. Respond naturally and briefly!',

@@ -79,9 +79,9 @@ export interface IceServerConfig {
  * Configuration for Microsoft Foundry Voice Live API connection
  */
 export interface VoiceLiveConfig {
-  /** Azure AI Foundry resource name (without protocol or domain) */
+  /** Foundry resource name (without protocol or domain) */
   resourceName: string;
-  /** Azure Speech/AI Services API key */
+  /** Foundry API key */
   apiKey: string;
   /** Avatar character (e.g., "lisa", "john") */
   avatarCharacter: string;

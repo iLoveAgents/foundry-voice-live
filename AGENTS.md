@@ -79,7 +79,7 @@ try {
 
 ## Security
 
-Never expose Azure API keys in client code. Use the proxy package for production deployments.
+Never expose Foundry API keys in client code. Use the proxy package for production deployments.
 
 ## Links
 

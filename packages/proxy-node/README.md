@@ -33,10 +33,10 @@ RATE_LIMIT_MAX_REQUESTS=100
 MAX_CONNECTIONS=1000
 
 # Azure (required)
-AZURE_AI_FOUNDRY_RESOURCE=your-resource-name
+FOUNDRY_RESOURCE_NAME=your-resource-name
 
 # Standard mode (optional if client sends MSAL token)
-AZURE_SPEECH_KEY=your-api-key
+FOUNDRY_API_KEY=your-api-key
 
 # Telemetry (optional)
 # APPLICATIONINSIGHTS_CONNECTION_STRING=InstrumentationKey=...;IngestionEndpoint=...
@@ -80,8 +80,8 @@ Public image:
 ```bash
 docker pull iloveagents.azurecr.io/foundry-voice-live-proxy:main
 docker run -p 8080:8080 \
-  -e AZURE_AI_FOUNDRY_RESOURCE=your-resource \
-  -e AZURE_SPEECH_KEY=your-key \
+  -e FOUNDRY_RESOURCE_NAME=your-resource \
+  -e FOUNDRY_API_KEY=your-key \
   iloveagents.azurecr.io/foundry-voice-live-proxy:main
 ```
 
@@ -107,8 +107,8 @@ proxyUrl: "ws://localhost:8080/ws?model=gpt-realtime";
 **Backend (.env):**
 
 ```bash
-AZURE_AI_FOUNDRY_RESOURCE=your-resource
-AZURE_SPEECH_KEY=your-api-key  # Secured server-side
+FOUNDRY_RESOURCE_NAME=your-resource
+FOUNDRY_API_KEY=your-api-key  # Secured server-side
 ```
 
 **Benefits:**
@@ -135,7 +135,7 @@ proxyUrl: `ws://localhost:8080/ws?model=gpt-realtime&token=${token.accessToken}`
 **Backend (.env):**
 
 ```bash
-AZURE_AI_FOUNDRY_RESOURCE=your-resource
+FOUNDRY_RESOURCE_NAME=your-resource
 # No API key needed - uses user's MSAL token
 ```
 
@@ -171,7 +171,7 @@ proxyUrl: `ws://localhost:8080/ws?agentId=asst_abc123&projectName=my-project&tok
 **Backend (.env):**
 
 ```bash
-AZURE_AI_FOUNDRY_RESOURCE=your-resource
+FOUNDRY_RESOURCE_NAME=your-resource
 # No API key needed - uses user's MSAL token
 # agentId and projectName come from client (not .env)
 ```
@@ -219,8 +219,8 @@ See "Run with Docker" section above for details.
 | --------------------------- | ----------- | ---------------------------- | ----------------------- |
 | `PORT`                      | No          | Server port                  | 8080                    |
 | `API_VERSION`               | No          | Azure API version            | 2025-10-01              |
-| `AZURE_AI_FOUNDRY_RESOURCE` | Yes         | Azure resource name          | -                       |
-| `AZURE_SPEECH_KEY`          | Conditional | API key for Voice/Avatar     | -                       |
+| `FOUNDRY_RESOURCE_NAME` | Yes         | Azure resource name          | -                       |
+| `FOUNDRY_API_KEY`          | Conditional | API key for Voice/Avatar     | -                       |
 | `ALLOWED_ORIGINS`           | No          | Comma-separated CORS origins | `http://localhost:3000` |
 | `RATE_LIMIT_WINDOW_MS`      | No          | Rate limit time window (ms)  | 60000                   |
 | `RATE_LIMIT_MAX_REQUESTS`   | No          | Max requests per window      | 100                     |
@@ -262,7 +262,7 @@ See "Run with Docker" section above for details.
 - "Blocked by CORS": Add origin to `ALLOWED_ORIGINS`
 - "Too many requests": Rate limit exceeded, adjust limits or wait
 - "Missing token parameter": Agent mode requires MSAL token
-- "AZURE_SPEECH_KEY required": Standard mode needs API key OR MSAL token
+- "FOUNDRY_API_KEY required": Standard mode needs API key OR MSAL token
 
 ## License
 

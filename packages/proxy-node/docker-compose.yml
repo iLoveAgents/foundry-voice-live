@@ -13,11 +13,11 @@ services:
       - PORT=8080
       - API_VERSION=${API_VERSION:-2025-10-01}
 
-      # Azure Configuration (Required)
-      - AZURE_AI_FOUNDRY_RESOURCE=${AZURE_AI_FOUNDRY_RESOURCE}
+      # Foundry Configuration (Required)
+      - FOUNDRY_RESOURCE_NAME=${FOUNDRY_RESOURCE_NAME}
 
       # Standard Mode: Voice & Avatar (Optional)
-      - AZURE_SPEECH_KEY=${AZURE_SPEECH_KEY}
+      - FOUNDRY_API_KEY=${FOUNDRY_API_KEY}
 
       # Agent Service Mode (Optional)
       - AGENT_ID=${AGENT_ID}
