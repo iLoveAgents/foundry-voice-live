@@ -10,11 +10,10 @@ RUN corepack enable && corepack prepare pnpm@latest --activate
 WORKDIR /app
 
 # Copy package files
-COPY package.json pnpm-lock.yaml ./
-COPY tsconfig.json ./
+COPY package.json tsconfig.json ./
 
 # Install dependencies
-RUN pnpm install --frozen-lockfile
+RUN pnpm install
 
 # Copy source code
 COPY src ./src
@@ -39,10 +38,10 @@ ENV NODE_ENV=production \
   HUSKY=0
 
 # Copy package files
-COPY package.json pnpm-lock.yaml ./
+COPY package.json ./
 
 # Install production dependencies only, skip lifecycle scripts (e.g., husky)
-RUN pnpm install --prod --frozen-lockfile --ignore-scripts
+RUN pnpm install --prod --ignore-scripts
 
 # Copy built application from builder
 COPY --from=builder /app/dist ./dist
