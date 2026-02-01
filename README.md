@@ -1,5 +1,25 @@
+<p align="center">
+  <a href="https://iloveagents.ai">
+    <img src="https://iloveagents.ai/images/logos/logo-color-dark-one-line.svg" alt="iLoveAgents" height="100" />
+  </a>
+  <br/>
+  <strong>Ship agent ideas to production on Microsoft Foundry</strong><br/>
+  <a href="https://iloveagents.ai">iloveagents.ai</a> · Guides, tools & open source for AI agent developers
+</p>
+
+---
+
+<p align="center">
+  <img src=".github/images/avatar-azure.png" alt="Azure Avatar" height="200" />
+  &nbsp;&nbsp;
+  <img src=".github/images/audio-visualizer.png" alt="Audio Visualizer" height="200" />
+  &nbsp;&nbsp;
+  <img src=".github/images/avatar-live2d.png" alt="Live2D Avatar" height="200" />
+</p>
+
 # Foundry Voice Live
 
+[![CI](https://github.com/iLoveAgents/foundry-voice-live/actions/workflows/ci.yml/badge.svg)](https://github.com/iLoveAgents/foundry-voice-live/actions/workflows/ci.yml)
 [![npm version](https://img.shields.io/npm/v/@iloveagents/foundry-voice-live-react)](https://www.npmjs.com/package/@iloveagents/foundry-voice-live-react)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
@@ -22,8 +42,8 @@ Microsoft Foundry Voice Live API provides a unified solution for low-latency, hi
 
 | Package | Description | Version |
 |---------|-------------|---------|
-| [@iloveagents/foundry-voice-live-react](./packages/react) | React hooks and components | [![npm](https://img.shields.io/npm/v/@iloveagents/foundry-voice-live-react)](https://www.npmjs.com/package/@iloveagents/foundry-voice-live-react) |
-| [@iloveagents/foundry-voice-live-proxy-node](./packages/proxy-node) | Secure WebSocket proxy server | [![npm](https://img.shields.io/npm/v/@iloveagents/foundry-voice-live-proxy-node)](https://www.npmjs.com/package/@iloveagents/foundry-voice-live-proxy-node) |
+| [@iloveagents/foundry-voice-live-react](./packages/react/README.md) | React hooks and components | [![npm](https://img.shields.io/npm/v/@iloveagents/foundry-voice-live-react)](https://www.npmjs.com/package/@iloveagents/foundry-voice-live-react) |
+| [@iloveagents/foundry-voice-live-proxy-node](./packages/proxy-node/README.md) | Secure WebSocket proxy server | [![npm](https://img.shields.io/npm/v/@iloveagents/foundry-voice-live-proxy-node)](https://www.npmjs.com/package/@iloveagents/foundry-voice-live-proxy-node) |
 
 ## Quick Start
 
