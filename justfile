@@ -113,6 +113,22 @@ publish-all:
     pnpm --filter @iloveagents/foundry-voice-live-proxy-node publish --access public
 
 # ============================================
+# Git Hooks
+# ============================================
+
+# Test pre-commit hook (runs same checks without committing)
+pre-commit:
+    pnpm exec lefthook run pre-commit
+
+# Run all pre-commit checks (ignores staged files filter)
+check:
+    pnpm -r run lint && pnpm -r run typecheck && pnpm -r run test
+
+# Install git hooks
+hooks-install:
+    pnpm exec lefthook install
+
+# ============================================
 # Utilities
 # ============================================
 
