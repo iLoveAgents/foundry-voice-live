@@ -111,12 +111,26 @@ const { connect } = useVoiceLive({
 });
 ```
 
-## Demos
+## Run Examples
 
-| Demo | Description | Run |
-|------|-------------|-----|
-| [playground](./demos/playground) | Interactive examples for all features | `just dev-playground` |
-| [avatar](./demos/avatar) | Full-featured Luna AI assistant | `just dev-avatar` |
+Interactive examples demonstrating Voice Live API features.
+
+```bash
+# 1. Clone and install
+git clone https://github.com/iloveagents/foundry-voice-live.git
+cd foundry-voice-live
+just install
+
+# 2. Configure credentials
+cp packages/proxy-node/.env.example packages/proxy-node/.env
+cp examples/.env.example examples/.env
+# Edit both .env files with your Azure AI Foundry credentials
+
+# 3. Start proxy + examples
+just dev
+```
+
+Open <http://localhost:3001> to explore the examples.
 
 ## Development
 

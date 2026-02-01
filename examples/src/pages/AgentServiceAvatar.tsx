@@ -168,7 +168,7 @@ export default function AgentServiceAvatar(): JSX.Element {
 
   return (
     <SampleLayout
-      title="Agent Service with Avatar"
+      title="Agent Service (classic) with Avatar"
       description="Azure AI Agent Service with avatar. Uses Entra ID authentication with Azure AI scope (https://ai.azure.com/.default) and backend proxy for secure token handling."
     >
       <ErrorPanel error={error || authError} />

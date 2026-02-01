@@ -164,7 +164,7 @@ export default function AgentServiceProxy(): JSX.Element {
 
   return (
     <SampleLayout
-      title="Agent Service with Backend Proxy"
+      title="Agent Service (classic) with Backend Proxy"
       description="Voice conversation with Azure AI Agent Service. Uses Entra ID authentication with Azure AI scope (https://ai.azure.com/.default) and backend proxy for secure token handling."
     >
       <ErrorPanel error={error || authError} />
