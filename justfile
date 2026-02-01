@@ -15,7 +15,7 @@ install:
 
 # Clean install (remove node_modules first)
 clean-install:
-    rm -rf node_modules packages/*/node_modules demos/*/node_modules
+    rm -rf node_modules packages/*/node_modules examples/node_modules
     pnpm install
 
 # ============================================
@@ -42,13 +42,9 @@ build-proxy:
 dev:
     pnpm -r --parallel run dev
 
-# Run playground dev server
-dev-playground:
-    pnpm --filter playground run dev
-
-# Run avatar demo dev server
-dev-avatar:
-    pnpm --filter avatar run dev
+# Run examples dev server
+dev-examples:
+    pnpm --filter examples run dev
 
 # Run proxy dev server
 dev-proxy:
@@ -142,8 +138,8 @@ update:
 
 # Clean all build artifacts
 clean:
-    rm -rf packages/*/dist demos/*/dist
-    rm -rf packages/*/.turbo demos/*/.turbo
+    rm -rf packages/*/dist examples/dist
+    rm -rf packages/*/.turbo examples/.turbo
 
 # ============================================
 # Future: Python tasks (uncomment when needed)

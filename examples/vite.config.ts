@@ -14,10 +14,10 @@ export default defineConfig({
   resolve: {
     alias: isDist
       ? {
-          '@iloveagents/foundry-voice-live-react': path.resolve(__dirname, '../../packages/react/dist/index.mjs'),
+          '@iloveagents/foundry-voice-live-react': path.resolve(__dirname, '../packages/react/dist/index.mjs'),
         }
       : {
-          '@iloveagents/foundry-voice-live-react': path.resolve(__dirname, '../../packages/react/index.ts'),
+          '@iloveagents/foundry-voice-live-react': path.resolve(__dirname, '../packages/react/index.ts'),
         },
   },
 });

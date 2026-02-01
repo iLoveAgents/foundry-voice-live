@@ -43,4 +43,4 @@ playwright-report/
 test-results/
 
 # Third-party models (require separate download due to licensing)
-demos/playground/public/models/kei_vowels_pro/
+examples/public/models/kei_vowels_pro/

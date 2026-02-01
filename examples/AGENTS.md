@@ -1,11 +1,11 @@
-# Playground Demo
+# Examples
 
-Interactive testing environment for Voice Live API features.
+Interactive examples demonstrating Voice Live API features.
 
 ## Commands
 
 ```bash
-just dev-playground       # Start dev server (port 3001)
+just dev-examples       # Start dev server (port 3001)
 ```
 
 ## Structure
@@ -16,7 +16,7 @@ src/
   App.tsx           # Router
 ```
 
-## Adding Pages
+## Adding Examples
 
 1. Create component in `src/pages/`
 2. Add route in `App.tsx`

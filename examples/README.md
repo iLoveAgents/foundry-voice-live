@@ -1,6 +1,6 @@
-# Foundry Voice Live Playground
+# Foundry Voice Live Examples
 
-Interactive playground for testing Microsoft Foundry Voice Live API features.
+Interactive examples for testing Microsoft Foundry Voice Live API features.
 
 ## Setup
 
@@ -28,7 +28,7 @@ The Live2D avatar feature requires the Kei model from Live2D's sample collection
 2. Download the **Kei** model (look for "kei_vowels_pro")
 3. Extract the contents to:
    ```
-   demos/playground/public/models/kei_vowels_pro/
+   examples/public/models/kei_vowels_pro/
    ```
 
 The directory structure should look like:
@@ -45,10 +45,10 @@ public/models/kei_vowels_pro/
 └── sounds/
 ```
 
-### 4. Run the playground
+### 4. Run examples
 
 ```bash
-pnpm dev
+just dev-examples
 ```
 
 Open http://localhost:3001 in your browser.
@@ -63,4 +63,4 @@ Open http://localhost:3001 in your browser.
 
 ## License
 
-The playground demo is MIT licensed. Note that Live2D models have their own licensing terms - see [Live2D License](https://www.live2d.com/en/terms/live2d-free-material-license-agreement/).
+Examples are MIT licensed. Note that Live2D models have their own licensing terms - see [Live2D License](https://www.live2d.com/en/terms/live2d-free-material-license-agreement/).

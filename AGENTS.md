@@ -22,12 +22,11 @@ just typecheck        # TypeScript checks
 
 Each package has its own AGENTS.md with specific guidance.
 
-## Demos
+## Examples
 
-| Demo | Path | Command |
-| ---- | ---- | ------- |
-| Playground | `demos/playground/` | `just dev-playground` |
-| Avatar | `demos/avatar/` | `just dev-avatar` |
+Interactive examples demonstrating Voice Live API features: `examples/`
+
+Run with `just dev-examples` (port 3001).
 
 ## Code Style
 
