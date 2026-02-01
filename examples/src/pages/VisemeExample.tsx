@@ -1,6 +1,16 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { useVoiceLive, createVoiceLiveConfig, withViseme } from '@iloveagents/foundry-voice-live-react';
-import { SampleLayout, StatusBadge, Section, ControlGroup, ErrorPanel } from '../components';
+import {
+  useVoiceLive,
+  createVoiceLiveConfig,
+  withViseme,
+} from '@iloveagents/foundry-voice-live-react';
+import {
+  SampleLayout,
+  StatusBadge,
+  Section,
+  ControlGroup,
+  ErrorPanel,
+} from '../components';
 
 interface VisemeData {
   viseme_id: number;
@@ -9,7 +19,9 @@ interface VisemeData {
 
 export function VisemeExample(): JSX.Element {
   const [currentViseme, setCurrentViseme] = useState<number | null>(null);
-  const [visemeHistory, setVisemeHistory] = useState<Array<{viseme: number, offset: number}>>([]);
+  const [visemeHistory, setVisemeHistory] = useState<
+    Array<{ viseme: number; offset: number }>
+  >([]);
   const [error, setError] = useState<string | null>(null);
   const visemeBufferRef = useRef<VisemeData[]>([]);
   const animationFrameRef = useRef<number>();
@@ -23,7 +35,8 @@ export function VisemeExample(): JSX.Element {
       apiKey: import.meta.env.VITE_AZURE_SPEECH_KEY,
     },
     session: withViseme({
-      instructions: 'You are a helpful assistant. Always respond in English. Keep responses brief.',
+      instructions:
+        'You are a helpful assistant. Always respond in English. Keep responses brief.',
       voice: {
         name: 'en-US-AvaNeural', // Standard voice (HD voices don't support viseme)
         type: 'azure-standard',
@@ -31,24 +44,40 @@ export function VisemeExample(): JSX.Element {
     }),
   });
 
-  const { connect, disconnect, connectionState, getAudioPlaybackTime, audioStream } = useVoiceLive({
+  const {
+    connect,
+    disconnect,
+    connectionState,
+    getAudioPlaybackTime,
+    audioStream,
+  } = useVoiceLive({
     ...config,
-    onEvent: useCallback((event: { type: string; viseme_id?: number; audio_offset_ms?: number }) => {
-      if (event.type === 'response.animation_viseme.delta' && event.viseme_id !== undefined && event.audio_offset_ms !== undefined) {
-        const visemeId = event.viseme_id;
-        const audioOffset = event.audio_offset_ms;
-        // Buffer viseme events for synchronized playback
-        visemeBufferRef.current.push({
-          viseme_id: visemeId,
-          audio_offset_ms: audioOffset,
-        });
-        setVisemeHistory(prev => [...prev.slice(-20), { viseme: visemeId, offset: audioOffset }]);
-      }
-      if (event.type === 'response.created') {
-        // Clear buffer for new response
-        visemeBufferRef.current = [];
-      }
-    }, []),
+    onEvent: useCallback(
+      (event: { type: string; viseme_id?: number; audio_offset_ms?: number }) => {
+        if (
+          event.type === 'response.animation_viseme.delta' &&
+          event.viseme_id !== undefined &&
+          event.audio_offset_ms !== undefined
+        ) {
+          const visemeId = event.viseme_id;
+          const audioOffset = event.audio_offset_ms;
+          // Buffer viseme events for synchronized playback
+          visemeBufferRef.current.push({
+            viseme_id: visemeId,
+            audio_offset_ms: audioOffset,
+          });
+          setVisemeHistory((prev) => [
+            ...prev.slice(-20),
+            { viseme: visemeId, offset: audioOffset },
+          ]);
+        }
+        if (event.type === 'response.created') {
+          // Clear buffer for new response
+          visemeBufferRef.current = [];
+        }
+      },
+      []
+    ),
   });
 
   // Connect audio stream to audio element
@@ -160,48 +189,29 @@ export function VisemeExample(): JSX.Element {
         </button>
       </ControlGroup>
 
-      <Section>
-        <h3 style={{ fontSize: '16px', fontWeight: 600, marginBottom: '8px' }}>Current Viseme</h3>
-        <div style={{
-          background: '#f5f5f5',
-          padding: '40px',
-          borderRadius: '8px',
-          textAlign: 'center',
-          border: '2px solid #ddd',
-          minHeight: '200px',
-          display: 'flex',
-          flexDirection: 'column',
-          justifyContent: 'center',
-        }}>
+      <Section title="Current Viseme">
+        <div className="viseme-display">
           {currentViseme !== null ? (
             <>
-              <div style={{ fontSize: '48px', fontWeight: 'bold', color: '#0078d4' }}>
-                {currentViseme}
-              </div>
-              <div style={{ fontSize: '18px', marginTop: '10px', color: '#666' }}>
+              <div className="viseme-display__id">{currentViseme}</div>
+              <div className="viseme-display__name">
                 {getVisemeName(currentViseme)}
               </div>
             </>
           ) : (
-            <div style={{ color: '#999' }}>No viseme data yet...</div>
+            <div className="viseme-display__placeholder">
+              No viseme data yet...
+            </div>
           )}
         </div>
       </Section>
 
-      <Section>
-        <h3 style={{ fontSize: '16px', fontWeight: 600, marginBottom: '8px' }}>Viseme History</h3>
-        <div style={{
-          background: '#1e1e1e',
-          color: '#d4d4d4',
-          padding: '15px',
-          borderRadius: '6px',
-          maxHeight: '200px',
-          overflow: 'auto',
-          fontFamily: 'monospace',
-          fontSize: '12px',
-        }}>
+      <Section title="Viseme History">
+        <div className="code-block code-block--compact">
           {visemeHistory.length === 0 ? (
-            <div style={{ color: '#888' }}>No visemes yet... Start talking!</div>
+            <div className="code-block__placeholder">
+              No visemes yet... Start talking!
+            </div>
           ) : (
             visemeHistory.map((v, i) => (
               <div key={i}>
@@ -211,7 +221,6 @@ export function VisemeExample(): JSX.Element {
           )}
         </div>
       </Section>
-
 
       <audio ref={audioRef} autoPlay hidden />
     </SampleLayout>

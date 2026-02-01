@@ -1,0 +1,590 @@
+/* ==========================================================================
+   Foundry Voice Live Examples - Component Styles
+   iloveagents.ai / Microsoft Foundry color palette
+   ========================================================================== */
+
+/* --------------------------------------------------------------------------
+   Design Tokens
+   -------------------------------------------------------------------------- */
+
+:root {
+  /* Status Colors */
+  --status-error-bg: #ffebee;
+  --status-error-text: #c62828;
+  --status-error-border: #ef9a9a;
+
+  --status-warning-bg: #fff3e0;
+  --status-warning-text: #e65100;
+  --status-warning-border: #ffcc80;
+
+  --status-success-bg: #e8f5e9;
+  --status-success-text: #2e7d32;
+  --status-success-border: #81c784;
+
+  --status-info-bg: #e3f2fd;
+  --status-info-text: #0078d4;
+  --status-info-border: #90caf9;
+
+  --status-neutral-bg: #f5f5f5;
+  --status-neutral-text: #666666;
+  --status-neutral-border: #dddddd;
+
+  /* Spacing */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+
+  /* Border Radius */
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+}
+
+/* --------------------------------------------------------------------------
+   SampleLayout
+   -------------------------------------------------------------------------- */
+
+.sample-layout {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 40px;
+}
+
+.sample-layout__header {
+  margin-bottom: var(--space-8);
+}
+
+.sample-layout__back-link {
+  color: var(--brand-primary);
+  text-decoration: none;
+  font-size: 14px;
+  display: inline-flex;
+  align-items: center;
+  margin-bottom: var(--space-4);
+}
+
+.sample-layout__back-link:hover {
+  text-decoration: underline;
+}
+
+.sample-layout__title {
+  margin: 0 0 var(--space-2) 0;
+  font-size: 32px;
+  font-weight: 600;
+}
+
+.sample-layout__description {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 16px;
+  line-height: 1.5;
+}
+
+/* --------------------------------------------------------------------------
+   StatusBadge
+   -------------------------------------------------------------------------- */
+
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-md);
+  font-size: 14px;
+  font-weight: 500;
+  margin-bottom: var(--space-6);
+  border: 1px solid;
+}
+
+.status-badge__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-right: var(--space-2);
+}
+
+.status-badge--disconnected {
+  background: var(--status-neutral-bg);
+  color: var(--status-neutral-text);
+  border-color: var(--status-neutral-border);
+}
+
+.status-badge--disconnected .status-badge__dot {
+  background: var(--status-neutral-text);
+}
+
+.status-badge--connecting {
+  background: var(--status-warning-bg);
+  color: var(--status-warning-text);
+  border-color: var(--status-warning-border);
+}
+
+.status-badge--connecting .status-badge__dot {
+  background: var(--status-warning-text);
+  animation: pulse 1.5s infinite;
+}
+
+.status-badge--connected {
+  background: var(--status-success-bg);
+  color: var(--status-success-text);
+  border-color: var(--status-success-border);
+}
+
+.status-badge--connected .status-badge__dot {
+  background: var(--status-success-text);
+}
+
+.status-badge--failed,
+.status-badge--error {
+  background: var(--status-error-bg);
+  color: var(--status-error-text);
+  border-color: var(--status-error-border);
+}
+
+.status-badge--failed .status-badge__dot,
+.status-badge--error .status-badge__dot {
+  background: var(--status-error-text);
+}
+
+/* --------------------------------------------------------------------------
+   Section
+   -------------------------------------------------------------------------- */
+
+.section {
+  margin-bottom: var(--space-8);
+}
+
+.section__title {
+  margin: 0 0 var(--space-4) 0;
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+/* --------------------------------------------------------------------------
+   ControlGroup
+   -------------------------------------------------------------------------- */
+
+.control-group {
+  display: flex;
+  gap: var(--space-3);
+  align-items: center;
+  margin-bottom: var(--space-6);
+  flex-wrap: wrap;
+}
+
+/* --------------------------------------------------------------------------
+   ConfigPanel
+   -------------------------------------------------------------------------- */
+
+.config-panel {
+  background-color: var(--bg-surface, #f8f9fa);
+  border: 1px solid var(--border-light, #e0e0e0);
+  border-radius: var(--radius-lg);
+  padding: var(--space-5);
+  margin-bottom: var(--space-6);
+}
+
+.config-panel__title {
+  margin: 0 0 var(--space-4) 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.config-panel__content {
+  font-size: 14px;
+  line-height: 1.8;
+  color: var(--text-secondary);
+}
+
+.config-item {
+  margin-bottom: var(--space-2);
+}
+
+.config-item__label {
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.config-item__value {
+  font-family: monospace;
+  font-size: 13px;
+  color: var(--brand-primary);
+}
+
+/* --------------------------------------------------------------------------
+   AlertBox (error, warning, info panels)
+   -------------------------------------------------------------------------- */
+
+.alert {
+  padding: var(--space-4);
+  border-radius: var(--radius-sm);
+  margin-bottom: var(--space-6);
+  border: 1px solid;
+}
+
+.alert__title {
+  margin: 0 0 var(--space-2) 0;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.alert__content {
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.alert__content p {
+  margin: 0 0 var(--space-2) 0;
+}
+
+.alert__content p:last-child {
+  margin-bottom: 0;
+}
+
+.alert__content ul {
+  margin: 0 0 var(--space-2) 0;
+  padding-left: var(--space-5);
+}
+
+.alert__content ul:last-child {
+  margin-bottom: 0;
+}
+
+.alert--error {
+  background: var(--status-error-bg);
+  color: var(--status-error-text);
+  border-color: var(--status-error-border);
+}
+
+.alert--warning {
+  background: var(--status-warning-bg);
+  color: var(--status-warning-text);
+  border-color: var(--status-warning-border);
+}
+
+.alert--info {
+  background: var(--status-info-bg);
+  color: var(--status-info-text);
+  border-color: var(--status-info-border);
+}
+
+.alert--success {
+  background: var(--status-success-bg);
+  color: var(--status-success-text);
+  border-color: var(--status-success-border);
+}
+
+/* --------------------------------------------------------------------------
+   AvatarContainer
+   -------------------------------------------------------------------------- */
+
+.avatar-container {
+  width: 100%;
+  max-width: 600px;
+  margin: 0 auto;
+  background-color: var(--status-neutral-bg);
+  border-radius: var(--radius-lg);
+  padding: var(--space-5);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 400px;
+  border: 1px solid var(--status-neutral-border);
+}
+
+.avatar-container--wide {
+  max-width: 800px;
+  height: 450px;
+}
+
+.avatar-container--gradient {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border: none;
+}
+
+.avatar-container video,
+.avatar-container canvas {
+  width: 100%;
+  border-radius: var(--radius-lg);
+}
+
+/* --------------------------------------------------------------------------
+   AuthSection
+   -------------------------------------------------------------------------- */
+
+.auth-section__title {
+  font-size: 16px;
+  font-weight: 600;
+  margin-bottom: var(--space-2);
+}
+
+.auth-section__status {
+  margin-bottom: var(--space-1);
+  color: var(--text-secondary);
+}
+
+.auth-section__user {
+  margin-bottom: var(--space-2);
+}
+
+/* --------------------------------------------------------------------------
+   HomePage Cards
+   -------------------------------------------------------------------------- */
+
+.home-header {
+  margin-bottom: 48px;
+}
+
+.home-title {
+  margin: 0 0 var(--space-2) 0;
+  font-size: 36px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.home-subtitle {
+  margin: 0;
+  font-size: 18px;
+  color: var(--text-secondary);
+  line-height: 1.6;
+}
+
+.category-section {
+  margin-bottom: 48px;
+}
+
+.category-title {
+  margin: 0 0 var(--space-5) 0;
+  font-size: 24px;
+  font-weight: 600;
+  color: var(--text-primary);
+  padding-bottom: var(--space-3);
+  border-bottom: 2px solid var(--brand-primary);
+}
+
+.sample-card {
+  display: block;
+  background-color: var(--bg-primary);
+  border: 1px solid #e0e0e0;
+  border-radius: var(--radius-lg);
+  padding: var(--space-5);
+  margin-bottom: var(--space-4);
+  text-decoration: none;
+  color: inherit;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+
+.sample-card:hover {
+  border-color: var(--brand-primary);
+  box-shadow: 0 4px 12px rgba(0, 120, 212, 0.1);
+  transform: translateY(-2px);
+  text-decoration: none;
+}
+
+.sample-card:hover * {
+  text-decoration: none;
+}
+
+.sample-card__title {
+  margin: 0 0 var(--space-2) 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--brand-primary);
+}
+
+.sample-card__description {
+  margin: 0 0 var(--space-3) 0;
+  font-size: 14px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+.sample-card__features {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.sample-card__feature {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  background-color: var(--status-neutral-bg);
+  color: var(--text-secondary);
+  border: 1px solid #e0e0e0;
+}
+
+/* --------------------------------------------------------------------------
+   Code Display
+   -------------------------------------------------------------------------- */
+
+.code-block {
+  background: #1e1e1e;
+  color: #d4d4d4;
+  padding: var(--space-5);
+  border-radius: var(--radius-lg);
+  max-height: 400px;
+  overflow: auto;
+  font-family: monospace;
+  font-size: 13px;
+  line-height: 1.6;
+  border: 1px solid #333;
+}
+
+.code-block--compact {
+  padding: 15px;
+  max-height: 200px;
+  font-size: 12px;
+}
+
+.code-block__placeholder {
+  color: #888;
+}
+
+/* --------------------------------------------------------------------------
+   3D Canvas Container
+   -------------------------------------------------------------------------- */
+
+.canvas-container-3d {
+  background: linear-gradient(135deg, #0c0c1d 0%, #1a1a3e 50%, #2d1b4e 100%);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  height: 600px;
+}
+
+.canvas-container-3d canvas {
+  width: 100%;
+  height: 100%;
+}
+
+.canvas-container-live2d {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 600px;
+}
+
+/* --------------------------------------------------------------------------
+   Viseme Display
+   -------------------------------------------------------------------------- */
+
+.viseme-display {
+  background: var(--status-neutral-bg);
+  padding: 40px;
+  border-radius: var(--radius-lg);
+  text-align: center;
+  border: 2px solid var(--status-neutral-border);
+  min-height: 200px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.viseme-display__id {
+  font-size: 48px;
+  font-weight: bold;
+  color: var(--brand-primary);
+}
+
+.viseme-display__name {
+  font-size: 18px;
+  margin-top: 10px;
+  color: var(--text-secondary);
+}
+
+.viseme-display__placeholder {
+  color: #888;
+}
+
+/* --------------------------------------------------------------------------
+   Canvas Display
+   -------------------------------------------------------------------------- */
+
+.canvas-display {
+  border: 1px solid var(--status-neutral-border);
+  border-radius: var(--radius-lg);
+  background: #1e1e1e;
+  width: 100%;
+  max-width: 800px;
+}
+
+/* --------------------------------------------------------------------------
+   Try Suggestions
+   -------------------------------------------------------------------------- */
+
+.try-suggestions {
+  background-color: var(--bg-surface, #f8f9fa);
+  border: 1px solid #e0e0e0;
+  border-radius: var(--radius-lg);
+  padding: var(--space-4);
+  margin-bottom: var(--space-6);
+}
+
+.try-suggestions__title {
+  display: block;
+  margin-bottom: var(--space-2);
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.try-suggestions__list {
+  margin-left: var(--space-5);
+  font-size: 14px;
+  color: var(--text-secondary);
+  line-height: 1.8;
+}
+
+/* --------------------------------------------------------------------------
+   Tool Info
+   -------------------------------------------------------------------------- */
+
+.tool-info {
+  margin-bottom: var(--space-3);
+}
+
+.tool-info__name {
+  display: block;
+  margin-bottom: var(--space-1);
+  font-weight: 500;
+}
+
+.tool-info__description {
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+/* --------------------------------------------------------------------------
+   Footer
+   -------------------------------------------------------------------------- */
+
+.home-footer {
+  margin-top: 64px;
+  padding: var(--space-6) 0;
+  border-top: 1px solid #e0e0e0;
+  text-align: center;
+}
+
+.home-footer__text {
+  margin: 0;
+  font-size: 14px;
+  color: var(--text-secondary);
+}
+
+.home-footer__link {
+  color: var(--brand-primary);
+  text-decoration: none;
+  font-weight: 500;
+}
+
+.home-footer__link:hover {
+  text-decoration: underline;
+}

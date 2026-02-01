@@ -1,6 +1,15 @@
 import { useRef, useEffect, useState } from 'react';
-import { useVoiceLive, createVoiceLiveConfig } from '@iloveagents/foundry-voice-live-react';
-import { SampleLayout, StatusBadge, Section, ControlGroup, ErrorPanel } from '../components';
+import {
+  useVoiceLive,
+  createVoiceLiveConfig,
+} from '@iloveagents/foundry-voice-live-react';
+import {
+  SampleLayout,
+  StatusBadge,
+  Section,
+  ControlGroup,
+  ErrorPanel,
+} from '../components';
 import { useMsal } from '@azure/msal-react';
 import { InteractionRequiredAuthError } from '@azure/msal-browser';
 
@@ -17,11 +26,13 @@ export function VoiceProxyMSAL(): JSX.Element {
       try {
         setAuthError(null);
         await instance.loginPopup({
-          scopes: ['https://ai.azure.com/.default'], // Azure AI Foundry scope for Voice Live API
+          scopes: ['https://ai.azure.com/.default'],
         });
-      } catch (error) {
-        console.error('Sign-in error:', error);
-        setAuthError(`Sign-in failed: ${error instanceof Error ? error.message : String(error)}`);
+      } catch (err) {
+        console.error('Sign-in error:', err);
+        setAuthError(
+          `Sign-in failed: ${err instanceof Error ? err.message : String(err)}`
+        );
       }
       return;
     }
@@ -33,25 +44,33 @@ export function VoiceProxyMSAL(): JSX.Element {
         account: accounts[0],
       });
       setAccessToken(response.accessToken);
-      setWsUrl(`ws://localhost:8080/ws?model=gpt-realtime&token=${encodeURIComponent(response.accessToken)}`);
+      setWsUrl(
+        `ws://localhost:8080/ws?model=gpt-realtime&token=${encodeURIComponent(response.accessToken)}`
+      );
       console.log('Access token acquired successfully');
-    } catch (error) {
-      if (error instanceof InteractionRequiredAuthError) {
+    } catch (err) {
+      if (err instanceof InteractionRequiredAuthError) {
         try {
           const response = await instance.acquireTokenPopup({
             scopes: ['https://ai.azure.com/.default'],
             account: accounts[0],
           });
           setAccessToken(response.accessToken);
-          setWsUrl(`ws://localhost:8080/ws?model=gpt-realtime&token=${encodeURIComponent(response.accessToken)}`);
+          setWsUrl(
+            `ws://localhost:8080/ws?model=gpt-realtime&token=${encodeURIComponent(response.accessToken)}`
+          );
           console.log('Access token acquired via popup');
         } catch (popupError) {
           console.error('Token acquisition failed:', popupError);
-          setAuthError(`Authentication failed: ${popupError instanceof Error ? popupError.message : String(popupError)}`);
+          setAuthError(
+            `Authentication failed: ${popupError instanceof Error ? popupError.message : String(popupError)}`
+          );
         }
       } else {
-        console.error('Token acquisition error:', error);
-        setAuthError(`Token error: ${error instanceof Error ? error.message : String(error)}`);
+        console.error('Token acquisition error:', err);
+        setAuthError(
+          `Token error: ${err instanceof Error ? err.message : String(err)}`
+        );
       }
     }
   };
@@ -72,8 +91,8 @@ export function VoiceProxyMSAL(): JSX.Element {
     },
   });
 
-  // Voice Live hook - mic capture is integrated and auto-starts!
-  const { connect, disconnect, connectionState, audioStream } = useVoiceLive(config);
+  const { connect, disconnect, connectionState, audioStream } =
+    useVoiceLive(config);
 
   useEffect(() => {
     if (audioRef.current && audioStream) {
@@ -121,22 +140,23 @@ export function VoiceProxyMSAL(): JSX.Element {
     >
       <ErrorPanel error={error || authError} />
 
-      <Section>
+      <Section title="Authentication">
         {accounts.length === 0 ? (
           <div>
-            <p style={{ marginBottom: '12px', color: '#666' }}>Not signed in. Please authenticate to continue.</p>
+            <p className="auth-section__status">
+              Not signed in. Please authenticate to continue.
+            </p>
             <button onClick={acquireToken}>Sign In with Microsoft</button>
           </div>
         ) : (
           <div>
-            <div style={{ marginBottom: '12px' }}>
-              <p style={{ fontSize: '14px', color: '#666', marginBottom: '4px' }}>
-                <strong>Signed in as:</strong> {accounts[0]?.username}
-              </p>
-              <p style={{ fontSize: '14px', color: '#666' }}>
-                <strong>Token Status:</strong> {accessToken ? '✓ Active' : '✗ Not acquired'}
-              </p>
-            </div>
+            <p className="auth-section__user">
+              <strong>Signed in as:</strong> {accounts[0]?.username}
+            </p>
+            <p className="auth-section__status">
+              <strong>Token Status:</strong>{' '}
+              {accessToken ? '✓ Active' : '✗ Not acquired'}
+            </p>
             <button onClick={handleSignOut}>Sign Out</button>
           </div>
         )}

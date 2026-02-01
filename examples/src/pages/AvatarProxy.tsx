@@ -1,6 +1,17 @@
 import { useState } from 'react';
-import { useVoiceLive, VoiceLiveAvatar, createVoiceLiveConfig } from '@iloveagents/foundry-voice-live-react';
-import { SampleLayout, StatusBadge, Section, ControlGroup, ErrorPanel } from '../components';
+import {
+  useVoiceLive,
+  VoiceLiveAvatar,
+  createVoiceLiveConfig,
+} from '@iloveagents/foundry-voice-live-react';
+import {
+  SampleLayout,
+  StatusBadge,
+  Section,
+  ControlGroup,
+  ErrorPanel,
+  AvatarContainer,
+} from '../components';
 
 export function AvatarProxy(): JSX.Element {
   const [error, setError] = useState<string | null>(null);
@@ -23,8 +34,8 @@ export function AvatarProxy(): JSX.Element {
     },
   });
 
-  // Voice Live hook - mic capture is integrated and auto-starts!
-  const { connect, disconnect, connectionState, videoStream, audioStream } = useVoiceLive(config);
+  const { connect, disconnect, connectionState, videoStream, audioStream } =
+    useVoiceLive(config);
 
   const handleStart = async (): Promise<void> => {
     try {
@@ -63,27 +74,14 @@ export function AvatarProxy(): JSX.Element {
       </ControlGroup>
 
       <Section>
-        <div style={{
-          width: '100%',
-          maxWidth: '600px',
-          margin: '0 auto',
-          backgroundColor: '#f5f5f5',
-          borderRadius: '8px',
-          padding: '20px',
-          display: 'flex',
-          justifyContent: 'center',
-          alignItems: 'center',
-          minHeight: '400px',
-          border: '1px solid #ddd'
-        }}>
+        <AvatarContainer>
           <VoiceLiveAvatar
             videoStream={videoStream}
             audioStream={audioStream}
             transparentBackground={false}
             loadingMessage="Avatar will appear here when connected"
-            style={{ width: '100%', borderRadius: '8px' }}
           />
-        </div>
+        </AvatarContainer>
       </Section>
     </SampleLayout>
   );

@@ -437,17 +437,7 @@ export function Live2DAvatarExample(): JSX.Element {
       </ControlGroup>
 
       <Section>
-        <div
-          style={{
-            background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-            borderRadius: '8px',
-            overflow: 'hidden',
-            display: 'flex',
-            justifyContent: 'center',
-            alignItems: 'center',
-            minHeight: CANVAS_HEIGHT,
-          }}
-        >
+        <div className="canvas-container-live2d">
           {modelNotFound ? (
             <div
               style={{

@@ -1,6 +1,6 @@
 {
   "name": "@iloveagents/foundry-voice-live-proxy-node",
-  "version": "1.2.0",
+  "version": "0.1.0",
   "description": "Secure WebSocket proxy server for Microsoft Foundry Voice Live API with Express and Docker support",
   "keywords": [
     "microsoft",

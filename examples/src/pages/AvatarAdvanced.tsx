@@ -1,6 +1,18 @@
 import { useState } from 'react';
-import { useVoiceLive, VoiceLiveAvatar, createVoiceLiveConfig, withTransparentBackground } from '@iloveagents/foundry-voice-live-react';
-import { SampleLayout, StatusBadge, Section, ControlGroup, ErrorPanel } from '../components';
+import {
+  useVoiceLive,
+  VoiceLiveAvatar,
+  createVoiceLiveConfig,
+  withTransparentBackground,
+} from '@iloveagents/foundry-voice-live-react';
+import {
+  SampleLayout,
+  StatusBadge,
+  Section,
+  ControlGroup,
+  ErrorPanel,
+  AvatarContainer,
+} from '../components';
 
 export function AvatarAdvanced(): JSX.Element {
   const [error, setError] = useState<string | null>(null);
@@ -39,11 +51,11 @@ export function AvatarAdvanced(): JSX.Element {
       inputAudioEchoCancellation: {
         type: 'server_echo_cancellation',
       },
-    })
+    }),
   });
 
-  // Voice Live hook - mic capture is integrated and auto-starts!
-  const { connect, disconnect, connectionState, videoStream, audioStream } = useVoiceLive(config);
+  const { connect, disconnect, connectionState, videoStream, audioStream } =
+    useVoiceLive(config);
 
   const handleStart = async (): Promise<void> => {
     try {
@@ -80,26 +92,14 @@ export function AvatarAdvanced(): JSX.Element {
       </ControlGroup>
 
       <Section>
-        <div style={{
-          width: '100%',
-          maxWidth: '800px',
-          height: '450px',
-          background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', // Gradient shows transparency
-          borderRadius: '8px',
-          overflow: 'hidden',
-          margin: '0 auto',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center'
-        }}>
+        <AvatarContainer variant="gradient">
           <VoiceLiveAvatar
             videoStream={videoStream}
             audioStream={audioStream}
             transparentBackground
             loadingMessage="Avatar will appear here when connected"
-            style={{ width: '100%', height: '100%' }}
           />
-        </div>
+        </AvatarContainer>
       </Section>
     </SampleLayout>
   );

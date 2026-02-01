@@ -1,6 +1,17 @@
 import { useEffect, useState } from 'react';
-import { useVoiceLive, VoiceLiveAvatar, createVoiceLiveConfig } from '@iloveagents/foundry-voice-live-react';
-import { SampleLayout, StatusBadge, Section, ControlGroup, ErrorPanel } from '../components';
+import {
+  useVoiceLive,
+  VoiceLiveAvatar,
+  createVoiceLiveConfig,
+} from '@iloveagents/foundry-voice-live-react';
+import {
+  SampleLayout,
+  StatusBadge,
+  Section,
+  ControlGroup,
+  ErrorPanel,
+  AvatarContainer,
+} from '../components';
 import { useMsal } from '@azure/msal-react';
 import { InteractionRequiredAuthError } from '@azure/msal-browser';
 
@@ -15,13 +26,14 @@ export function AvatarProxyMSAL(): JSX.Element {
     if (accounts.length === 0) {
       try {
         setAuthError(null);
-        // Azure Cognitive Services scope for Entra ID authentication
         await instance.loginPopup({
           scopes: ['https://ai.azure.com/.default'],
         });
-      } catch (error) {
-        console.error('Sign-in error:', error);
-        setAuthError(`Sign-in failed: ${error instanceof Error ? error.message : String(error)}`);
+      } catch (err) {
+        console.error('Sign-in error:', err);
+        setAuthError(
+          `Sign-in failed: ${err instanceof Error ? err.message : String(err)}`
+        );
       }
       return;
     }
@@ -33,25 +45,33 @@ export function AvatarProxyMSAL(): JSX.Element {
         account: accounts[0],
       });
       setAccessToken(response.accessToken);
-      setWsUrl(`ws://localhost:8080/ws?model=gpt-realtime&token=${encodeURIComponent(response.accessToken)}`);
+      setWsUrl(
+        `ws://localhost:8080/ws?model=gpt-realtime&token=${encodeURIComponent(response.accessToken)}`
+      );
       console.log('Access token acquired successfully');
-    } catch (error) {
-      if (error instanceof InteractionRequiredAuthError) {
+    } catch (err) {
+      if (err instanceof InteractionRequiredAuthError) {
         try {
           const response = await instance.acquireTokenPopup({
             scopes: ['https://ai.azure.com/.default'],
             account: accounts[0],
           });
           setAccessToken(response.accessToken);
-          setWsUrl(`ws://localhost:8080/ws?model=gpt-realtime&token=${encodeURIComponent(response.accessToken)}`);
+          setWsUrl(
+            `ws://localhost:8080/ws?model=gpt-realtime&token=${encodeURIComponent(response.accessToken)}`
+          );
           console.log('Access token acquired via popup');
         } catch (popupError) {
           console.error('Token acquisition failed:', popupError);
-          setAuthError(`Authentication failed: ${popupError instanceof Error ? popupError.message : String(popupError)}`);
+          setAuthError(
+            `Authentication failed: ${popupError instanceof Error ? popupError.message : String(popupError)}`
+          );
         }
       } else {
-        console.error('Token acquisition error:', error);
-        setAuthError(`Token error: ${error instanceof Error ? error.message : String(error)}`);
+        console.error('Token acquisition error:', err);
+        setAuthError(
+          `Token error: ${err instanceof Error ? err.message : String(err)}`
+        );
       }
     }
   };
@@ -80,7 +100,8 @@ export function AvatarProxyMSAL(): JSX.Element {
     },
   });
 
-  const { connect, disconnect, connectionState, videoStream, audioStream } = useVoiceLive(config);
+  const { connect, disconnect, connectionState, videoStream, audioStream } =
+    useVoiceLive(config);
 
   const handleStart = async (): Promise<void> => {
     if (!wsUrl) {
@@ -118,20 +139,20 @@ export function AvatarProxyMSAL(): JSX.Element {
     >
       <ErrorPanel error={error || authError} />
 
-      <Section>
-        <h3 style={{ fontSize: '16px', fontWeight: 600, marginBottom: '8px' }}>Authentication</h3>
+      <Section title="Authentication">
         {accounts.length === 0 ? (
           <div>
-            <p style={{ marginBottom: '8px', color: '#666' }}>Not signed in</p>
+            <p className="auth-section__status">Not signed in</p>
             <button onClick={acquireToken}>Sign In with Microsoft</button>
           </div>
         ) : (
           <div>
-            <p style={{ marginBottom: '4px' }}>
+            <p className="auth-section__user">
               <strong>Signed in as:</strong> {accounts[0]?.username}
             </p>
-            <p style={{ marginBottom: '8px' }}>
-              <strong>Token:</strong> {accessToken ? '✓ Acquired' : '✗ Not available'}
+            <p className="auth-section__status">
+              <strong>Token:</strong>{' '}
+              {accessToken ? '✓ Acquired' : '✗ Not available'}
             </p>
             <button onClick={handleSignOut}>Sign Out</button>
           </div>
@@ -150,27 +171,14 @@ export function AvatarProxyMSAL(): JSX.Element {
       </ControlGroup>
 
       <Section>
-        <div style={{
-          width: '100%',
-          maxWidth: '600px',
-          margin: '0 auto',
-          backgroundColor: '#f5f5f5',
-          borderRadius: '8px',
-          padding: '20px',
-          display: 'flex',
-          justifyContent: 'center',
-          alignItems: 'center',
-          minHeight: '400px',
-          border: '1px solid #ddd'
-        }}>
+        <AvatarContainer>
           <VoiceLiveAvatar
             videoStream={videoStream}
             audioStream={audioStream}
             transparentBackground={false}
             loadingMessage="Avatar will appear here when connected"
-            style={{ width: '100%', borderRadius: '8px' }}
           />
-        </div>
+        </AvatarContainer>
       </Section>
     </SampleLayout>
   );

@@ -1,6 +1,15 @@
 import { useRef, useEffect, useState } from 'react';
-import { useVoiceLive, createVoiceLiveConfig } from '@iloveagents/foundry-voice-live-react';
-import { SampleLayout, StatusBadge, Section, ControlGroup, ErrorPanel } from '../components';
+import {
+  useVoiceLive,
+  createVoiceLiveConfig,
+} from '@iloveagents/foundry-voice-live-react';
+import {
+  SampleLayout,
+  StatusBadge,
+  Section,
+  ControlGroup,
+  ErrorPanel,
+} from '../components';
 
 export function AudioVisualizer(): JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -18,7 +27,8 @@ export function AudioVisualizer(): JSX.Element {
     },
   });
 
-  const { connect, disconnect, connectionState, audioStream, audioAnalyser } = useVoiceLive(config);
+  const { connect, disconnect, connectionState, audioStream, audioAnalyser } =
+    useVoiceLive(config);
 
   // Connect audio stream to audio element for playback
   useEffect(() => {
@@ -120,19 +130,12 @@ export function AudioVisualizer(): JSX.Element {
         </button>
       </ControlGroup>
 
-      <Section>
-        <h3 style={{ fontSize: '16px', fontWeight: 600, marginBottom: '12px' }}>Audio Waveform</h3>
+      <Section title="Audio Waveform">
         <canvas
           ref={canvasRef}
           width={800}
           height={300}
-          style={{
-            border: '1px solid #ddd',
-            borderRadius: '8px',
-            background: '#1e1e1e',
-            width: '100%',
-            maxWidth: '800px',
-          }}
+          className="canvas-display"
         />
       </Section>
 

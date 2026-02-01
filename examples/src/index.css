@@ -1,3 +1,6 @@
+/* Component Styles */
+@import './styles/components.css';
+
 /* iLoveAgents Brand Colors */
 :root {
   --brand-primary: #0078d4;

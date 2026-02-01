@@ -1,24 +1,14 @@
-import { ReactNode, CSSProperties } from 'react';
+import { ReactNode } from 'react';
 
 interface SectionProps {
   title?: string;
   children: ReactNode;
-  style?: CSSProperties;
 }
 
-export function Section({ title, children, style }: SectionProps) {
+export function Section({ title, children }: SectionProps): JSX.Element {
   return (
-    <div style={{ marginBottom: '32px', ...style }}>
-      {title && (
-        <h2 style={{
-          margin: '0 0 16px 0',
-          fontSize: '20px',
-          fontWeight: 600,
-          color: '#333'
-        }}>
-          {title}
-        </h2>
-      )}
+    <div className="section">
+      {title && <h2 className="section__title">{title}</h2>}
       {children}
     </div>
   );

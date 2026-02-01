@@ -7,30 +7,20 @@ interface SampleLayoutProps {
   children: ReactNode;
 }
 
-export function SampleLayout({ title, description, children }: SampleLayoutProps) {
+export function SampleLayout({
+  title,
+  description,
+  children,
+}: SampleLayoutProps): JSX.Element {
   return (
-    <div style={{ maxWidth: '1200px', margin: '0 auto', padding: '40px' }}>
-      <div style={{ marginBottom: '32px' }}>
-        <Link to="/" style={{
-          color: '#0078d4',
-          textDecoration: 'none',
-          fontSize: '14px',
-          display: 'inline-flex',
-          alignItems: 'center',
-          marginBottom: '16px'
-        }}>
+    <div className="sample-layout">
+      <div className="sample-layout__header">
+        <Link to="/" className="sample-layout__back-link">
           ← Back to Samples
         </Link>
-        <h1 style={{ margin: '0 0 8px 0', fontSize: '32px', fontWeight: 600 }}>{title}</h1>
+        <h1 className="sample-layout__title">{title}</h1>
         {description && (
-          <p style={{
-            margin: 0,
-            color: '#666',
-            fontSize: '16px',
-            lineHeight: '1.5'
-          }}>
-            {description}
-          </p>
+          <p className="sample-layout__description">{description}</p>
         )}
       </div>
       {children}

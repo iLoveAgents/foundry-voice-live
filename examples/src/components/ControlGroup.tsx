@@ -4,16 +4,6 @@ interface ControlGroupProps {
   children: ReactNode;
 }
 
-export function ControlGroup({ children }: ControlGroupProps) {
-  return (
-    <div style={{
-      display: 'flex',
-      gap: '12px',
-      alignItems: 'center',
-      marginBottom: '24px',
-      flexWrap: 'wrap'
-    }}>
-      {children}
-    </div>
-  );
+export function ControlGroup({ children }: ControlGroupProps): JSX.Element {
+  return <div className="control-group">{children}</div>;
 }

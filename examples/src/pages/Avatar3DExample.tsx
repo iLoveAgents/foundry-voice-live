@@ -321,18 +321,8 @@ export function Avatar3DExample(): JSX.Element {
       </ControlGroup>
 
       <Section>
-        <div
-          style={{
-            background: 'linear-gradient(135deg, #0c0c1d 0%, #1a1a3e 50%, #2d1b4e 100%)',
-            borderRadius: '8px',
-            overflow: 'hidden',
-            height: 600,
-          }}
-        >
-          <Canvas
-            camera={{ position: [0, 0.85, 0.6], fov: 30 }}
-            style={{ width: '100%', height: '100%' }}
-          >
+        <div className="canvas-container-3d">
+          <Canvas camera={{ position: [0, 0.85, 0.6], fov: 30 }}>
             <ambientLight intensity={0.5} />
             <directionalLight position={[5, 5, 5]} intensity={1} />
             <Suspense fallback={<LoadingFallback />}>
