@@ -1,20 +1,7 @@
 <p align="center">
   <a href="https://iloveagents.ai">
-    <img src="https://iloveagents.ai/images/logos/logo-color-dark-one-line.svg" alt="iLoveAgents" height="100" />
+    <img src=".github/images/iloveagents-foundry-voice-banner.png" alt="Foundry Voice Live" width="800" />
   </a>
-  <br/>
-  <strong>Ship agent ideas to production on Microsoft Foundry</strong><br/>
-  <a href="https://iloveagents.ai">iloveagents.ai</a> · Guides, tools & open source for AI agent developers
-</p>
-
----
-
-<p align="center">
-  <img src=".github/images/avatar-azure.png" alt="Azure Avatar" height="200" />
-  &nbsp;&nbsp;
-  <img src=".github/images/audio-visualizer.png" alt="Audio Visualizer" height="200" />
-  &nbsp;&nbsp;
-  <img src=".github/images/avatar-live2d.png" alt="Live2D Avatar" height="200" />
 </p>
 
 # Foundry Voice Live
@@ -23,7 +10,7 @@
 [![npm version](https://img.shields.io/npm/v/@iloveagents/foundry-voice-live-react)](https://www.npmjs.com/package/@iloveagents/foundry-voice-live-react)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-SDK and tools for **Microsoft Foundry Voice Live API** - enabling real-time voice interactions with AI agents.
+SDK and tools for **Microsoft Foundry Voice Live API** - enabling real-time voice interactions with AI agents. Supports Azure video avatars, Live2D avatars, 3D avatars, and audio visualizers.
 
 > **Renamed**: This project was previously "azure-voice-live" and has been renamed to align with [Microsoft's rebranding](https://learn.microsoft.com/en-us/azure/ai-services/speech-service/voice-live) of the service.
 

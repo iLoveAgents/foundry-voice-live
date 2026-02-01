@@ -1,20 +1,7 @@
 <p align="center">
   <a href="https://iloveagents.ai">
-    <img src="https://iloveagents.ai/images/logos/logo-color-dark-one-line.svg" alt="iLoveAgents" height="100" />
+    <img src="https://raw.githubusercontent.com/iLoveAgents/foundry-voice-live/main/.github/images/iloveagents-foundry-voice-banner.png" alt="Foundry Voice Live" width="800" />
   </a>
-  <br/>
-  <strong>Ship agent ideas to production on Microsoft Foundry</strong><br/>
-  <a href="https://iloveagents.ai">iloveagents.ai</a> · Guides, tools & open source for AI agent developers
-</p>
-
----
-
-<p align="center">
-  <img src="https://raw.githubusercontent.com/iLoveAgents/foundry-voice-live/main/.github/images/avatar-azure.png" alt="Azure Avatar" height="200" />
-  &nbsp;&nbsp;
-  <img src="https://raw.githubusercontent.com/iLoveAgents/foundry-voice-live/main/.github/images/audio-visualizer.png" alt="Audio Visualizer" height="200" />
-  &nbsp;&nbsp;
-  <img src="https://raw.githubusercontent.com/iLoveAgents/foundry-voice-live/main/.github/images/avatar-live2d.png" alt="Live2D Avatar" height="200" />
 </p>
 
 # Foundry Voice Live React SDK
@@ -24,7 +11,7 @@
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.0+-blue.svg)](https://www.typescriptlang.org/)
 [![MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-**React hooks and components for [Microsoft Foundry Voice Live API](https://learn.microsoft.com/azure/ai-services/speech-service/voice-live).** Build real-time voice AI apps with avatar video, function calling, and TypeScript support.
+**React hooks and components for [Microsoft Foundry Voice Live API](https://learn.microsoft.com/azure/ai-services/speech-service/voice-live).** Build real-time voice AI apps with Azure video avatars, Live2D avatars, 3D avatars, audio visualizers, function calling, and TypeScript support.
 
 ## Install
 
