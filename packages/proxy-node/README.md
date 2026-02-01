@@ -1,251 +1,231 @@
 # Azure AI Foundry Voice Live Proxy
 
-[![CI](https://github.com/iLoveAgents/foundry-voice-live-proxy/actions/workflows/ci.yml/badge.svg)](https://github.com/iLoveAgents/foundry-voice-live-proxy/actions/workflows/ci.yml)
-[![Tests](https://github.com/iLoveAgents/foundry-voice-live-proxy/actions/workflows/tests.yml/badge.svg)](https://github.com/iLoveAgents/foundry-voice-live-proxy/actions/workflows/tests.yml)
-[![CodeQL](https://github.com/iLoveAgents/foundry-voice-live-proxy/actions/workflows/codeql.yml/badge.svg)](https://github.com/iLoveAgents/foundry-voice-live-proxy/actions/workflows/codeql.yml)
+[![npm version](https://img.shields.io/npm/v/@iloveagents/foundry-voice-live-proxy-node.svg)](https://www.npmjs.com/package/@iloveagents/foundry-voice-live-proxy-node)
+[![CI](https://github.com/iLoveAgents/foundry-voice-live/actions/workflows/ci.yml/badge.svg)](https://github.com/iLoveAgents/foundry-voice-live/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-Secure WebSocket proxy for Azure AI Foundry Voice Live (Voice, Avatar, Agent). Keeps credentials server-side, enforces security (CORS, rate limits, headers), and forwards messages transparently.
+Secure WebSocket proxy for Azure AI Foundry Voice Live API. Supports Voice, Avatar, and Agent modes.
 
-This proxy is required for browser-based apps because browser WebSockets cannot send Authorization headers, and Azure AI Foundry's Realtime endpoints do not accept tokens via the query string; the proxy injects credentials server-side and forwards the stream securely.
+**Why use this proxy?** Browser WebSockets cannot send Authorization headers, and Azure AI Foundry endpoints require them. This proxy injects credentials server-side and forwards messages transparently.
 
-## Quick start (local)
+## Installation
 
-Prerequisites: Node.js 18+, Azure subscription + Azure AI Foundry (hub/project). Setup: <https://learn.microsoft.com/azure/ai-studio/>
-
-1. Install
-
-- WS: ws://localhost:8080/ws
-- Health: <http://localhost:8080/health>
-
-## Configuration (env)
-
-Copy from `.env.example`. Common settings:
+**npm:**
 
 ```bash
-# Server
-PORT=8080
-API_VERSION=2025-10-01
-
-# Security
-ALLOWED_ORIGINS=http://localhost:3000
-RATE_LIMIT_WINDOW_MS=60000
-RATE_LIMIT_MAX_REQUESTS=100
-MAX_CONNECTIONS=1000
-
-# Azure (required)
-FOUNDRY_RESOURCE_NAME=your-resource-name
-
-# Standard mode (optional if client sends MSAL token)
-FOUNDRY_API_KEY=your-api-key
-
-# Telemetry (optional)
-# APPLICATIONINSIGHTS_CONNECTION_STRING=InstrumentationKey=...;IngestionEndpoint=...
-```
-
-## Run with Docker
-
-Using docker-compose (recommended):
-
-```bash
-cp .env.example .env
-docker-compose up -d
-docker-compose logs -f
-# docker-compose down
-```
-
-Using Docker directly:
-
-```bash
-npm run docker:build
-npm run docker:run
-# or
-docker build -t foundry-voice-live-proxy .
-docker run -p 8080:8080 --env-file .env foundry-voice-live-proxy
-```
-
-### Docker health checks
-
-- App endpoint: `GET /health`
-- Dockerfile and docker-compose include a `HEALTHCHECK` probing `/health`.
-- Quick verify:
-
-```sh
-curl http://localhost:8080/health
-```
-
-## Pull and run from Azure Container Registry (ACR)
-
-Public image:
-
-```bash
-docker pull iloveagents.azurecr.io/foundry-voice-live-proxy:main
-docker run -p 8080:8080 \
-  -e FOUNDRY_RESOURCE_NAME=your-resource \
-  -e FOUNDRY_API_KEY=your-key \
-  iloveagents.azurecr.io/foundry-voice-live-proxy:main
-```
-
-## Host on Microsoft Azure
-
-### Option 1: Azure Container Apps
-
-## Advanced Configuration
-
-### Authentication Options
-
-**API Key (shared access):**
-
-Use when: Quick demos, internal tools, shared access OK
-
-**Frontend:**
-
-```typescript
-// Mode is automatically detected as "standard" (no agentId/projectName)
-proxyUrl: "ws://localhost:8080/ws?model=gpt-realtime";
-```
-
-**Backend (.env):**
-
-```bash
-FOUNDRY_RESOURCE_NAME=your-resource
-FOUNDRY_API_KEY=your-api-key  # Secured server-side
-```
-
-**Benefits:**
-
-- Simple setup
-- No user authentication needed
-- Good for internal applications
-
-**MSAL Token (user-level auth):**
-
-Use when: Enterprise apps, need per-user auditing, SSO integration
-
-**Frontend:**
-
-```typescript
-const token = await msalInstance.acquireTokenSilent({
-  scopes: ["https://ai.azure.com/.default"],
-});
-
-// Mode is automatically detected as "standard" (no agentId/projectName)
-proxyUrl: `ws://localhost:8080/ws?model=gpt-realtime&token=${token.accessToken}`;
-```
-
-**Backend (.env):**
-
-```bash
-FOUNDRY_RESOURCE_NAME=your-resource
-# No API key needed - uses user's MSAL token
-```
-
-**Benefits:**
-
-- No API keys stored anywhere
-- Each user authenticated individually
-- Tokens auto-expire (1 hour)
-- Works with Conditional Access policies
-- Enterprise SSO support
-
-**Setup required:**
-
-1. Azure App Registration with scope: `https://ai.azure.com/.default`
-2. Assign "Cognitive Services User" role on AI Foundry resource
-3. Install `@azure/msal-react` and configure MsalProvider
-
-**Agent Mode (Azure AI Foundry Agent Service):**
-
-Use when: Using custom agents built in Azure AI Foundry
-
-**Frontend:**
-
-```typescript
-const token = await msalInstance.acquireTokenSilent({
-  scopes: ["https://ai.azure.com/.default"],
-});
-
-// Mode is automatically detected as "agent" (agentId and projectName present)
-proxyUrl: `ws://localhost:8080/ws?agentId=asst_abc123&projectName=my-project&token=${token.accessToken}`;
-```
-
-**Backend (.env):**
-
-```bash
-FOUNDRY_RESOURCE_NAME=your-resource
-# No API key needed - uses user's MSAL token
-# agentId and projectName come from client (not .env)
-```
-
-**Benefits:**
-
-- User-level authentication with custom agents
-- Per-user agent access control
-- MSAL token auto-expires (1 hour)
-- Transparent proxy - client controls agent selection
-
-**Requirements:**
-
-1. Azure App Registration with scope: `https://ai.azure.com/.default`
-2. User has access to the specified agent in Azure AI Foundry
-3. Client must provide both `agentId` and `projectName` in URL
-
-### Deployment Options
-
-**PM2:**
-
-```bash
-npm install -g pm2
-pm2 start dist/index.js --name azure-voice-proxy
-pm2 save
-pm2 startup
+npm install @iloveagents/foundry-voice-live-proxy-node
 ```
 
 **Docker:**
 
 ```bash
+docker pull ghcr.io/iloveagents/foundry-voice-live-proxy:latest
+```
+
+## Quick Start
+
+1. **Configure environment**
+
+   ```bash
+   # Create .env file
+   cat > .env << 'EOF'
+   FOUNDRY_RESOURCE_NAME=your-resource-name
+   FOUNDRY_API_KEY=your-api-key
+   EOF
+   ```
+
+2. **Run the proxy**
+
+   ```bash
+   # With Docker (recommended)
+   docker run -p 8080:8080 --env-file .env ghcr.io/iloveagents/foundry-voice-live-proxy:latest
+
+   # Or with npm
+   npx @iloveagents/foundry-voice-live-proxy-node
+   ```
+
+3. **Verify it's running**
+
+   ```bash
+   curl http://localhost:8080/health
+   ```
+
+4. **Connect from your app**
+
+   ```typescript
+   const ws = new WebSocket("ws://localhost:8080/ws");
+   ```
+
+## Configuration
+
+Copy `.env.example` to `.env` and configure:
+
+```bash
+# Required
+FOUNDRY_RESOURCE_NAME=your-resource-name
+
+# Authentication (one of these)
+FOUNDRY_API_KEY=your-api-key          # Option 1: API key (simpler)
+# Or let clients pass MSAL tokens     # Option 2: Per-user auth (enterprise)
+
+# Server (optional)
+PORT=8080
+API_VERSION=2025-10-01
+
+# Security (optional)
+ALLOWED_ORIGINS=http://localhost:3000,https://your-app.com
+RATE_LIMIT_MAX_REQUESTS=100
+RATE_LIMIT_WINDOW_MS=60000
+MAX_CONNECTIONS=1000
+
+# Telemetry (optional)
+# APPLICATIONINSIGHTS_CONNECTION_STRING=InstrumentationKey=...
+```
+
+## Authentication Modes
+
+### 1. API Key (Shared Access)
+
+Best for: demos, internal tools, trusted environments.
+
+```typescript
+// Frontend - no token needed
+const ws = new WebSocket("ws://localhost:8080/ws");
+```
+
+```bash
+# Backend .env
+FOUNDRY_RESOURCE_NAME=your-resource
+FOUNDRY_API_KEY=your-api-key  # Secured server-side
+```
+
+### 2. MSAL Token (Per-User Auth)
+
+Best for: enterprise apps, per-user auditing, SSO.
+
+```typescript
+// Frontend - acquire and pass token
+const token = await msalInstance.acquireTokenSilent({
+  scopes: ["https://ai.azure.com/.default"],
+});
+const ws = new WebSocket(`ws://localhost:8080/ws?token=${token.accessToken}`);
+```
+
+```bash
+# Backend .env
+FOUNDRY_RESOURCE_NAME=your-resource
+# No API key - uses client's MSAL token
+```
+
+**Setup:**
+
+1. Create Azure App Registration with `https://ai.azure.com/.default` scope
+2. Assign "Cognitive Services User" role on your AI Foundry resource
+3. Configure MSAL in your frontend app
+
+### 3. Agent Mode
+
+Best for: custom agents built in Azure AI Foundry.
+
+```typescript
+// Frontend - pass agentId, projectName, and token
+const token = await msalInstance.acquireTokenSilent({
+  scopes: ["https://ai.azure.com/.default"],
+});
+const ws = new WebSocket(
+  `ws://localhost:8080/ws?agentId=asst_abc123&projectName=my-project&token=${token.accessToken}`
+);
+```
+
+```bash
+# Backend .env
+FOUNDRY_RESOURCE_NAME=your-resource
+# agentId and projectName come from client URL
+```
+
+**Mode detection is automatic:** Agent mode activates when both `agentId` and `projectName` are present.
+
+## Deployment
+
+### Docker Compose (Recommended)
+
+```bash
 cp .env.example .env
+# Edit .env with your values
 docker-compose up -d
 ```
 
-See "Run with Docker" section above for details.
+### Docker
 
-**Azure:** See "Host on Microsoft Azure" section above for Container Apps, App Service, and Container Instances.
+```bash
+docker build -t foundry-voice-live-proxy .
+docker run -p 8080:8080 --env-file .env foundry-voice-live-proxy
+```
 
-## Reference
+### GitHub Container Registry
 
-### Environment Variables
+```bash
+docker pull ghcr.io/iloveagents/foundry-voice-live-proxy:latest
+docker run -p 8080:8080 \
+  -e FOUNDRY_RESOURCE_NAME=your-resource \
+  -e FOUNDRY_API_KEY=your-key \
+  ghcr.io/iloveagents/foundry-voice-live-proxy:latest
+```
 
-| Variable                    | Required    | Description                  | Default                 |
-| --------------------------- | ----------- | ---------------------------- | ----------------------- |
-| `PORT`                      | No          | Server port                  | 8080                    |
-| `API_VERSION`               | No          | Azure API version            | 2025-10-01              |
-| `FOUNDRY_RESOURCE_NAME` | Yes         | Azure resource name          | -                       |
-| `FOUNDRY_API_KEY`          | Conditional | API key for Voice/Avatar     | -                       |
-| `ALLOWED_ORIGINS`           | No          | Comma-separated CORS origins | `http://localhost:3000` |
-| `RATE_LIMIT_WINDOW_MS`      | No          | Rate limit time window (ms)  | 60000                   |
-| `RATE_LIMIT_MAX_REQUESTS`   | No          | Max requests per window      | 100                     |
-| `MAX_CONNECTIONS`           | No          | Max concurrent connections   | 1000                    |
+### PM2 (Node.js)
+
+```bash
+npm install -g pm2
+pm2 start node_modules/@iloveagents/foundry-voice-live-proxy-node/dist/index.js --name voice-proxy
+pm2 save && pm2 startup
+```
+
+### Azure Container Apps
+
+```bash
+az containerapp create \
+  --name voice-proxy \
+  --resource-group your-rg \
+  --environment your-env \
+  --image ghcr.io/iloveagents/foundry-voice-live-proxy:latest \
+  --target-port 8080 \
+  --ingress external \
+  --env-vars FOUNDRY_RESOURCE_NAME=your-resource FOUNDRY_API_KEY=your-key
+```
+
+## API Reference
+
+### Endpoints
+
+| Endpoint  | Method | Description                |
+| --------- | ------ | -------------------------- |
+| `/`       | GET    | API info and version       |
+| `/health` | GET    | Health check (for probes)  |
+| `/ws`     | WS     | WebSocket proxy connection |
 
 ### WebSocket Query Parameters
 
-**Mode Detection:** Mode is automatically detected - Agent mode when `agentId` and `projectName` are present, otherwise Standard mode.
+| Parameter     | Required    | Description                      | Example        |
+| ------------- | ----------- | -------------------------------- | -------------- |
+| `token`       | Conditional | MSAL access token                | `eyJ0eXAi...`  |
+| `agentId`     | Conditional | Agent ID (enables Agent mode)    | `asst_123xyz`  |
+| `projectName` | Conditional | Project name (with agentId)      | `my-project`   |
+| `model`       | No          | Model override                   | `gpt-realtime` |
 
-| Parameter     | Required    | Description                                          | Example        |
-| ------------- | ----------- | ---------------------------------------------------- | -------------- |
-| `model`       | No          | Model name (Standard mode)                           | `gpt-realtime` |
-| `token`       | Conditional | MSAL access token                                    | From Azure AD  |
-| `agentId`     | Conditional | Agent ID (triggers Agent mode, requires projectName) | `asst_123xyz`  |
-| `projectName` | Conditional | Project name (triggers Agent mode, requires agentId) | `my-project`   |
+### Environment Variables
 
-### API Endpoints
+| Variable                   | Required    | Default                 | Description                  |
+| -------------------------- | ----------- | ----------------------- | ---------------------------- |
+| `FOUNDRY_RESOURCE_NAME`    | Yes         | -                       | Azure AI Foundry resource    |
+| `FOUNDRY_API_KEY`          | Conditional | -                       | API key (if not using MSAL)  |
+| `PORT`                     | No          | `8080`                  | Server port                  |
+| `API_VERSION`              | No          | `2025-10-01`            | Azure API version            |
+| `ALLOWED_ORIGINS`          | No          | `http://localhost:3000` | CORS origins (comma-sep)     |
+| `RATE_LIMIT_MAX_REQUESTS`  | No          | `100`                   | Max requests per window      |
+| `RATE_LIMIT_WINDOW_MS`     | No          | `60000`                 | Rate limit window (ms)       |
+| `MAX_CONNECTIONS`          | No          | `1000`                  | Max concurrent connections   |
 
-| Endpoint  | Method | Description                 |
-| --------- | ------ | --------------------------- |
-| `/`       | GET    | API information and version |
-| `/health` | GET    | Health check endpoint       |
-| `/ws`     | WS     | WebSocket proxy connection  |
-
-**Health Check Response:**
+### Health Check Response
 
 ```json
 {
@@ -256,20 +236,16 @@ See "Run with Docker" section above for details.
 }
 ```
 
-**Common errors:**
+## Troubleshooting
 
-- Connection fails: Verify `.env` values and check `curl http://localhost:8080/health`
-- "Blocked by CORS": Add origin to `ALLOWED_ORIGINS`
-- "Too many requests": Rate limit exceeded, adjust limits or wait
-- "Missing token parameter": Agent mode requires MSAL token
-- "FOUNDRY_API_KEY required": Standard mode needs API key OR MSAL token
+| Error | Solution |
+| ----- | -------- |
+| Connection fails | Check `.env` values, verify with `curl http://localhost:8080/health` |
+| "Blocked by CORS" | Add your origin to `ALLOWED_ORIGINS` |
+| "Too many requests" | Rate limit hit - wait or increase `RATE_LIMIT_MAX_REQUESTS` |
+| "Missing token" | Agent mode requires MSAL token in URL |
+| "API key required" | Standard mode needs `FOUNDRY_API_KEY` or client MSAL token |
 
 ## License
 
-MIT
-
-Made with 💜 [iLoveAgents](https://iloveagents.ai)
-
-## Contributing
-
-PRs welcome. This README focuses on running and configuring the proxy; CI/workflow details are intentionally omitted.
+MIT - Made with 💜 by [iLoveAgents](https://iloveagents.ai)
