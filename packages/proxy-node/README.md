@@ -246,6 +246,13 @@ az containerapp create \
 | "Missing token" | Agent mode requires MSAL token in URL |
 | "API key required" | Standard mode needs `FOUNDRY_API_KEY` or client MSAL token |
 
+## Support
+
+If this library made your life easier, a coffee is a simple way to say thanks ☕
+It directly supports maintenance and future features.
+
+[![Buy Me A Coffee](https://img.shields.io/badge/Buy%20Me%20A%20Coffee-support-yellow.svg)](https://buymeacoffee.com/leitwolf)
+
 ## License
 
 MIT - Made with 💜 by [iLoveAgents](https://iloveagents.ai)

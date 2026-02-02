@@ -332,6 +332,13 @@ just dev          # Opens at http://localhost:3001
 - **[Examples](https://github.com/iLoveAgents/foundry-voice-live/tree/main/examples)** - Full working examples
 - **[iLoveAgents Blog](https://iloveagents.ai)** - Guides for Microsoft Foundry & Agent Framework
 
+## Support
+
+If this library made your life easier, a coffee is a simple way to say thanks ☕
+It directly supports maintenance and future features.
+
+[![Buy Me A Coffee](https://img.shields.io/badge/Buy%20Me%20A%20Coffee-support-yellow.svg)](https://buymeacoffee.com/leitwolf)
+
 ## License
 
 MIT - [iLoveAgents](https://iloveagents.ai)
