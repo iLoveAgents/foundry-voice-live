@@ -1,6 +1,6 @@
 {
   "name": "@iloveagents/foundry-voice-live-react",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "React library for Microsoft Foundry Voice Live API. Full TypeScript support with optimized presets and configuration helpers.",
   "keywords": [
     "microsoft",
