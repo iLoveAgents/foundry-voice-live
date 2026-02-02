@@ -80,16 +80,56 @@ Microphone starts automatically when connected. No manual audio setup needed.
 
 ## Production
 
-**Never expose API keys in client-side code.** Use the proxy package:
+**Never expose API keys in client-side code.** Use a proxy server to secure your credentials.
+
+### 1. Start the Proxy
 
 ```bash
-npm install @iloveagents/foundry-voice-live-proxy-node
+# Docker (recommended)
+docker run -p 8080:8080 \
+  -e FOUNDRY_RESOURCE_NAME=your-foundry-resource \
+  -e FOUNDRY_API_KEY=your-api-key \
+  ghcr.io/iloveagents/foundry-voice-live-proxy:latest
 ```
 
-Two secure options:
+Or with npx:
 
-1. **API Key via Proxy** - Backend holds the key, client connects through proxy
-2. **Microsoft Entra ID (MSAL)** - User-level authentication with Azure AD
+```bash
+FOUNDRY_RESOURCE_NAME=your-foundry-resource \
+FOUNDRY_API_KEY=your-api-key \
+npx @iloveagents/foundry-voice-live-proxy-node
+```
+
+### 2. Connect from Your App
+
+```tsx
+import { useVoiceLive } from '@iloveagents/foundry-voice-live-react';
+
+function App() {
+  const { connect, disconnect, connectionState, audioStream } = useVoiceLive({
+    connection: {
+      proxyUrl: 'ws://localhost:8080/ws',  // Proxy handles auth
+    },
+    session: {
+      instructions: 'You are a helpful assistant.',
+    },
+  });
+
+  return (
+    <>
+      <p>Status: {connectionState}</p>
+      <button onClick={connect}>Start</button>
+      <button onClick={disconnect}>Stop</button>
+      <audio ref={el => { if (el && audioStream) el.srcObject = audioStream; }} autoPlay />
+    </>
+  );
+}
+```
+
+### Authentication Options
+
+- **API Key via Proxy** — Backend holds the key, client uses `proxyUrl`
+- **MSAL Token** — Pass token in query string: `proxyUrl + '?token=' + msalToken`
 
 See [proxy package docs](https://www.npmjs.com/package/@iloveagents/foundry-voice-live-proxy-node) and [proxy examples](https://github.com/iLoveAgents/foundry-voice-live/tree/main/examples/src/pages).
 
