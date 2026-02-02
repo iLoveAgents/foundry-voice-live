@@ -632,9 +632,24 @@ export function withWordTimestamps(
  *
  * @example
  * ```tsx
+ * // Basic transcription
  * const config = withTranscription({
  *   model: 'whisper-1',
  *   language: 'en'
+ * }, baseConfig);
+ *
+ * // With phrase list (Voice Live, azure-speech only)
+ * const config = withTranscription({
+ *   model: 'azure-speech',
+ *   language: 'en',
+ *   phraseList: ['Neo QLED TV', 'TUF Gaming', 'AutoQuote Explorer']
+ * }, baseConfig);
+ *
+ * // With custom speech models (Voice Live, azure-speech only)
+ * const config = withTranscription({
+ *   model: 'azure-speech',
+ *   language: 'en',
+ *   customSpeech: { 'zh-CN': 'your-custom-model-id' }
  * }, baseConfig);
  * ```
  */
@@ -643,6 +658,10 @@ export function withTranscription(
     model?: 'azure-speech' | 'whisper-1' | 'gpt-4o-transcribe' | 'gpt-4o-mini-transcribe';
     language?: string;
     prompt?: string;
+    /** Phrase list for recognition improvement (Voice Live, azure-speech only) */
+    phraseList?: string[];
+    /** Custom speech models per locale (Voice Live, azure-speech only) */
+    customSpeech?: Record<string, string>;
   } = {},
   config: Partial<VoiceLiveSessionConfig> = {}
 ): Partial<VoiceLiveSessionConfig> {
@@ -652,6 +671,8 @@ export function withTranscription(
       model: options.model || 'whisper-1',
       language: options.language,
       prompt: options.prompt,
+      phraseList: options.phraseList,
+      customSpeech: options.customSpeech,
     },
   };
 }

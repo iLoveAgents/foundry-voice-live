@@ -158,6 +158,20 @@ export type TranscriptionModel =
   | 'gpt-4o-transcribe-diarize';
 
 /**
+ * Custom speech model configuration per locale (Voice Live)
+ * Maps locale codes to custom speech model IDs
+ *
+ * @example
+ * ```ts
+ * // Use custom model for Chinese, base model for English
+ * customSpeech: {
+ *   'zh-CN': '847cb03d-7f22-4b11-444-e1be1d77bf17'
+ * }
+ * ```
+ */
+export type CustomSpeechConfig = Record<string, string>;
+
+/**
  * Input audio transcription configuration
  * Used with non-multimodal models (gpt-4o, gpt-4.1, gpt-5, etc.)
  */
@@ -180,6 +194,29 @@ export interface InputAudioTranscription {
    * - For gpt-4o-transcribe: free text like "expect words related to technology"
    */
   prompt?: string;
+
+  /**
+   * Phrase list for lightweight just-in-time customization (Voice Live)
+   * Improves recognition accuracy for specific words/phrases
+   *
+   * Note: Only works with model: 'azure-speech'
+   * Does not support gpt-realtime, gpt-4o-mini-realtime, phi4-mm-realtime
+   *
+   * @example ['Neo QLED TV', 'TUF Gaming', 'AutoQuote Explorer']
+   */
+  phraseList?: string[];
+
+  /**
+   * Custom speech models per locale (Voice Live)
+   * Maps locale codes to custom speech model IDs
+   * Requires model: 'azure-speech'
+   *
+   * Note: Custom speech models must be available on the same
+   * Microsoft Foundry resource used to call the Voice Live API
+   *
+   * @example { 'zh-CN': '847cb03d-7f22-4b11-444-e1be1d77bf17' }
+   */
+  customSpeech?: CustomSpeechConfig;
 }
 
 // ============================================================================

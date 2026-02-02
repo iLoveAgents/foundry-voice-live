@@ -21,24 +21,54 @@ npm install @iloveagents/foundry-voice-live-react
 
 ## Quick Start
 
+### Voice Only
+
 ```tsx
-import { useVoiceLive, VoiceLiveAvatar } from '@iloveagents/foundry-voice-live-react';
+import { useVoiceLive } from '@iloveagents/foundry-voice-live-react';
 
 function App() {
-  const { videoStream, connect, disconnect, connectionState } = useVoiceLive({
+  const { connect, disconnect, connectionState, audioStream } = useVoiceLive({
     connection: {
-      resourceName: 'your-resource',
-      apiKey: process.env.AZURE_KEY, // See "Production" below
+      resourceName: 'your-foundry-resource',  // Azure AI Foundry resource name
+      apiKey: 'your-foundry-api-key',         // For dev only - see "Production" below
     },
     session: {
       instructions: 'You are a helpful assistant.',
-      voice: 'en-US-Ava:DragonHDLatestNeural',
     },
   });
 
   return (
     <>
-      <VoiceLiveAvatar videoStream={videoStream} />
+      <p>Status: {connectionState}</p>
+      <button onClick={connect} disabled={connectionState === 'connected'}>Start</button>
+      <button onClick={disconnect} disabled={connectionState !== 'connected'}>Stop</button>
+      <audio ref={el => { if (el && audioStream) el.srcObject = audioStream; }} autoPlay />
+    </>
+  );
+}
+```
+
+### With Avatar
+
+```tsx
+import { useVoiceLive, VoiceLiveAvatar } from '@iloveagents/foundry-voice-live-react';
+
+function App() {
+  const { videoStream, audioStream, connect, disconnect } = useVoiceLive({
+    connection: {
+      resourceName: 'your-foundry-resource',
+      apiKey: 'your-foundry-api-key',
+    },
+    session: {
+      instructions: 'You are a helpful assistant.',
+      voice: { name: 'en-US-AvaMultilingualNeural', type: 'azure-standard' },
+      avatar: { character: 'lisa', style: 'casual-sitting' },
+    },
+  });
+
+  return (
+    <>
+      <VoiceLiveAvatar videoStream={videoStream} audioStream={audioStream} />
       <button onClick={connect}>Start</button>
       <button onClick={disconnect}>Stop</button>
     </>
@@ -65,70 +95,114 @@ See [proxy package docs](https://www.npmjs.com/package/@iloveagents/foundry-voic
 
 ## Configuration Helpers
 
-Compose configuration with fluent helpers:
+Use helper functions to build session configuration:
 
 ```tsx
 import {
   useVoiceLive,
+  createVoiceLiveConfig,
   withAvatar,
-  withSemanticVAD,
-  withEchoCancellation,
-  withTransparentBackground,
-  compose,
 } from '@iloveagents/foundry-voice-live-react';
 
-const config = compose(
-  withEchoCancellation,
-  withSemanticVAD({ threshold: 0.5 }),
-  withAvatar('lisa', 'casual-standing'),
-  withTransparentBackground,
-);
-
-const { videoStream } = useVoiceLive({
-  connection: { resourceName: 'your-resource', apiKey },
-  session: config({ instructions: 'You are helpful.' }),
+// withAvatar(character, style, options, baseConfig)
+const config = createVoiceLiveConfig({
+  connection: { resourceName: 'your-foundry-resource', apiKey: 'your-key' },
+  session: withAvatar('lisa', 'casual-sitting', { codec: 'h264' }, {
+    instructions: 'You are helpful.',
+    voice: { name: 'en-US-AvaMultilingualNeural', type: 'azure-standard' },
+  }),
 });
+
+const { videoStream, audioStream } = useVoiceLive(config);
 ```
 
 ### Available Helpers
 
-| Category   | Helpers                                                                                           |
-| ---------- | ------------------------------------------------------------------------------------------------- |
-| **Voice**  | `withVoice`, `withHDVoice`, `withCustomVoice`                                                     |
-| **Avatar** | `withAvatar`, `withTransparentBackground`, `withBackgroundImage`, `withAvatarCrop`                |
-| **VAD**    | `withSemanticVAD`, `withMultilingualVAD`, `withEndOfUtterance`, `withoutTurnDetection`            |
-| **Audio**  | `withEchoCancellation`, `withDeepNoiseReduction`, `withNearFieldNoiseReduction`, `withSampleRate` |
-| **Output** | `withViseme`, `withWordTimestamps`, `withTranscription`                                           |
-| **Tools**  | `withTools`, `withToolChoice`                                                                     |
+| Category          | Helpers                                                                                           |
+| ----------------- | ------------------------------------------------------------------------------------------------- |
+| **Voice**         | `withVoice`, `withHDVoice`, `withCustomVoice`                                                     |
+| **Avatar**        | `withAvatar`, `withTransparentBackground`, `withBackgroundImage`, `withAvatarCrop`                |
+| **VAD**           | `withSemanticVAD`, `withMultilingualVAD`, `withEndOfUtterance`, `withoutTurnDetection`            |
+| **Audio**         | `withEchoCancellation`, `withDeepNoiseReduction`, `withNearFieldNoiseReduction`, `withSampleRate` |
+| **Transcription** | `withTranscription` (supports `phraseList`, `customSpeech`)                                       |
+| **Output**        | `withViseme`, `withWordTimestamps`                                                                |
+| **Tools**         | `withTools`, `withToolChoice`                                                                     |
+
+### Transcription Customization
+
+Improve speech recognition accuracy with phrase lists and custom speech models:
+
+```tsx
+import { withTranscription } from '@iloveagents/foundry-voice-live-react';
+
+// Phrase list - improve recognition for specific terms
+const config = withTranscription({
+  model: 'azure-speech',
+  language: 'en',
+  phraseList: ['Neo QLED TV', 'TUF Gaming', 'AutoQuote Explorer'],
+});
+
+// Custom speech models - use trained models per locale
+const config = withTranscription({
+  model: 'azure-speech',
+  language: 'en',
+  customSpeech: {
+    'zh-CN': 'your-custom-model-id',  // Custom model for Chinese
+  },
+});
+```
+
+> **Note:** `phraseList` and `customSpeech` require `model: 'azure-speech'` and don't work with gpt-realtime models.
 
 ## Function Calling
 
+Define tools the AI can call, then handle execution and send results back:
+
 ```tsx
-const { videoStream, connect } = useVoiceLive({
-  connection: { resourceName, apiKey },
-  session: withTools([{
-    type: 'function',
-    name: 'get_weather',
-    description: 'Get weather for a location',
-    parameters: {
-      type: 'object',
-      properties: { location: { type: 'string' } },
-      required: ['location'],
-    },
-  }], { instructions: 'You can check the weather.' }),
-  toolExecutor: async (call) => {
-    if (call.name === 'get_weather') {
-      return await fetchWeather(call.arguments.location);
-    }
+import { useRef, useCallback } from 'react';
+import { useVoiceLive } from '@iloveagents/foundry-voice-live-react';
+
+const sendEventRef = useRef<(event: any) => void>(() => {});
+
+const toolExecutor = useCallback((name: string, args: string, callId: string) => {
+  const parsedArgs = JSON.parse(args);
+  let result = {};
+
+  if (name === 'get_weather') {
+    result = { temperature: '72°F', location: parsedArgs.location };
+  }
+
+  // Send result back to the API
+  sendEventRef.current({
+    type: 'conversation.item.create',
+    item: { type: 'function_call_output', call_id: callId, output: JSON.stringify(result) },
+  });
+  sendEventRef.current({ type: 'response.create' });
+}, []);
+
+const { connect, sendEvent } = useVoiceLive({
+  connection: { resourceName: 'your-foundry-resource', apiKey: 'your-key' },
+  session: {
+    instructions: 'You can check the weather.',
+    tools: [{
+      type: 'function',
+      name: 'get_weather',
+      description: 'Get weather for a location',
+      parameters: { type: 'object', properties: { location: { type: 'string' } }, required: ['location'] },
+    }],
+    toolChoice: 'auto',
   },
+  toolExecutor,
 });
+
+sendEventRef.current = sendEvent;
 ```
 
 ## Event Handling
 
 ```tsx
 const { connect } = useVoiceLive({
-  connection: { resourceName, apiKey },
+  connection: { resourceName: 'your-foundry-resource', apiKey: 'your-key' },
   onEvent: (event) => {
     switch (event.type) {
       case 'session.created':
@@ -173,11 +247,13 @@ Returns:
 
 ```tsx
 <VoiceLiveAvatar
-  videoStream={videoStream}
+  videoStream={videoStream}        // Required: video from useVoiceLive
+  audioStream={audioStream}        // Required: audio from useVoiceLive
   enableChromaKey={true}           // Remove green background
   chromaKeyColor="#00FF00"         // Key color
   chromaKeySimilarity={0.4}        // Color match threshold
   chromaKeySmoothness={0.1}        // Edge smoothness
+  loadingMessage="Loading..."      // Shown before video starts
 />
 ```
 
