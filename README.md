@@ -37,34 +37,32 @@ Microsoft Foundry Voice Live API provides a unified solution for low-latency, hi
 ### Installation
 
 ```bash
-# React SDK
 npm install @iloveagents/foundry-voice-live-react
-
-# Optional: Proxy server for secure authentication
-npm install @iloveagents/foundry-voice-live-proxy-node
 ```
 
-### Basic Usage
+### Voice Only
 
 ```tsx
 import { useVoiceLive } from '@iloveagents/foundry-voice-live-react';
 
-function VoiceAgent() {
-  const { status, connect, disconnect, sendAudio } = useVoiceLive({
-    endpoint: 'wss://your-resource.cognitiveservices.azure.com',
-    apiKey: 'your-api-key', // Use proxy in production!
-    model: 'gpt-4o',
-    voice: 'en-US-JennyNeural',
-    onMessage: (event) => console.log('Response:', event),
-    onAudio: (audio) => playAudio(audio),
+function App() {
+  const { connect, disconnect, connectionState, audioStream } = useVoiceLive({
+    connection: {
+      resourceName: 'your-foundry-resource',  // Azure AI Foundry resource name
+      apiKey: 'your-foundry-api-key',         // For dev only - use proxy in production!
+    },
+    session: {
+      instructions: 'You are a helpful assistant.',
+    },
   });
 
   return (
-    <div>
-      <p>Status: {status}</p>
-      <button onClick={connect}>Start</button>
-      <button onClick={disconnect}>Stop</button>
-    </div>
+    <>
+      <p>Status: {connectionState}</p>
+      <button onClick={connect} disabled={connectionState === 'connected'}>Start</button>
+      <button onClick={disconnect} disabled={connectionState !== 'connected'}>Stop</button>
+      <audio ref={el => { if (el && audioStream) el.srcObject = audioStream; }} autoPlay />
+    </>
   );
 }
 ```
@@ -74,46 +72,57 @@ function VoiceAgent() {
 ```tsx
 import { useVoiceLive, VoiceLiveAvatar } from '@iloveagents/foundry-voice-live-react';
 
-function AvatarAgent() {
-  const { status, connect, avatarStream } = useVoiceLive({
-    endpoint: 'wss://your-resource.cognitiveservices.azure.com',
-    apiKey: 'your-api-key',
-    avatar: {
-      character: 'lisa',
-      style: 'casual-sitting',
+function App() {
+  const { videoStream, audioStream, connect, disconnect } = useVoiceLive({
+    connection: {
+      resourceName: 'your-foundry-resource',
+      apiKey: 'your-foundry-api-key',
+    },
+    session: {
+      instructions: 'You are a helpful assistant.',
+      voice: { name: 'en-US-AvaMultilingualNeural', type: 'azure-standard' },
+      avatar: { character: 'lisa', style: 'casual-sitting' },
     },
   });
 
   return (
-    <div>
-      <VoiceLiveAvatar
-        stream={avatarStream}
-        chromaKey={true}  // Remove green background
-      />
-      <button onClick={connect}>Start Conversation</button>
-    </div>
+    <>
+      <VoiceLiveAvatar videoStream={videoStream} audioStream={audioStream} />
+      <button onClick={connect}>Start</button>
+      <button onClick={disconnect}>Stop</button>
+    </>
   );
 }
 ```
 
-### Using the Proxy (Recommended for Production)
+Microphone starts automatically when connected. No manual audio setup needed.
+
+### Production (Proxy)
+
+**Never expose API keys in client-side code.** Use the proxy:
 
 ```bash
-# Start proxy server
-npx @iloveagents/foundry-voice-live-proxy-node
-
-# Or with Docker
+# Docker (recommended)
 docker run -p 8080:8080 \
-  -e FOUNDRY_RESOURCE_NAME=your-resource \
-  -e FOUNDRY_API_KEY=your-key \
-  ghcr.io/iloveagents/foundry-voice-live-proxy
+  -e FOUNDRY_RESOURCE_NAME=your-foundry-resource \
+  -e FOUNDRY_API_KEY=your-api-key \
+  ghcr.io/iloveagents/foundry-voice-live-proxy:latest
+
+# Or with npx
+FOUNDRY_RESOURCE_NAME=your-foundry-resource \
+FOUNDRY_API_KEY=your-api-key \
+npx @iloveagents/foundry-voice-live-proxy-node
 ```
 
 ```tsx
-// Connect through proxy instead of directly
+// Connect through proxy - no API key in client code
 const { connect } = useVoiceLive({
-  endpoint: 'ws://localhost:8080/voice-live',
-  // No API key needed - proxy handles auth
+  connection: {
+    proxyUrl: 'ws://localhost:8080/ws',  // Proxy handles auth
+  },
+  session: {
+    instructions: 'You are a helpful assistant.',
+  },
 });
 ```
 
@@ -233,41 +242,31 @@ import { useVoiceLive } from '@iloveagents/foundry-voice-live-react';
 
 ```typescript
 const {
-  status,       // 'disconnected' | 'connecting' | 'connected' | 'error'
-  connect,      // () => Promise<void>
-  disconnect,   // () => void
-  sendAudio,    // (audioData: ArrayBuffer) => void
-  sendText,     // (text: string) => void
-  avatarStream, // MediaStream | null (when avatar enabled)
+  connectionState,  // 'disconnected' | 'connecting' | 'connected'
+  videoStream,      // MediaStream | null (avatar video)
+  audioStream,      // MediaStream | null (audio playback)
+  audioAnalyser,    // AnalyserNode | null (for visualization)
+  isMicActive,      // boolean
+  connect,          // () => Promise<void>
+  disconnect,       // () => void
+  sendEvent,        // (event: any) => void
+  updateSession,    // (config) => void
+  error,            // string | null
 } = useVoiceLive({
-  // Connection
-  endpoint: string,
-  apiKey?: string,
-
-  // Model
-  model?: 'gpt-4o' | 'gpt-4o-mini' | 'gpt-4.1' | 'phi4-mini' | ...,
-
-  // Voice
-  voice?: string,  // e.g., 'en-US-JennyNeural'
-
-  // Avatar (optional)
-  avatar?: {
-    character: string,
-    style: string,
+  connection: {
+    resourceName?: string,      // Azure AI Foundry resource
+    apiKey?: string,            // For dev only
+    proxyUrl?: string,          // Secure proxy URL (production)
   },
-
-  // Turn Detection
-  turnDetection?: {
-    type: 'semantic_vad',
-    threshold?: number,
-    silenceDuration?: number,
+  session: {
+    instructions?: string,
+    voice?: { name: string, type: 'azure-standard' | 'azure-hd' },
+    avatar?: { character: string, style: string },
+    turnDetection?: { type: 'semantic_vad' | ... },
+    tools?: ToolDefinition[],
   },
-
-  // Callbacks
-  onMessage?: (event: VoiceLiveEvent) => void,
-  onAudio?: (audio: ArrayBuffer) => void,
-  onTranscript?: (text: string, isFinal: boolean) => void,
-  onError?: (error: Error) => void,
+  onEvent?: (event: VoiceLiveEvent) => void,
+  toolExecutor?: (name: string, args: string, callId: string) => void,
 });
 ```
 
@@ -275,14 +274,15 @@ const {
 
 ```tsx
 <VoiceLiveAvatar
-  stream={avatarStream}      // MediaStream from useVoiceLive
-  chromaKey={true}           // Remove green background
-  chromaColor="#00FF00"      // Custom chroma key color
-  width={640}
-  height={480}
-  className="avatar"
+  videoStream={videoStream}    // From useVoiceLive
+  audioStream={audioStream}    // From useVoiceLive
+  enableChromaKey={true}       // Remove green background
+  chromaKeyColor="#00FF00"     // Custom key color
+  loadingMessage="Loading..."  // Shown before video starts
 />
 ```
+
+See [React SDK README](./packages/react/README.md) for full API documentation and configuration helpers.
 
 ## Resources
 
@@ -293,6 +293,13 @@ const {
 ## Contributing
 
 Contributions welcome! Fork the repo, create a feature branch, run `just test`, and open a PR.
+
+## Support
+
+If this library made your life easier, a coffee is a simple way to say thanks ☕
+It directly supports maintenance and future features.
+
+[![Buy Me A Coffee](https://img.shields.io/badge/Buy%20Me%20A%20Coffee-support-yellow.svg)](https://buymeacoffee.com/leitwolf)
 
 ## License
 
