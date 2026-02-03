@@ -12,6 +12,8 @@
 
 SDK and tools for **Microsoft Foundry Voice Live API** - enabling real-time voice interactions with AI agents. Supports Azure video avatars, Live2D avatars, 3D avatars, and audio visualizers.
 
+📖 **[Getting Started Guide](https://iloveagents.ai/foundry-voice-live-react-sdk)** — Step-by-step tutorial with examples
+
 > **Renamed**: This project was previously "azure-voice-live" and has been renamed to align with [Microsoft's rebranding](https://learn.microsoft.com/en-us/azure/ai-services/speech-service/voice-live) of the service.
 
 ## What is Voice Live?
@@ -70,7 +72,7 @@ function App() {
 ### With Avatar
 
 ```tsx
-import { useVoiceLive, VoiceLiveAvatar } from '@iloveagents/foundry-voice-live-react';
+import { useVoiceLive, VoiceLiveAvatar, sessionConfig } from '@iloveagents/foundry-voice-live-react';
 
 function App() {
   const { videoStream, audioStream, connect, disconnect } = useVoiceLive({
@@ -78,11 +80,14 @@ function App() {
       resourceName: 'your-foundry-resource',
       apiKey: 'your-foundry-api-key',
     },
-    session: {
-      instructions: 'You are a helpful assistant.',
-      voice: { name: 'en-US-AvaMultilingualNeural', type: 'azure-standard' },
-      avatar: { character: 'lisa', style: 'casual-sitting' },
-    },
+    session: sessionConfig()
+      .instructions('You are a helpful assistant.')
+      .hdVoice('en-US-Ava:DragonHDLatestNeural')
+      .avatar('lisa', 'casual-sitting', { codec: 'h264' })
+      .semanticVAD({ interruptResponse: true })
+      .echoCancellation()
+      .noiseReduction()
+      .build(),
   });
 
   return (
@@ -97,6 +102,8 @@ function App() {
 
 Microphone starts automatically when connected. No manual audio setup needed.
 
+> 📖 See the **[React SDK README](./packages/react/README.md)** for full configuration options, function calling, event handling, and more examples.
+
 ### Production (Proxy)
 
 **Never expose API keys in client-side code.** Use the proxy:
@@ -105,12 +112,14 @@ Microphone starts automatically when connected. No manual audio setup needed.
 # Docker (recommended)
 docker run -p 8080:8080 \
   -e FOUNDRY_RESOURCE_NAME=your-foundry-resource \
-  -e FOUNDRY_API_KEY=your-api-key \
+  -e FOUNDRY_API_KEY="your-api-key" \
+  -e ALLOWED_ORGINS="*" \
   ghcr.io/iloveagents/foundry-voice-live-proxy:latest
 
 # Or with npx
 FOUNDRY_RESOURCE_NAME=your-foundry-resource \
-FOUNDRY_API_KEY=your-api-key \
+FOUNDRY_API_KEY="your-api-key" \
+ALLOWED_ORGINS="*" \
 npx @iloveagents/foundry-voice-live-proxy-node
 ```
 
@@ -262,7 +271,7 @@ const {
     instructions?: string,
     voice?: { name: string, type: 'azure-standard' | 'azure-hd' },
     avatar?: { character: string, style: string },
-    turnDetection?: { type: 'semantic_vad' | ... },
+    turnDetection?: { type: 'semantic_vad' | 'server_vad' | 'none' },
     tools?: ToolDefinition[],
   },
   onEvent?: (event: VoiceLiveEvent) => void,
@@ -282,11 +291,15 @@ const {
 />
 ```
 
-See [React SDK README](./packages/react/README.md) for full API documentation and configuration helpers.
+## Documentation
 
-## Resources
+- **[Getting Started Guide](https://iloveagents.ai/foundry-voice-live-react-sdk)** — Tutorial with step-by-step examples
+- **[React SDK Reference](./packages/react/README.md)** — Full API docs, configuration helpers, and advanced features
+- **[Proxy Server Docs](./packages/proxy-node/README.md)** — Production deployment and authentication
 
-- [Microsoft Voice Live Documentation](https://learn.microsoft.com/en-us/azure/ai-services/speech-service/voice-live)
+### Microsoft Resources
+
+- [Voice Live Documentation](https://learn.microsoft.com/en-us/azure/ai-services/speech-service/voice-live)
 - [Voice Live API Reference](https://learn.microsoft.com/en-us/azure/ai-services/speech-service/voice-live-api-reference)
 - [Azure AI Foundry](https://azure.microsoft.com/products/ai-foundry/)
 
