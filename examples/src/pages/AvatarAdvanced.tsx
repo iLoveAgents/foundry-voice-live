@@ -2,8 +2,7 @@ import { useState } from 'react';
 import {
   useVoiceLive,
   VoiceLiveAvatar,
-  createVoiceLiveConfig,
-  withTransparentBackground,
+  sessionConfig,
 } from '@iloveagents/foundry-voice-live-react';
 import {
   SampleLayout,
@@ -17,45 +16,29 @@ import {
 export function AvatarAdvanced(): JSX.Element {
   const [error, setError] = useState<string | null>(null);
 
-  const config = createVoiceLiveConfig({
+  const { connect, disconnect, connectionState, videoStream, audioStream } = useVoiceLive({
     connection: {
       resourceName: import.meta.env.VITE_FOUNDRY_RESOURCE_NAME,
       apiKey: import.meta.env.VITE_FOUNDRY_API_KEY,
     },
-    session: withTransparentBackground({
-      avatar: {
-        character: 'lisa',
-        style: 'casual-sitting',
-        video: {
-          codec: 'h264',
-          resolution: { width: 1920, height: 1080 },
-          bitrate: 2000000,
-        },
-      },
-      voice: {
-        name: 'en-US-Ava:DragonHDLatestNeural',
-        type: 'azure-standard',
-        temperature: 0.9,
-        rate: '0.95',
-      },
-      turnDetection: {
-        type: 'azure_semantic_vad',
+    session: sessionConfig()
+      .instructions('You are a helpful assistant.')
+      .hdVoice('en-US-Ava:DragonHDLatestNeural', { temperature: 0.9, rate: '0.95' })
+      .avatar('lisa', 'casual-sitting', {
+        codec: 'h264',
+        resolution: { width: 1920, height: 1080 },
+        bitrate: 2000000,
+      })
+      .transparentBackground()
+      .semanticVAD({
+        removeFillerWords: true,
         interruptResponse: true,
         autoTruncate: true,
-        removeFillerWords: true,
-        createResponse: true,
-      },
-      inputAudioNoiseReduction: {
-        type: 'azure_deep_noise_suppression',
-      },
-      inputAudioEchoCancellation: {
-        type: 'server_echo_cancellation',
-      },
-    }),
+      })
+      .echoCancellation()
+      .noiseReduction()
+      .build(),
   });
-
-  const { connect, disconnect, connectionState, videoStream, audioStream } =
-    useVoiceLive(config);
 
   const handleStart = async (): Promise<void> => {
     try {

@@ -44,7 +44,6 @@ export {
   withAvatarCrop,
   // Turn detection helpers
   withSemanticVAD,
-  withMultilingualVAD,
   withEndOfUtterance,
   withoutTurnDetection,
   // Audio enhancement helpers
@@ -63,8 +62,10 @@ export {
   // Function calling helpers
   withTools,
   withToolChoice,
-  // Composition helper
+  // Composition helpers
   compose,
+  sessionConfig,
+  SessionConfigBuilder,
 } from './utils/configHelpers';
 
 // ==================== Configuration ====================

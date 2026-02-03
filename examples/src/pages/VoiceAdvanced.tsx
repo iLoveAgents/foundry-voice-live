@@ -1,53 +1,30 @@
 import { useRef, useEffect, useState } from 'react';
-import { useVoiceLive, createVoiceLiveConfig } from '@iloveagents/foundry-voice-live-react';
+import { useVoiceLive, sessionConfig } from '@iloveagents/foundry-voice-live-react';
 import { SampleLayout, StatusBadge, ControlGroup, ErrorPanel } from '../components';
 
 export function VoiceAdvanced(): JSX.Element {
   const audioRef = useRef<HTMLAudioElement>(null);
   const [error, setError] = useState<string | null>(null);
 
-  // Advanced configuration with all major options
-  const config = createVoiceLiveConfig({
+  // Advanced configuration using the sessionConfig builder
+  const { connect, disconnect, connectionState, audioStream } = useVoiceLive({
     connection: {
       resourceName: import.meta.env.VITE_FOUNDRY_RESOURCE_NAME,
       apiKey: import.meta.env.VITE_FOUNDRY_API_KEY,
     },
-    session: {
-      instructions: 'You are a helpful assistant. Keep responses brief and friendly.',
-      temperature: 0.8,
-
-      // Voice configuration
-      voice: {
-        name: 'en-US-Ava:DragonHDLatestNeural',
-        type: 'azure-standard',
-        temperature: 0.9,
-        rate: '1.1',
-      },
-
-      // Advanced turn detection with Azure Semantic VAD
-      turnDetection: {
-        type: 'azure_semantic_vad',
-        threshold: 0.5,
-        prefixPaddingMs: 300,
-        silenceDurationMs: 500,
-        removeFillerWords: true, // Remove "um", "uh", etc.
-        interruptResponse: true,  // Enable barge-in
-        autoTruncate: true,       // Auto-truncate on interrupt
-        createResponse: true,
-      },
-
-      // Input audio enhancements
-      inputAudioSamplingRate: 24000,
-      inputAudioEchoCancellation: {
-        type: 'server_echo_cancellation',
-      },
-      inputAudioNoiseReduction: {
-        type: 'azure_deep_noise_suppression',
-      },
-    },
+    session: sessionConfig({ temperature: 0.8 })
+      .instructions('You are a helpful assistant. Keep responses brief and friendly.')
+      .hdVoice('en-US-Ava:DragonHDLatestNeural', { temperature: 0.9, rate: '1.1' })
+      .semanticVAD({
+        removeFillerWords: true,
+        interruptResponse: true,
+        autoTruncate: true,
+      })
+      .sampleRate(24000)
+      .echoCancellation()
+      .noiseReduction()
+      .build(),
   });
-
-  const { connect, disconnect, connectionState, audioStream } = useVoiceLive(config);
 
   useEffect(() => {
     if (audioRef.current && audioStream) {

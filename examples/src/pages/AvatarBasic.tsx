@@ -2,8 +2,7 @@ import { useState } from 'react';
 import {
   useVoiceLive,
   VoiceLiveAvatar,
-  createVoiceLiveConfig,
-  withAvatar,
+  sessionConfig,
 } from '@iloveagents/foundry-voice-live-react';
 import {
   SampleLayout,
@@ -17,27 +16,17 @@ import {
 export function AvatarBasic(): JSX.Element {
   const [error, setError] = useState<string | null>(null);
 
-  const config = createVoiceLiveConfig({
+  const { connect, disconnect, connectionState, videoStream, audioStream } = useVoiceLive({
     connection: {
       resourceName: import.meta.env.VITE_FOUNDRY_RESOURCE_NAME,
       apiKey: import.meta.env.VITE_FOUNDRY_API_KEY,
     },
-    session: withAvatar(
-      'lisa',
-      'casual-sitting',
-      { codec: 'h264' },
-      {
-        instructions: 'You are a helpful assistant. Keep responses brief.',
-        voice: {
-          name: 'en-US-Ava:DragonHDLatestNeural',
-          type: 'azure-standard',
-        },
-      }
-    ),
+    session: sessionConfig()
+      .instructions('You are a helpful assistant. Keep responses brief.')
+      .hdVoice('en-US-Ava:DragonHDLatestNeural')
+      .avatar('lisa', 'casual-sitting', { codec: 'h264' })
+      .build(),
   });
-
-  const { connect, disconnect, connectionState, videoStream, audioStream } =
-    useVoiceLive(config);
 
   const handleStart = async (): Promise<void> => {
     try {

@@ -88,7 +88,8 @@ Microphone starts automatically when connected. No manual audio setup needed.
 # Docker (recommended)
 docker run -p 8080:8080 \
   -e FOUNDRY_RESOURCE_NAME=your-foundry-resource \
-  -e FOUNDRY_API_KEY=your-api-key \
+  -e FOUNDRY_API_KEY="your-api-key" \
+  -e ALLOWED_ORGINS="*" \
   ghcr.io/iloveagents/foundry-voice-live-proxy:latest
 ```
 
@@ -96,7 +97,8 @@ Or with npx:
 
 ```bash
 FOUNDRY_RESOURCE_NAME=your-foundry-resource \
-FOUNDRY_API_KEY=your-api-key \
+FOUNDRY_API_KEY="your-api-key" \
+ALLOWED_ORGINS="*" \
 npx @iloveagents/foundry-voice-live-proxy-node
 ```
 
@@ -135,61 +137,63 @@ See [proxy package docs](https://www.npmjs.com/package/@iloveagents/foundry-voic
 
 ## Configuration Helpers
 
-Use helper functions to build session configuration:
+### Session Builder (Recommended)
+
+Use the fluent `sessionConfig()` builder for clean, chainable configuration:
 
 ```tsx
-import {
-  useVoiceLive,
-  createVoiceLiveConfig,
-  withAvatar,
-} from '@iloveagents/foundry-voice-live-react';
+import { useVoiceLive, sessionConfig } from '@iloveagents/foundry-voice-live-react';
 
-// withAvatar(character, style, options, baseConfig)
-const config = createVoiceLiveConfig({
+const config = sessionConfig()
+  .instructions('You are a helpful assistant.')
+  .hdVoice('en-US-Ava:DragonHDLatestNeural', { temperature: 0.8 })
+  .avatar('lisa', 'casual-sitting', { codec: 'h264' })
+  .semanticVAD({ multilingual: true, interruptResponse: true })
+  .echoCancellation()
+  .noiseReduction()
+  .build();
+
+const { videoStream, audioStream } = useVoiceLive({
   connection: { resourceName: 'your-foundry-resource', apiKey: 'your-key' },
-  session: withAvatar('lisa', 'casual-sitting', { codec: 'h264' }, {
-    instructions: 'You are helpful.',
-    voice: { name: 'en-US-AvaMultilingualNeural', type: 'azure-standard' },
-  }),
+  session: config,
 });
-
-const { videoStream, audioStream } = useVoiceLive(config);
 ```
 
-### Available Helpers
+### Builder Methods
 
-| Category          | Helpers                                                                                           |
-| ----------------- | ------------------------------------------------------------------------------------------------- |
-| **Voice**         | `withVoice`, `withHDVoice`, `withCustomVoice`                                                     |
-| **Avatar**        | `withAvatar`, `withTransparentBackground`, `withBackgroundImage`, `withAvatarCrop`                |
-| **VAD**           | `withSemanticVAD`, `withMultilingualVAD`, `withEndOfUtterance`, `withoutTurnDetection`            |
-| **Audio**         | `withEchoCancellation`, `withDeepNoiseReduction`, `withNearFieldNoiseReduction`, `withSampleRate` |
-| **Transcription** | `withTranscription` (supports `phraseList`, `customSpeech`)                                       |
-| **Output**        | `withViseme`, `withWordTimestamps`                                                                |
-| **Tools**         | `withTools`, `withToolChoice`                                                                     |
+| Method | Description |
+| ------ | ----------- |
+| `.instructions(text)` | Set system prompt |
+| `.voice(name)` | Set voice by name |
+| `.hdVoice(name, { temperature?, rate? })` | Set HD voice with options |
+| `.customVoice(name)` | Set custom voice |
+| `.avatar(character, style, options?)` | Configure avatar |
+| `.transparentBackground()` | Enable chroma key background |
+| `.backgroundImage(url)` | Set avatar background image |
+| `.semanticVAD(options?)` | Configure turn detection (use `{ multilingual: true }` for 10-language support) |
+| `.endOfUtterance(options?)` | Add end-of-utterance detection |
+| `.noTurnDetection()` | Disable turn detection (manual mode) |
+| `.echoCancellation()` | Enable server echo cancellation |
+| `.noiseReduction(type?)` | Enable noise reduction (`'deep'` or `'nearField'`) |
+| `.transcription(options?)` | Configure input transcription |
+| `.viseme()` | Enable viseme output (lip-sync) |
+| `.wordTimestamps()` | Enable word timestamps |
+| `.tools(tools)` | Add function tools |
+| `.toolChoice(choice)` | Set tool choice mode |
+| `.build()` | Build the final config |
 
-### Transcription Customization
+### Transcription with Phrase Lists
 
-Improve speech recognition accuracy with phrase lists and custom speech models:
+Improve speech recognition accuracy for specific terms:
 
 ```tsx
-import { withTranscription } from '@iloveagents/foundry-voice-live-react';
-
-// Phrase list - improve recognition for specific terms
-const config = withTranscription({
-  model: 'azure-speech',
-  language: 'en',
-  phraseList: ['Neo QLED TV', 'TUF Gaming', 'AutoQuote Explorer'],
-});
-
-// Custom speech models - use trained models per locale
-const config = withTranscription({
-  model: 'azure-speech',
-  language: 'en',
-  customSpeech: {
-    'zh-CN': 'your-custom-model-id',  // Custom model for Chinese
-  },
-});
+const config = sessionConfig()
+  .transcription({
+    model: 'azure-speech',
+    language: 'en',
+    phraseList: ['Neo QLED TV', 'TUF Gaming', 'AutoQuote Explorer'],
+  })
+  .build();
 ```
 
 > **Note:** `phraseList` and `customSpeech` require `model: 'azure-speech'` and don't work with gpt-realtime models.

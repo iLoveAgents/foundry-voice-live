@@ -286,88 +286,91 @@ export function withAvatarCrop(
 /**
  * Configure Azure Semantic VAD turn detection
  *
+ * Use `multilingual: true` to enable automatic detection of 10 languages:
+ * English, Spanish, French, Italian, German, Japanese, Portuguese, Chinese, Korean, Hindi
+ *
  * @param options - Semantic VAD options
  * @param config - Session configuration to update
  * @returns Updated configuration
  *
  * @example
  * ```tsx
+ * // English-only VAD (default)
+ * const config = withSemanticVAD();
+ *
+ * // Multilingual VAD (auto-detects 10 languages)
+ * const config = withSemanticVAD({ multilingual: true });
+ *
+ * // With filler word removal
+ * const config = withSemanticVAD({
+ *   multilingual: true,
+ *   removeFillerWords: true,
+ *   fillerWordLanguages: ['en', 'es'],  // improves filler detection accuracy
+ * });
+ *
+ * // With custom threshold and interruption
  * const config = withSemanticVAD({
  *   threshold: 0.5,
- *   removeFillerWords: true,
- *   interruptResponse: true
+ *   interruptResponse: true,
  * }, baseConfig);
  * ```
  */
 export function withSemanticVAD(
   options: {
+    /**
+     * Enable multilingual VAD (auto-detects 10 languages)
+     * Supported: English, Spanish, French, Italian, German, Japanese, Portuguese, Chinese, Korean, Hindi
+     * @default false (English-only)
+     */
+    multilingual?: boolean;
+    /** Activation threshold (0.0-1.0). Higher = requires higher confidence of speech @default 0.5 */
     threshold?: number;
+    /** Audio to include before speech detection (ms) @default 300 */
     prefixPaddingMs?: number;
+    /** Minimum speech duration to start detection (ms) @default 80 */
     speechDurationMs?: number;
+    /** Silence duration to detect end of speech (ms) @default 500 */
     silenceDurationMs?: number;
+    /**
+     * Remove filler words ("umm", "ah", etc.) to reduce false barge-in
+     * @default false
+     */
     removeFillerWords?: boolean;
+    /**
+     * Languages for filler word detection accuracy (only used when removeFillerWords=true)
+     * Supported: en, es, fr, it, de, ja, pt, zh, ko, hi
+     */
+    fillerWordLanguages?: string[];
+    /**
+     * Enable barge-in interruption
+     * @default false
+     */
     interruptResponse?: boolean;
+    /**
+     * Auto-truncate on interruption
+     * @default false
+     */
     autoTruncate?: boolean;
   } = {},
   config: Partial<VoiceLiveSessionConfig> = {}
 ): Partial<VoiceLiveSessionConfig> {
+  const type = options.multilingual
+    ? 'azure_semantic_vad_multilingual'
+    : 'azure_semantic_vad';
+
   return {
     ...config,
     turnDetection: {
-      type: 'azure_semantic_vad',
+      type,
       threshold: options.threshold ?? 0.5,
       prefixPaddingMs: options.prefixPaddingMs ?? 300,
       speechDurationMs: options.speechDurationMs ?? 80,
       silenceDurationMs: options.silenceDurationMs ?? 500,
-      removeFillerWords: options.removeFillerWords ?? false,
-      interruptResponse: options.interruptResponse ?? true,
+      removeFillerWords: options.removeFillerWords,
+      languages: options.fillerWordLanguages,
+      interruptResponse: options.interruptResponse,
       createResponse: true,
       autoTruncate: options.autoTruncate,
-    },
-  };
-}
-
-/**
- * Configure multilingual semantic VAD
- *
- * @param languages - Language codes to support
- * @param options - Additional VAD options
- * @param config - Session configuration to update
- * @returns Updated configuration
- *
- * @example
- * ```tsx
- * const config = withMultilingualVAD(
- *   ['en', 'es', 'fr', 'de'],
- *   { threshold: 0.5 },
- *   baseConfig
- * );
- * ```
- */
-export function withMultilingualVAD(
-  languages: string[],
-  options: {
-    threshold?: number;
-    prefixPaddingMs?: number;
-    speechDurationMs?: number;
-    silenceDurationMs?: number;
-    removeFillerWords?: boolean;
-    interruptResponse?: boolean;
-  } = {},
-  config: Partial<VoiceLiveSessionConfig> = {}
-): Partial<VoiceLiveSessionConfig> {
-  return {
-    ...config,
-    turnDetection: {
-      type: 'azure_semantic_vad_multilingual',
-      languages,
-      threshold: options.threshold ?? 0.5,
-      prefixPaddingMs: options.prefixPaddingMs ?? 300,
-      speechDurationMs: options.speechDurationMs ?? 80,
-      silenceDurationMs: options.silenceDurationMs ?? 500,
-      removeFillerWords: options.removeFillerWords ?? true,
-      interruptResponse: options.interruptResponse ?? true,
-      createResponse: true,
     },
   };
 }
@@ -772,4 +775,233 @@ export function compose<T>(
   ...fns: Array<(config: T) => T>
 ): (config: T) => T {
   return (config: T) => fns.reduce((acc, fn) => fn(acc), config);
+}
+
+// ============================================================================
+// SESSION CONFIG BUILDER
+// ============================================================================
+
+/**
+ * Fluent builder for Voice Live session configuration
+ *
+ * Provides a clean, chainable API for building complex configurations.
+ * The builder is directly usable as a config object (no .build() required).
+ *
+ * @example
+ * ```tsx
+ * const config = sessionConfig()
+ *   .instructions('You are a helpful assistant.')
+ *   .voice('en-US-AvaMultilingualNeural')
+ *   .avatar('lisa', 'casual-sitting')
+ *   .semanticVAD({ multilingual: true })
+ *   .echoCancellation()
+ *   .noiseReduction();
+ *
+ * useVoiceLive({
+ *   connection: { resourceName: 'my-resource', apiKey: 'key' },
+ *   session: config,  // works directly, no .build() needed
+ * });
+ * ```
+ */
+export class SessionConfigBuilder {
+  private config: Partial<VoiceLiveSessionConfig> = {};
+
+  /** Set system instructions */
+  instructions(text: string): this {
+    this.config.instructions = text;
+    return this;
+  }
+
+  /** Set voice by name or full config */
+  voice(voice: string | VoiceConfig): this {
+    this.config = withVoice(voice, this.config);
+    return this;
+  }
+
+  /** Set HD voice with options */
+  hdVoice(
+    name: string,
+    options: { temperature?: number; rate?: string } = {}
+  ): this {
+    this.config = withHDVoice(name, options, this.config);
+    return this;
+  }
+
+  /** Set custom voice */
+  customVoice(name: string): this {
+    this.config = withCustomVoice(name, this.config);
+    return this;
+  }
+
+  /** Configure avatar */
+  avatar(
+    character: string,
+    style: string,
+    options: {
+      customized?: boolean;
+      resolution?: { width: number; height: number };
+      bitrate?: number;
+      codec?: 'h264' | 'vp8' | 'vp9';
+    } = {}
+  ): this {
+    this.config = withAvatar(character, style, options, this.config);
+    return this;
+  }
+
+  /** Enable transparent background for avatar */
+  transparentBackground(options: { keyColor?: string } = {}): this {
+    this.config = withTransparentBackground(this.config, options);
+    return this;
+  }
+
+  /** Set avatar background image */
+  backgroundImage(imageUrl: string): this {
+    this.config = withBackgroundImage(imageUrl, this.config);
+    return this;
+  }
+
+  /** Set avatar crop */
+  avatarCrop(crop: {
+    topLeft: [number, number];
+    bottomRight: [number, number];
+  }): this {
+    this.config = withAvatarCrop(crop, this.config);
+    return this;
+  }
+
+  /**
+   * Configure semantic VAD
+   * @param options.multilingual Enable multilingual detection (10 languages)
+   */
+  semanticVAD(
+    options: {
+      multilingual?: boolean;
+      threshold?: number;
+      prefixPaddingMs?: number;
+      speechDurationMs?: number;
+      silenceDurationMs?: number;
+      removeFillerWords?: boolean;
+      fillerWordLanguages?: string[];
+      interruptResponse?: boolean;
+      autoTruncate?: boolean;
+    } = {}
+  ): this {
+    this.config = withSemanticVAD(options, this.config);
+    return this;
+  }
+
+  /** Add end-of-utterance detection */
+  endOfUtterance(
+    options: {
+      model?: string;
+      thresholdLevel?: 'default' | 'low' | 'medium' | 'high';
+      timeoutMs?: number;
+    } = {}
+  ): this {
+    this.config = withEndOfUtterance(options, this.config);
+    return this;
+  }
+
+  /** Disable turn detection (manual mode) */
+  noTurnDetection(): this {
+    this.config = withoutTurnDetection(this.config);
+    return this;
+  }
+
+  /** Enable server echo cancellation */
+  echoCancellation(): this {
+    this.config = withEchoCancellation(this.config);
+    return this;
+  }
+
+  /** Enable deep noise reduction */
+  noiseReduction(type: 'deep' | 'nearField' = 'deep'): this {
+    this.config =
+      type === 'deep'
+        ? withDeepNoiseReduction(this.config)
+        : withNearFieldNoiseReduction(this.config);
+    return this;
+  }
+
+  /** Set input audio sample rate */
+  sampleRate(rate: 16000 | 24000): this {
+    this.config = withSampleRate(rate, this.config);
+    return this;
+  }
+
+  /** Enable viseme output (for lip-sync) */
+  viseme(): this {
+    this.config = withViseme(this.config);
+    return this;
+  }
+
+  /** Enable word timestamps */
+  wordTimestamps(): this {
+    this.config = withWordTimestamps(this.config);
+    return this;
+  }
+
+  /** Configure input transcription */
+  transcription(
+    options: {
+      model?:
+        | 'azure-speech'
+        | 'whisper-1'
+        | 'gpt-4o-transcribe'
+        | 'gpt-4o-mini-transcribe';
+      language?: string;
+      prompt?: string;
+      phraseList?: string[];
+      customSpeech?: Record<string, string>;
+    } = {}
+  ): this {
+    this.config = withTranscription(options, this.config);
+    return this;
+  }
+
+  /** Add function tools */
+  tools(tools: Tool[]): this {
+    this.config = withTools(tools, this.config);
+    return this;
+  }
+
+  /** Set tool choice mode */
+  toolChoice(choice: 'auto' | 'none' | 'required'): this {
+    this.config = withToolChoice(choice, this.config);
+    return this;
+  }
+
+  /** Build the final configuration */
+  build(): Partial<VoiceLiveSessionConfig> {
+    return { ...this.config };
+  }
+}
+
+/**
+ * Create a new session configuration builder
+ *
+ * @example
+ * ```tsx
+ * const config = sessionConfig()
+ *   .instructions('You are a helpful assistant.')
+ *   .voice('en-US-AvaMultilingualNeural')
+ *   .avatar('lisa', 'casual-sitting')
+ *   .semanticVAD({ multilingual: true })
+ *   .echoCancellation()
+ *   .noiseReduction()
+ *   .build();
+ *
+ * const { connect } = useVoiceLive({
+ *   connection: { resourceName: 'my-resource', apiKey: 'key' },
+ *   session: config,
+ * });
+ * ```
+ */
+export function sessionConfig(
+  initial: Partial<VoiceLiveSessionConfig> = {}
+): SessionConfigBuilder {
+  const builder = new SessionConfigBuilder();
+  // Apply initial config
+  Object.assign(builder['config'], initial);
+  return builder;
 }

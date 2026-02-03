@@ -16,7 +16,6 @@ import {
   withAvatarCrop,
   // VAD helpers
   withSemanticVAD,
-  withMultilingualVAD,
   withEndOfUtterance,
   withoutTurnDetection,
   // Audio helpers
@@ -37,6 +36,7 @@ import {
   withToolChoice,
   // Composition
   compose,
+  sessionConfig,
 } from './configHelpers';
 
 describe('Voice Helpers', () => {
@@ -124,7 +124,7 @@ describe('VAD Helpers', () => {
     expect(config.turnDetection?.removeFillerWords).toBe(true);
   });
 
-  it('withSemanticVAD uses defaults', () => {
+  it('withSemanticVAD uses defaults (respects API defaults)', () => {
     const config = withSemanticVAD();
     expect(config.turnDetection).toEqual({
       type: 'azure_semantic_vad',
@@ -132,18 +132,34 @@ describe('VAD Helpers', () => {
       prefixPaddingMs: 300,
       speechDurationMs: 80,
       silenceDurationMs: 500,
-      removeFillerWords: false,
-      interruptResponse: true,
+      removeFillerWords: undefined,  // API default is false
+      languages: undefined,
+      interruptResponse: undefined,  // API default is false
       createResponse: true,
       autoTruncate: undefined,
     });
   });
 
-  it('withMultilingualVAD sets multilingual config', () => {
-    const config = withMultilingualVAD(['en', 'es', 'fr'], { threshold: 0.6 });
+  it('withSemanticVAD multilingual option sets multilingual VAD type', () => {
+    const config = withSemanticVAD({ multilingual: true, threshold: 0.6 });
     expect(config.turnDetection?.type).toBe('azure_semantic_vad_multilingual');
-    expect(config.turnDetection?.languages).toEqual(['en', 'es', 'fr']);
     expect(config.turnDetection?.threshold).toBe(0.6);
+  });
+
+  it('withSemanticVAD fillerWordLanguages sets languages for filler detection', () => {
+    const config = withSemanticVAD({
+      multilingual: true,
+      removeFillerWords: true,
+      fillerWordLanguages: ['en', 'es', 'fr'],
+    });
+    expect(config.turnDetection?.type).toBe('azure_semantic_vad_multilingual');
+    expect(config.turnDetection?.removeFillerWords).toBe(true);
+    expect(config.turnDetection?.languages).toEqual(['en', 'es', 'fr']);
+  });
+
+  it('withSemanticVAD supports interruptResponse option', () => {
+    const config = withSemanticVAD({ interruptResponse: true });
+    expect(config.turnDetection?.interruptResponse).toBe(true);
   });
 
   it('withEndOfUtterance adds EOU detection', () => {
@@ -336,6 +352,128 @@ describe('Composition', () => {
   });
 });
 
+describe('Session Builder', () => {
+  it('sessionConfig() creates a builder', () => {
+    const builder = sessionConfig();
+    expect(builder).toBeDefined();
+    expect(typeof builder.build).toBe('function');
+  });
+
+  it('builder chains methods fluently', () => {
+    const config = sessionConfig()
+      .instructions('You are helpful.')
+      .voice('en-US-AvaMultilingualNeural')
+      .build();
+
+    expect(config.instructions).toBe('You are helpful.');
+    expect(config.voice).toBe('en-US-AvaMultilingualNeural');
+  });
+
+  it('builder combines avatar and audio settings', () => {
+    const config = sessionConfig()
+      .avatar('lisa', 'casual-sitting', { codec: 'h264' })
+      .echoCancellation()
+      .noiseReduction('deep')
+      .build();
+
+    expect(config.avatar?.character).toBe('lisa');
+    expect(config.avatar?.style).toBe('casual-sitting');
+    expect(config.inputAudioEchoCancellation?.type).toBe('server_echo_cancellation');
+    expect(config.inputAudioNoiseReduction?.type).toBe('azure_deep_noise_suppression');
+  });
+
+  it('builder supports semantic VAD with multilingual', () => {
+    const config = sessionConfig()
+      .semanticVAD({ multilingual: true, interruptResponse: true })
+      .build();
+
+    expect(config.turnDetection?.type).toBe('azure_semantic_vad_multilingual');
+    expect(config.turnDetection?.interruptResponse).toBe(true);
+  });
+
+  it('builder supports HD voice', () => {
+    const config = sessionConfig()
+      .hdVoice('en-US-Ava:DragonHDLatestNeural', { temperature: 0.8 })
+      .build();
+
+    expect(config.voice).toEqual({
+      name: 'en-US-Ava:DragonHDLatestNeural',
+      type: 'azure-standard',
+      temperature: 0.8,
+      rate: undefined,
+    });
+  });
+
+  it('builder supports transcription with phrase list', () => {
+    const config = sessionConfig()
+      .transcription({
+        model: 'azure-speech',
+        phraseList: ['Product A', 'Product B'],
+      })
+      .build();
+
+    expect(config.inputAudioTranscription?.model).toBe('azure-speech');
+    expect(config.inputAudioTranscription?.phraseList).toEqual(['Product A', 'Product B']);
+  });
+
+  it('builder supports tools', () => {
+    const config = sessionConfig()
+      .tools([
+        {
+          type: 'function',
+          name: 'get_weather',
+          description: 'Get weather',
+          parameters: { type: 'object', properties: {} },
+        },
+      ])
+      .toolChoice('required')
+      .build();
+
+    expect(config.tools).toHaveLength(1);
+    expect(config.toolChoice).toBe('required');
+  });
+
+  it('builder supports viseme and word timestamps', () => {
+    const config = sessionConfig()
+      .viseme()
+      .wordTimestamps()
+      .build();
+
+    expect(config.animation?.outputs).toEqual(['viseme_id']);
+    expect(config.outputAudioTimestampTypes).toEqual(['word']);
+  });
+
+  it('builder supports initial config', () => {
+    const config = sessionConfig({ modalities: ['text', 'audio'] })
+      .instructions('Hello')
+      .build();
+
+    expect(config.modalities).toEqual(['text', 'audio']);
+    expect(config.instructions).toBe('Hello');
+  });
+
+  it('full builder example works', () => {
+    const config = sessionConfig()
+      .instructions('You are a helpful assistant.')
+      .hdVoice('en-US-Ava:DragonHDLatestNeural', { temperature: 0.8 })
+      .avatar('lisa', 'casual-sitting', { codec: 'h264', bitrate: 2000000 })
+      .semanticVAD({ multilingual: true, removeFillerWords: true })
+      .endOfUtterance({ thresholdLevel: 'medium' })
+      .echoCancellation()
+      .noiseReduction()
+      .transcription({ model: 'azure-speech', language: 'en' })
+      .build();
+
+    expect(config.instructions).toBe('You are a helpful assistant.');
+    expect(config.avatar?.character).toBe('lisa');
+    expect(config.turnDetection?.type).toBe('azure_semantic_vad_multilingual');
+    expect(config.turnDetection?.endOfUtteranceDetection?.thresholdLevel).toBe('medium');
+    expect(config.inputAudioEchoCancellation?.type).toBe('server_echo_cancellation');
+    expect(config.inputAudioNoiseReduction?.type).toBe('azure_deep_noise_suppression');
+    expect(config.inputAudioTranscription?.model).toBe('azure-speech');
+  });
+});
+
 describe('All README helpers are exported', () => {
   const readmeHelpers = [
     // Voice
@@ -349,7 +487,6 @@ describe('All README helpers are exported', () => {
     { name: 'withAvatarCrop', fn: withAvatarCrop },
     // VAD
     { name: 'withSemanticVAD', fn: withSemanticVAD },
-    { name: 'withMultilingualVAD', fn: withMultilingualVAD },
     { name: 'withEndOfUtterance', fn: withEndOfUtterance },
     { name: 'withoutTurnDetection', fn: withoutTurnDetection },
     // Audio
