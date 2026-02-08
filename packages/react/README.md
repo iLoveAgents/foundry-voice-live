@@ -21,6 +21,8 @@ npm install @iloveagents/foundry-voice-live-react
 
 ## Quick Start
 
+> **Region Availability:** The default model (`gpt-realtime`) is only available in **East US 2** and **Sweden Central** regions. Make sure your Azure AI Foundry resource is deployed in one of these regions. See [Microsoft docs](https://learn.microsoft.com/azure/ai-foundry/openai/concepts/models#global-standard-model-availability) for current availability.
+
 ### Voice Only
 
 ```tsx
