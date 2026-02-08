@@ -33,6 +33,13 @@ export {
 } from './utils/audioHelpers';
 
 export {
+  AudioPlayer,
+  createAudioPlayer,
+  type AudioPlayerConfig,
+  type AudioPlaybackState,
+} from './utils/audioPlayback';
+
+export {
   // Voice helpers
   withVoice,
   withHDVoice,
