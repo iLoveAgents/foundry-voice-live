@@ -276,7 +276,10 @@ export default function FoundryAgentMSAL(): JSX.Element {
       <StatusBadge status={connectionState} />
 
       <ControlGroup>
-        <button onClick={handleStart} disabled={isConnected || !accessToken}>
+        <button
+          onClick={handleStart}
+          disabled={isConnected || !accessToken || !agentConfigured}
+        >
           Start Conversation
         </button>
         <button onClick={handleStop} disabled={!isConnected}>

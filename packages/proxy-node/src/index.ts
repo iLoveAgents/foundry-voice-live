@@ -216,11 +216,12 @@ async function buildAzureUrl(query: QueryParams): Promise<AzureConnectionConfig>
   const base = `wss://${config.azureResourceName}.services.ai.azure.com/voice-live/realtime?api-version=${apiVersion}`;
 
   // Resolve agentName/projectName: URL params take priority, .env as fallback.
-  // Only use .env fallback when model is NOT explicitly set in the URL,
+  // Only use .env fallback when model param is absent from the URL,
   // so standard Voice/Avatar requests (which pass model=gpt-realtime) are not
   // accidentally routed through agent mode.
-  const agentName = query.agentName || (!query.model ? config.foundryAgentName : undefined);
-  const projectName = query.projectName || (!query.model ? config.foundryProjectName : undefined);
+  const modelParamAbsent = query.model === undefined;
+  const agentName = query.agentName || (modelParamAbsent ? config.foundryAgentName : undefined);
+  const projectName = query.projectName || (modelParamAbsent ? config.foundryProjectName : undefined);
 
   // ===== Foundry Agents (v2): agentName-based =====
   if (agentName) {
@@ -374,9 +375,12 @@ app.ws("/ws", async (ws, req) => {
   }
 
   activeConnections++;
+
+  // Redact sensitive params (token, api-key) before logging
+  const safeUrl = (req.url || "").replace(/([?&])(token|api-key|agent-access-token)=[^&]*/gi, "$1$2=REDACTED");
   logger.info(
     `\n[Proxy] Client connected (${activeConnections}/${securityConfig.maxConnections})`,
-    { url: req.url, activeConnections }
+    { url: safeUrl, activeConnections }
   );
   logger.trackMetric("activeConnections", activeConnections);
 
@@ -390,7 +394,7 @@ app.ws("/ws", async (ws, req) => {
     logger.info("[Proxy] Connected to Azure");
 
     // Determine mode for telemetry
-    const agentNameResolved = query.agentName || (!query.model ? config.foundryAgentName : undefined);
+    const agentNameResolved = query.agentName || (query.model === undefined ? config.foundryAgentName : undefined);
     const mode = agentNameResolved ? "foundry-agent" : query.agentId ? "agent-v1" : "standard";
     const model = query.model || "gpt-realtime";
     logger.trackEvent("WebSocketConnected", { mode, model, agentName: agentNameResolved });

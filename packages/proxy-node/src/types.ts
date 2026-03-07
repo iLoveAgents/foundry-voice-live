@@ -6,8 +6,9 @@
  * Query parameters from WebSocket connection URL
  *
  * Mode is automatically inferred:
- * - Agent mode: If agentId, agentName, or projectName is provided
- * - Standard mode: Otherwise
+ * - Foundry Agent Service: If agentName is provided (URL or .env fallback)
+ * - Agent Service (classic): If agentId is provided
+ * - Standard mode: Otherwise (or if model param is present)
  */
 export interface QueryParams {
   /** Model name for standard mode (default: gpt-realtime) */
@@ -18,7 +19,7 @@ export interface QueryParams {
   agentId?: string;
   /** Agent name for Foundry Agents v2 - triggers agent mode when present */
   agentName?: string;
-  /** Project name - triggers agent mode when present */
+  /** Project name - required alongside agentId or agentName */
   projectName?: string;
   /** Resume conversation (Foundry Agents v2) */
   conversationId?: string;

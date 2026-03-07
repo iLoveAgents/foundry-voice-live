@@ -104,6 +104,8 @@ ALLOWED_ORIGINS="*" \
 npx @iloveagents/foundry-voice-live-proxy-node
 ```
 
+> **Note:** `ALLOWED_ORIGINS="*"` is for local development only. In production, set this to your app's origin (e.g., `https://myapp.example.com`).
+
 ### 2. Connect from Your App
 
 ```tsx

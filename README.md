@@ -144,7 +144,7 @@ To resume a previous conversation, add `conversationId` to the URL:
 ws://localhost:8080/ws?agentName=MyAgent&projectName=myProject&conversationId=conv_abc123
 ```
 
-For per-user MSAL auth, also pass `token` as a URL param. See the [examples](./examples/) for both patterns.
+For per-user MSAL auth, pass `token` as a URL param. The token only travels to your own proxy over localhost/internal network — the proxy moves it to an `Authorization` header before connecting to Azure (browser WebSocket API cannot set headers directly). See the [examples](./examples/) for both auth patterns.
 
 ### Production (Proxy)
 
@@ -164,6 +164,8 @@ FOUNDRY_API_KEY="your-api-key" \
 ALLOWED_ORIGINS="*" \
 npx @iloveagents/foundry-voice-live-proxy-node
 ```
+
+> **Note:** `ALLOWED_ORIGINS="*"` is for local development only. In production, set this to your app's origin (e.g., `https://myapp.example.com`).
 
 ```tsx
 // Connect through proxy - no API key in client code
