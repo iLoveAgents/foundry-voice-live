@@ -138,6 +138,8 @@ export interface AudioCaptureReturn {
   audioContext: AudioContext | null;
   /** Whether audio capture is active */
   isCapturing: boolean;
+  /** Whether audio is muted (capture running but data not forwarded) */
+  isMuted: boolean;
   /** Error message if capture failed */
   error: string | null;
   /** Start audio capture */
@@ -148,6 +150,8 @@ export interface AudioCaptureReturn {
   pauseCapture: () => void;
   /** Resume audio capture */
   resumeCapture: () => void;
+  /** Toggle mute (instant, keeps worklet running) */
+  toggleMute: () => void;
 }
 
 /**

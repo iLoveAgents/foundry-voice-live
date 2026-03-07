@@ -135,6 +135,7 @@ export function buildAgentSessionConfig(
     if (userConfig.turnDetection !== undefined) agentConfig.turnDetection = userConfig.turnDetection;
     if (userConfig.inputAudioTranscription !== undefined) agentConfig.inputAudioTranscription = userConfig.inputAudioTranscription;
     if (userConfig.voice !== undefined) agentConfig.voice = userConfig.voice;
+    if (userConfig.interimResponse !== undefined) agentConfig.interimResponse = userConfig.interimResponse;
     if (userConfig.avatar !== undefined) agentConfig.avatar = userConfig.avatar;
   }
 
@@ -214,11 +215,19 @@ function convertToSessionUpdate(config: VoiceLiveSessionConfig): any {
     if (config.inputAudioTranscription === null) {
       session.input_audio_transcription = null;
     } else {
-      session.input_audio_transcription = {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const transcription: any = {
         model: config.inputAudioTranscription.model,
         language: config.inputAudioTranscription.language,
         prompt: config.inputAudioTranscription.prompt,
       };
+      if (config.inputAudioTranscription.phraseList) {
+        transcription.phrase_list = config.inputAudioTranscription.phraseList;
+      }
+      if (config.inputAudioTranscription.customSpeech) {
+        transcription.custom_speech = config.inputAudioTranscription.customSpeech;
+      }
+      session.input_audio_transcription = transcription;
     }
   }
 
@@ -255,6 +264,25 @@ function convertToSessionUpdate(config: VoiceLiveSessionConfig): any {
     session.animation = {
       outputs: config.animation.outputs,
     };
+  }
+
+  // Voice Live: Interim response
+  if (config.interimResponse) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const interim: any = {
+      type: config.interimResponse.type,
+      triggers: config.interimResponse.triggers,
+    };
+    if (config.interimResponse.latencyThresholdInMs !== undefined) {
+      interim.latency_threshold_in_ms = config.interimResponse.latencyThresholdInMs;
+    }
+    if (config.interimResponse.instructions !== undefined) {
+      interim.instructions = config.interimResponse.instructions;
+    }
+    if (config.interimResponse.texts !== undefined) {
+      interim.texts = config.interimResponse.texts;
+    }
+    session.interim_response = interim;
   }
 
   // Voice Live: Avatar

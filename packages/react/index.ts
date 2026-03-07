@@ -93,10 +93,19 @@ export type {
   AudioCaptureConfig,
   ChromaKeyConfig,
 
-  // Hook return types
+  // Hook configuration and return types
+  UseVoiceLiveConfig,
+  UseVoiceLiveReturn,
+  SessionState,
   AudioCaptureReturn,
   VoiceLiveReturn,
   ConnectionState,
+
+  // Session configuration types
+  VoiceLiveSessionConfig,
+  GreetingConfig,
+  InterimResponseConfig,
+  VoiceLiveConnectionConfig,
 
   // Component props
   VoiceLiveAvatarProps,

@@ -722,8 +722,71 @@ export interface VoiceLiveSessionConfig {
    */
   animation?: AnimationConfig;
 
+  /**
+   * Interim response configuration.
+   * Provides filler messages while tools execute or during high latency.
+   */
+  interimResponse?: InterimResponseConfig;
+
   /** Avatar configuration */
   avatar?: AvatarConfig;
+
+  /**
+   * Proactive greeting configuration.
+   * Makes the assistant speak first without waiting for user input.
+   */
+  greeting?: GreetingConfig;
+}
+
+/**
+ * Interim response trigger type
+ */
+export type InterimResponseTrigger = 'tool' | 'latency';
+
+/**
+ * Interim response configuration
+ * Provides filler messages while tools execute or during high latency
+ */
+export interface InterimResponseConfig {
+  /**
+   * Interim response type:
+   * - 'llm_interim_response': Model generates contextual filler messages
+   * - 'static_interim_response': Use pre-defined static texts
+   */
+  type: 'llm_interim_response' | 'static_interim_response';
+
+  /** What triggers the interim response */
+  triggers: InterimResponseTrigger[];
+
+  /**
+   * Latency threshold in milliseconds before triggering interim response
+   * @default 100
+   */
+  latencyThresholdInMs?: number;
+
+  /** Instructions for LLM interim response generation (for 'llm_interim_response' type) */
+  instructions?: string;
+
+  /** Static texts to use as filler messages (for 'static_interim_response' type) */
+  texts?: string[];
+}
+
+/**
+ * Proactive greeting configuration
+ */
+export interface GreetingConfig {
+  /**
+   * Greeting type:
+   * - 'llm': Model generates the greeting based on the prompt text
+   * - 'pregenerated': Use exact pre-written greeting text
+   */
+  type: 'llm' | 'pregenerated';
+
+  /**
+   * For 'llm': Prompt text to guide the model (e.g., "Greet the user warmly")
+   * For 'pregenerated': Exact text the assistant will speak
+   */
+  text: string;
 }
 
 // ============================================================================
@@ -867,6 +930,16 @@ export interface UseVoiceLiveConfig {
   onEvent?: (event: VoiceLiveEvent) => void;
 
   /**
+   * Transcript callback for receiving user and assistant transcripts.
+   * Accumulates delta events automatically - delivers partial updates and final text.
+   *
+   * @param role - 'user' or 'assistant'
+   * @param text - Accumulated transcript text
+   * @param isFinal - Whether this is the final transcript for this turn
+   */
+  onTranscript?: (role: 'user' | 'assistant', text: string, isFinal: boolean) => void;
+
+  /**
    * Tool executor for function calling
    */
   toolExecutor?: (name: string, args: string, callId: string) => void;
@@ -875,9 +948,17 @@ export interface UseVoiceLiveConfig {
 /**
  * Return type for useVoiceLive hook
  */
+/**
+ * Session activity state - tracks what the session is doing
+ */
+export type SessionState = 'idle' | 'listening' | 'thinking' | 'speaking';
+
 export interface UseVoiceLiveReturn {
   /** Current connection state */
   connectionState: 'disconnected' | 'connecting' | 'connected' | 'error';
+
+  /** Current session activity state (idle/listening/thinking/speaking) */
+  sessionState: SessionState;
 
   /** Video stream for avatar */
   videoStream: MediaStream | null;
@@ -897,6 +978,9 @@ export interface UseVoiceLiveReturn {
   /** Whether microphone is currently active */
   isMicActive: boolean;
 
+  /** Whether microphone is muted (capture running but audio not sent) */
+  isMuted: boolean;
+
   /** Error message if any */
   error: string | null;
 
@@ -911,6 +995,9 @@ export interface UseVoiceLiveReturn {
 
   /** Stop microphone capture (for manual control) */
   stopMic: () => void;
+
+  /** Toggle microphone mute (instant, keeps capture running) */
+  toggleMute: () => void;
 
   /** Send an event to the API */
   sendEvent: (event: VoiceLiveEvent) => void;
