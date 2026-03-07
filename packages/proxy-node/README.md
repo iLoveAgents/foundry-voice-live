@@ -125,7 +125,7 @@ FOUNDRY_RESOURCE_NAME=your-resource
 2. Assign "Cognitive Services User" role on your AI Foundry resource
 3. Configure MSAL in your frontend app
 
-### 3. Foundry Agents (Recommended)
+### 3. Foundry Agent Service (Recommended)
 
 Best for: agents built in [Azure AI Foundry](https://learn.microsoft.com/azure/ai-services/speech-service/voice-live-agents-quickstart).
 
@@ -250,7 +250,7 @@ az containerapp create \
 | `FOUNDRY_AGENT_NAME` | No | - | Default agent name (fallback) |
 | `FOUNDRY_PROJECT_NAME` | No | - | Default project name (fallback) |
 | `PORT` | No | `8080` | Server port |
-| `API_VERSION` | No | `2025-10-01` | Azure API version (`2026-01-01-preview` for Foundry Agents) |
+| `API_VERSION` | No | `2025-10-01` | Azure API version (`2026-01-01-preview` for Foundry Agent Service) |
 | `ALLOWED_ORIGINS` | No | `http://localhost:3000` | CORS origins (comma-sep) |
 | `RATE_LIMIT_MAX_REQUESTS` | No | `100` | Max requests per window |
 | `RATE_LIMIT_WINDOW_MS` | No | `60000` | Rate limit window (ms) |
@@ -274,7 +274,7 @@ az containerapp create \
 | Connection fails | Check `.env` values, verify with `curl http://localhost:8080/health` |
 | "Blocked by CORS" | Add your origin to `ALLOWED_ORIGINS` |
 | "Too many requests" | Rate limit hit - wait or increase `RATE_LIMIT_MAX_REQUESTS` |
-| "Missing token" | Classic agent mode (v1) requires MSAL token. Foundry Agents (v2) can use DefaultAzureCredential instead |
+| "Missing token" | Classic agent mode (v1) requires MSAL token. Foundry Agent Service can use DefaultAzureCredential instead |
 | "API key required" | Standard mode needs `FOUNDRY_API_KEY` or client MSAL token |
 | "Failed to acquire Entra ID token" | Run `az login` for local dev, or configure managed identity/service principal |
 

@@ -215,9 +215,12 @@ async function buildAzureUrl(query: QueryParams): Promise<AzureConnectionConfig>
   const apiVersion = query.apiVersion || config.apiVersion;
   const base = `wss://${config.azureResourceName}.services.ai.azure.com/voice-live/realtime?api-version=${apiVersion}`;
 
-  // Resolve agentName/projectName: URL params take priority, .env as fallback
-  const agentName = query.agentName || config.foundryAgentName;
-  const projectName = query.projectName || config.foundryProjectName;
+  // Resolve agentName/projectName: URL params take priority, .env as fallback.
+  // Only use .env fallback when model is NOT explicitly set in the URL,
+  // so standard Voice/Avatar requests (which pass model=gpt-realtime) are not
+  // accidentally routed through agent mode.
+  const agentName = query.agentName || (!query.model ? config.foundryAgentName : undefined);
+  const projectName = query.projectName || (!query.model ? config.foundryProjectName : undefined);
 
   // ===== Foundry Agents (v2): agentName-based =====
   if (agentName) {
@@ -387,10 +390,10 @@ app.ws("/ws", async (ws, req) => {
     logger.info("[Proxy] Connected to Azure");
 
     // Determine mode for telemetry
-    const agentName = query.agentName || config.foundryAgentName;
-    const mode = agentName ? "foundry-agent" : query.agentId ? "agent-v1" : "standard";
+    const agentNameResolved = query.agentName || (!query.model ? config.foundryAgentName : undefined);
+    const mode = agentNameResolved ? "foundry-agent" : query.agentId ? "agent-v1" : "standard";
     const model = query.model || "gpt-realtime";
-    logger.trackEvent("WebSocketConnected", { mode, model, agentName });
+    logger.trackEvent("WebSocketConnected", { mode, model, agentName: agentNameResolved });
 
     // Bidirectional message proxy
     ws.on("message", (msg) => {

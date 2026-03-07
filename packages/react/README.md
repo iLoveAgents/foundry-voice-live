@@ -130,9 +130,9 @@ function App() {
 }
 ```
 
-### Foundry Agents
+### Foundry Agent Service
 
-Connect to [Foundry Agents](https://learn.microsoft.com/azure/ai-services/speech-service/voice-live-agents-quickstart) — client passes agent config as URL params, proxy handles auth:
+Connect to [Foundry Agent Service](https://learn.microsoft.com/azure/ai-services/speech-service/voice-live-agents-quickstart) — client passes agent config as URL params, proxy handles auth:
 
 ```tsx
 import { useVoiceLive, sessionConfig } from '@iloveagents/foundry-voice-live-react';
@@ -174,7 +174,7 @@ For direct connections (without proxy), set `conversationId` on the connection c
 
 - **API Key via Proxy** — Backend holds the key, client uses `proxyUrl`
 - **MSAL Token** — Pass token in query string: `proxyUrl + '?token=' + msalToken`
-- **Foundry Agents** — Proxy uses `DefaultAzureCredential` (or pass MSAL `token`)
+- **Foundry Agent Service** — Proxy uses `DefaultAzureCredential` (or pass MSAL `token`)
 
 See [proxy package docs](https://www.npmjs.com/package/@iloveagents/foundry-voice-live-proxy-node) and [proxy examples](https://github.com/iLoveAgents/foundry-voice-live/tree/main/examples/src/pages).
 
@@ -348,22 +348,24 @@ Returns:
 
 Working examples for all features:
 
-| Example                                                                                                                 | Description          |
-| ----------------------------------------------------------------------------------------------------------------------- | -------------------- |
-| [Voice Basic](https://github.com/iLoveAgents/foundry-voice-live/blob/main/examples/src/pages/VoiceOnlyBasic.tsx)        | Minimal voice chat   |
-| [Voice Advanced](https://github.com/iLoveAgents/foundry-voice-live/blob/main/examples/src/pages/VoiceOnlyAdvanced.tsx)  | VAD, noise reduction |
-| [Voice Proxy](https://github.com/iLoveAgents/foundry-voice-live/blob/main/examples/src/pages/VoiceProxy.tsx)            | Secure proxy pattern |
-| [Voice MSAL](https://github.com/iLoveAgents/foundry-voice-live/blob/main/examples/src/pages/VoiceProxyMSAL.tsx)         | Entra ID auth        |
-| [Avatar Basic](https://github.com/iLoveAgents/foundry-voice-live/blob/main/examples/src/pages/AvatarBasic.tsx)          | Avatar video         |
-| [Avatar Advanced](https://github.com/iLoveAgents/foundry-voice-live/blob/main/examples/src/pages/AvatarAdvanced.tsx)    | Chroma key, 1080p    |
-| [Function Calling](https://github.com/iLoveAgents/foundry-voice-live/blob/main/examples/src/pages/FunctionCalling.tsx)  | Tool integration     |
-| [Audio Visualizer](https://github.com/iLoveAgents/foundry-voice-live/blob/main/examples/src/pages/AudioVisualizer.tsx)  | Waveform display     |
-| [Viseme](https://github.com/iLoveAgents/foundry-voice-live/blob/main/examples/src/pages/VisemeExample.tsx)              | Lip-sync data        |
-| [Live2D Avatar](https://github.com/iLoveAgents/foundry-voice-live/blob/main/examples/src/pages/Live2DAvatarExample.tsx) | Live2D integration   |
-| [3D Avatar](https://github.com/iLoveAgents/foundry-voice-live/blob/main/examples/src/pages/Avatar3DExample.tsx)         | React Three Fiber    |
-| [Foundry Agent](https://github.com/iLoveAgents/foundry-voice-live/blob/main/examples/src/pages/FoundryAgent.tsx)        | Foundry Agent (server-side auth) |
-| [Foundry Agent MSAL](https://github.com/iLoveAgents/foundry-voice-live/blob/main/examples/src/pages/FoundryAgentMSAL.tsx) | Foundry Agent (MSAL auth) |
-| [Agent Service](https://github.com/iLoveAgents/foundry-voice-live/blob/main/examples/src/pages/AgentService.tsx)        | Agent Service (classic v1)  |
+| Example | Description |
+| --- | --- |
+| [Voice Basic](https://github.com/iLoveAgents/foundry-voice-live/blob/main/examples/src/pages/VoiceOnlyBasic.tsx) | Minimal voice chat |
+| [Voice Advanced](https://github.com/iLoveAgents/foundry-voice-live/blob/main/examples/src/pages/VoiceAdvanced.tsx) | VAD, noise reduction |
+| [Voice Proxy](https://github.com/iLoveAgents/foundry-voice-live/blob/main/examples/src/pages/VoiceProxy.tsx) | Secure proxy pattern |
+| [Voice MSAL](https://github.com/iLoveAgents/foundry-voice-live/blob/main/examples/src/pages/VoiceProxyMSAL.tsx) | Entra ID auth |
+| [Avatar Basic](https://github.com/iLoveAgents/foundry-voice-live/blob/main/examples/src/pages/AvatarBasic.tsx) | Avatar video |
+| [Avatar Advanced](https://github.com/iLoveAgents/foundry-voice-live/blob/main/examples/src/pages/AvatarAdvanced.tsx) | Chroma key, 1080p |
+| [Function Calling](https://github.com/iLoveAgents/foundry-voice-live/blob/main/examples/src/pages/FunctionCalling.tsx) | Tool integration |
+| [Audio Visualizer](https://github.com/iLoveAgents/foundry-voice-live/blob/main/examples/src/pages/AudioVisualizer.tsx) | Waveform display |
+| [Viseme](https://github.com/iLoveAgents/foundry-voice-live/blob/main/examples/src/pages/VisemeExample.tsx) | Lip-sync data |
+| [Live2D Avatar](https://github.com/iLoveAgents/foundry-voice-live/blob/main/examples/src/pages/Live2DAvatarExample.tsx) | Live2D integration |
+| [3D Avatar](https://github.com/iLoveAgents/foundry-voice-live/blob/main/examples/src/pages/Avatar3DExample.tsx) | React Three Fiber |
+| [Foundry Agent - Voice](https://github.com/iLoveAgents/foundry-voice-live/blob/main/examples/src/pages/FoundryAgent.tsx) | Foundry Agent Service (server-side auth) |
+| [Foundry Agent - Voice MSAL](https://github.com/iLoveAgents/foundry-voice-live/blob/main/examples/src/pages/FoundryAgentMSAL.tsx) | Foundry Agent Service (MSAL auth) |
+| [Foundry Agent - Avatar](https://github.com/iLoveAgents/foundry-voice-live/blob/main/examples/src/pages/FoundryAgentAvatar.tsx) | Foundry Agent Service with avatar |
+| [Foundry Agent - Avatar MSAL](https://github.com/iLoveAgents/foundry-voice-live/blob/main/examples/src/pages/FoundryAgentAvatarMSAL.tsx) | Foundry Agent Service avatar (MSAL) |
+| [Agent Service](https://github.com/iLoveAgents/foundry-voice-live/blob/main/examples/src/pages/AgentService.tsx) | Agent Service (classic) |
 
 Run examples locally:
 

@@ -106,9 +106,9 @@ Microphone starts automatically when connected. No manual audio setup needed.
 
 > 📖 See the **[React SDK README](./packages/react/README.md)** for full configuration options, function calling, event handling, and more examples.
 
-### Foundry Agents
+### Foundry Agent Service
 
-Connect to [Foundry Agents](https://learn.microsoft.com/azure/ai-services/speech-service/voice-live-agents-quickstart) — the client passes agent config as URL params, the proxy handles auth via `DefaultAzureCredential` (service principal, managed identity, or Azure CLI for dev):
+Connect to [Foundry Agent Service](https://learn.microsoft.com/azure/ai-services/speech-service/voice-live-agents-quickstart) — the client passes agent config as URL params, the proxy handles auth via `DefaultAzureCredential` (service principal, managed identity, or Azure CLI for dev):
 
 ```tsx
 import { useVoiceLive, sessionConfig } from '@iloveagents/foundry-voice-live-react';

@@ -21,6 +21,8 @@ import AgentService from './pages/AgentService';
 import AgentServiceAvatar from './pages/AgentServiceAvatar';
 import FoundryAgent from './pages/FoundryAgent';
 import FoundryAgentMSAL from './pages/FoundryAgentMSAL';
+import FoundryAgentAvatar from './pages/FoundryAgentAvatar';
+import FoundryAgentAvatarMSAL from './pages/FoundryAgentAvatarMSAL';
 
 // MSAL configuration for Agent Service authentication
 const msalConfig = {
@@ -68,6 +70,8 @@ function App() {
           <Route path="/agent-service-avatar" element={<AgentServiceAvatar />} />
           <Route path="/foundry-agent" element={<FoundryAgent />} />
           <Route path="/foundry-agent-msal" element={<FoundryAgentMSAL />} />
+          <Route path="/foundry-agent-avatar" element={<FoundryAgentAvatar />} />
+          <Route path="/foundry-agent-avatar-msal" element={<FoundryAgentAvatarMSAL />} />
           <Route path="/function-calling" element={<FunctionCalling />} />
           <Route path="/audio-visualizer" element={<AudioVisualizer />} />
           <Route path="/viseme" element={<VisemeExample />} />

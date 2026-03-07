@@ -8,7 +8,7 @@ Secure WebSocket proxy between browser clients and Voice Live API.
 
 - Transparent message pass-through (does not parse or modify WebSocket payloads)
 - Handles authentication: API key, MSAL token passthrough, or DefaultAzureCredential
-- Supports Standard (Voice/Avatar), Foundry Agents, and Agent Service (classic) modes
+- Supports Standard (Voice/Avatar), Foundry Agent Service, and Agent Service (classic) modes
 - Mode is auto-detected from URL query parameters
 
 ## Commands

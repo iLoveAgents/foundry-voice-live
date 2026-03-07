@@ -52,29 +52,40 @@ const samples: Record<string, SampleInfo[]> = {
       description: 'Entra ID authentication with avatar',
     },
   ],
-  'Foundry Agents': [
+  'Foundry Agent Service': [
     {
       path: '/foundry-agent',
-      title: 'Foundry Agent',
+      title: 'Voice',
       description:
-        'Proxy handles auth via DefaultAzureCredential. No MSAL needed.',
+        'Server-side auth via DefaultAzureCredential. No MSAL needed.',
     },
     {
       path: '/foundry-agent-msal',
-      title: 'Foundry Agent (MSAL)',
+      title: 'Voice (MSAL)',
       description: 'Per-user Entra ID authentication with MSAL in the browser.',
+    },
+    {
+      path: '/foundry-agent-avatar',
+      title: 'Avatar',
+      description:
+        'Avatar with server-side auth via DefaultAzureCredential.',
+    },
+    {
+      path: '/foundry-agent-avatar-msal',
+      title: 'Avatar (MSAL)',
+      description: 'Avatar with per-user Entra ID authentication.',
     },
   ],
   'Agent Service (classic)': [
     {
       path: '/agent-service',
-      title: 'Agent Service (Voice)',
-      description: 'Azure AI Foundry Agent with MSAL and Whisper transcription',
+      title: 'Voice',
+      description: 'Agent with MSAL and Whisper transcription',
     },
     {
       path: '/agent-service-avatar',
-      title: 'Agent Service (Avatar)',
-      description: 'Full agent integration with avatar video',
+      title: 'Avatar',
+      description: 'Agent integration with avatar video',
     },
   ],
   'Advanced Features': [

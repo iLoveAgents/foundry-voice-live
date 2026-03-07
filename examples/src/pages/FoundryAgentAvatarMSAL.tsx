@@ -3,6 +3,7 @@ import { useMsal } from '@azure/msal-react';
 import { InteractionRequiredAuthError } from '@azure/msal-browser';
 import {
   useVoiceLive,
+  VoiceLiveAvatar,
   createVoiceLiveConfig,
   sessionConfig,
 } from '@iloveagents/foundry-voice-live-react';
@@ -13,10 +14,11 @@ import {
   ControlGroup,
   ErrorPanel,
   AlertBox,
+  AvatarContainer,
 } from '../components';
 
 /**
- * Foundry Agent example with MSAL browser-side authentication.
+ * Foundry Agent Service example with avatar and MSAL browser-side authentication.
  *
  * Per-user Entra ID auth: the browser acquires a token via MSAL and passes it
  * through the proxy to Azure. Each user signs in with their own identity.
@@ -28,7 +30,7 @@ import {
  * 4. Set FOUNDRY_RESOURCE_NAME in proxy .env
  * 5. Set API_VERSION=2026-01-01-preview in proxy .env
  */
-export default function FoundryAgentMSAL(): JSX.Element {
+export default function FoundryAgentAvatarMSAL(): JSX.Element {
   const audioRef = useRef<HTMLAudioElement>(null);
   const { instance, accounts } = useMsal();
   const [accessToken, setAccessToken] = useState<string | null>(null);
@@ -70,7 +72,7 @@ export default function FoundryAgentMSAL(): JSX.Element {
         account: accounts[0],
       });
       setAccessToken(response.accessToken);
-      console.log('[Foundry Agent MSAL] Access token acquired');
+      console.log('[Foundry Agent Avatar MSAL] Access token acquired');
     } catch (err) {
       if (err instanceof InteractionRequiredAuthError) {
         try {
@@ -79,7 +81,7 @@ export default function FoundryAgentMSAL(): JSX.Element {
             account: accounts[0],
           });
           setAccessToken(response.accessToken);
-          console.log('[Foundry Agent MSAL] Access token acquired via popup');
+          console.log('[Foundry Agent Avatar MSAL] Access token acquired via popup');
         } catch (popupError) {
           console.error('Token acquisition failed:', popupError);
           setAuthError(
@@ -116,6 +118,11 @@ export default function FoundryAgentMSAL(): JSX.Element {
         },
         session: sessionConfig()
           .voice('en-US-AvaMultilingualNeural')
+          .avatar(
+            import.meta.env.VITE_AVATAR_CHARACTER || 'lisa',
+            import.meta.env.VITE_AVATAR_STYLE || 'casual-sitting',
+            { codec: 'h264' },
+          )
           .semanticVAD({ interruptResponse: true })
           .echoCancellation()
           .noiseReduction()
@@ -125,11 +132,11 @@ export default function FoundryAgentMSAL(): JSX.Element {
           if (
             event.type === 'conversation.item.input_audio_transcription.completed'
           ) {
-            console.log(`[Foundry Agent MSAL] You: "${event.transcript}"`);
+            console.log(`[Foundry Agent Avatar MSAL] You: "${event.transcript}"`);
           } else if (event.type === 'response.audio_transcript.done') {
-            console.log(`[Foundry Agent MSAL] Agent: "${event.transcript}"`);
+            console.log(`[Foundry Agent Avatar MSAL] Agent: "${event.transcript}"`);
           } else if (event.type === 'error') {
-            console.error('[Foundry Agent MSAL] Error:', event);
+            console.error('[Foundry Agent Avatar MSAL] Error:', event);
             const errorObj = event.error as
               | { message?: string; code?: string }
               | undefined;
@@ -141,9 +148,8 @@ export default function FoundryAgentMSAL(): JSX.Element {
       })
     : null;
 
-  const { connect, disconnect, connectionState, audioStream } = useVoiceLive(
-    config || { connection: { proxyUrl: '' } }
-  );
+  const { connect, disconnect, connectionState, videoStream, audioStream } =
+    useVoiceLive(config || { connection: { proxyUrl: '' } });
 
   useEffect(() => {
     if (audioRef.current && audioStream) {
@@ -161,10 +167,10 @@ export default function FoundryAgentMSAL(): JSX.Element {
       setError(null);
       await connect();
       console.log(
-        '[Foundry Agent MSAL] Connected - microphone will auto-start when session ready'
+        '[Foundry Agent Avatar MSAL] Connected - microphone will auto-start when session ready'
       );
     } catch (err) {
-      console.error('[Foundry Agent MSAL] Start error:', err);
+      console.error('[Foundry Agent Avatar MSAL] Start error:', err);
       setError(err instanceof Error ? err.message : String(err));
     }
   };
@@ -184,8 +190,8 @@ export default function FoundryAgentMSAL(): JSX.Element {
 
   return (
     <SampleLayout
-      title="Foundry Agent Service - Voice (MSAL)"
-      description="Voice conversation with a Foundry Agent using per-user Entra ID authentication. The browser acquires a token via MSAL and passes it through the proxy."
+      title="Foundry Agent Service - Avatar (MSAL)"
+      description="Avatar conversation with a Foundry Agent using per-user Entra ID authentication. The browser acquires a token via MSAL and passes it through the proxy."
     >
       <ErrorPanel error={error || authError} />
 
@@ -277,12 +283,23 @@ export default function FoundryAgentMSAL(): JSX.Element {
 
       <ControlGroup>
         <button onClick={handleStart} disabled={isConnected || !accessToken}>
-          Start Conversation
+          Start Avatar
         </button>
         <button onClick={handleStop} disabled={!isConnected}>
           Stop
         </button>
       </ControlGroup>
+
+      <Section>
+        <AvatarContainer>
+          <VoiceLiveAvatar
+            videoStream={videoStream}
+            audioStream={audioStream}
+            transparentBackground={false}
+            loadingMessage="Avatar will appear here when connected"
+          />
+        </AvatarContainer>
+      </Section>
 
       <audio ref={audioRef} autoPlay hidden />
     </SampleLayout>

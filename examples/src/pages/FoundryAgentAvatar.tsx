@@ -1,6 +1,7 @@
 import { useRef, useEffect, useState } from 'react';
 import {
   useVoiceLive,
+  VoiceLiveAvatar,
   createVoiceLiveConfig,
   sessionConfig,
 } from '@iloveagents/foundry-voice-live-react';
@@ -11,10 +12,11 @@ import {
   ErrorPanel,
   Section,
   AlertBox,
+  AvatarContainer,
 } from '../components';
 
 /**
- * Foundry Agent example with server-side authentication.
+ * Foundry Agent Service example with avatar and server-side authentication.
  *
  * The client passes agentName + projectName as URL params.
  * The proxy acquires Entra ID tokens via DefaultAzureCredential
@@ -27,7 +29,7 @@ import {
  * - proxy .env: FOUNDRY_RESOURCE_NAME, API_VERSION=2026-01-01-preview
  * - `az login` for local dev (or managed identity in production)
  */
-export default function FoundryAgent(): JSX.Element {
+export default function FoundryAgentAvatar(): JSX.Element {
   const audioRef = useRef<HTMLAudioElement>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -49,6 +51,11 @@ export default function FoundryAgent(): JSX.Element {
     },
     session: sessionConfig()
       .voice('en-US-AvaMultilingualNeural')
+      .avatar(
+        import.meta.env.VITE_AVATAR_CHARACTER || 'lisa',
+        import.meta.env.VITE_AVATAR_STYLE || 'casual-sitting',
+        { codec: 'h264' },
+      )
       .semanticVAD({ interruptResponse: true })
       .echoCancellation()
       .noiseReduction()
@@ -58,11 +65,11 @@ export default function FoundryAgent(): JSX.Element {
       if (
         event.type === 'conversation.item.input_audio_transcription.completed'
       ) {
-        console.log(`[Foundry Agent] You: "${event.transcript}"`);
+        console.log(`[Foundry Agent Avatar] You: "${event.transcript}"`);
       } else if (event.type === 'response.audio_transcript.done') {
-        console.log(`[Foundry Agent] Agent: "${event.transcript}"`);
+        console.log(`[Foundry Agent Avatar] Agent: "${event.transcript}"`);
       } else if (event.type === 'error') {
-        console.error('[Foundry Agent] Error:', event);
+        console.error('[Foundry Agent Avatar] Error:', event);
         const errorObj = event.error as
           | { message?: string; code?: string }
           | undefined;
@@ -73,7 +80,7 @@ export default function FoundryAgent(): JSX.Element {
     },
   });
 
-  const { connect, disconnect, connectionState, audioStream } =
+  const { connect, disconnect, connectionState, videoStream, audioStream } =
     useVoiceLive(config);
 
   useEffect(() => {
@@ -88,10 +95,10 @@ export default function FoundryAgent(): JSX.Element {
       setError(null);
       await connect();
       console.log(
-        '[Foundry Agent] Connected - microphone will auto-start when session ready'
+        '[Foundry Agent Avatar] Connected - microphone will auto-start when session ready'
       );
     } catch (err) {
-      console.error('[Foundry Agent] Start error:', err);
+      console.error('[Foundry Agent Avatar] Start error:', err);
       setError(err instanceof Error ? err.message : String(err));
     }
   };
@@ -105,8 +112,8 @@ export default function FoundryAgent(): JSX.Element {
 
   return (
     <SampleLayout
-      title="Foundry Agent Service - Voice"
-      description="Voice conversation with a Foundry Agent. The proxy handles authentication via DefaultAzureCredential — no MSAL or app registration needed."
+      title="Foundry Agent Service - Avatar"
+      description="Voice conversation with avatar and a Foundry Agent. The proxy handles authentication via DefaultAzureCredential — no MSAL or app registration needed."
     >
       <ErrorPanel error={error} />
 
@@ -157,12 +164,23 @@ export default function FoundryAgent(): JSX.Element {
           onClick={handleStart}
           disabled={isConnected || !agentConfigured}
         >
-          Start Conversation
+          Start Avatar
         </button>
         <button onClick={handleStop} disabled={!isConnected}>
           Stop
         </button>
       </ControlGroup>
+
+      <Section>
+        <AvatarContainer>
+          <VoiceLiveAvatar
+            videoStream={videoStream}
+            audioStream={audioStream}
+            transparentBackground={false}
+            loadingMessage="Avatar will appear here when connected"
+          />
+        </AvatarContainer>
+      </Section>
 
       <audio ref={audioRef} autoPlay hidden />
     </SampleLayout>
