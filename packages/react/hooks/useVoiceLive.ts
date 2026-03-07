@@ -582,32 +582,58 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
       // Proxy mode: use proxy URL if provided
       if (connection.proxyUrl) {
         wsUrl = connection.proxyUrl;
-        // Detect agent mode from URL parameters (agentId or projectName presence)
+        // Detect agent mode from URL parameters
         // Mode is auto-detected by proxy, but we check here for logging
-        isAgentMode = wsUrl.includes('agentId=') || wsUrl.includes('projectName=');
+        isAgentMode = connection.agentMode || wsUrl.includes('agentId=') || wsUrl.includes('agentName=') || wsUrl.includes('projectName=');
         isAgentModeRef.current = isAgentMode;
+        const mode = wsUrl.includes('agentName=') ? 'Foundry Agents v2'
+          : wsUrl.includes('agentId=') ? 'Agent Service v1 (classic)'
+          : 'Standard (Voice/Avatar)';
         console.log(`[${getTimestamp()}] Connecting via proxy...`);
         console.log(`[${getTimestamp()}] URL: ${wsUrl.replace(/token=[^&]+/, 'token=***')}`);
-        console.log(`[${getTimestamp()}] Mode: ${isAgentMode ? 'Agent Service (auto-detected)' : 'Standard (Voice/Avatar)'}`);
+        console.log(`[${getTimestamp()}] Mode: ${mode}`);
       } else {
         // Direct connection mode
-        const projectIdentifier = connection.projectName || connection.projectId;
-        isAgentMode = !!(connection.agentId && projectIdentifier);
+        const projectIdentifier = connection.projectName;
+        isAgentMode = !!(connection.agentId || connection.agentName) && !!projectIdentifier;
         isAgentModeRef.current = isAgentMode;
 
-        if (isAgentMode) {
-          // Agent Service mode - per Azure docs: use agent-id and agent-project-name
+        if (connection.agentName && projectIdentifier) {
+          // Foundry Agents v2 - uses agent-name query param and Entra ID bearer token
+          const apiVersion = connection.apiVersion || '2026-01-01-preview';
+          wsUrl = `wss://${connection.resourceName}.services.ai.azure.com/voice-live/realtime`
+            + `?api-version=${apiVersion}`
+            + `&agent-name=${encodeURIComponent(connection.agentName)}`
+            + `&agent-project-name=${encodeURIComponent(projectIdentifier)}`;
+
+          if (connection.conversationId) {
+            wsUrl += `&conversation-id=${encodeURIComponent(connection.conversationId)}`;
+          }
+          if (connection.agentVersion) {
+            wsUrl += `&agent-version=${encodeURIComponent(connection.agentVersion)}`;
+          }
+
+          // Foundry Agents v2: Entra ID bearer token
+          // Browser WebSocket can't set Authorization header, so token goes in query param
+          // For production, use proxy which moves token to Authorization header
+          if (connection.token) {
+            wsUrl += `&token=${encodeURIComponent(connection.token)}`;
+          } else {
+            throw new Error(
+              'Foundry Agents requires either proxyUrl (recommended) or token for direct connection.'
+            );
+          }
+        } else if (connection.agentId && projectIdentifier) {
+          // Agent Service v1 (classic) - per Azure docs: use agent-id and agent-project-name
           wsUrl = `wss://${connection.resourceName}.services.ai.azure.com/voice-live/realtime?api-version=${
             connection.apiVersion || '2025-10-01'
           }&agent-id=${connection.agentId}&agent-project-name=${projectIdentifier}`;
 
-          // Agent Service authentication: ONLY agent-access-token query parameter
-          // Note: API key auth is explicitly NOT supported in Agent mode (server returns error)
-          // Browser limitation: Can't set Authorization header, so token must go in query param
+          // Agent Service v1 authentication: agent-access-token query parameter
           if (connection.agentAccessToken) {
             wsUrl += `&agent-access-token=${encodeURIComponent(connection.agentAccessToken)}`;
           } else {
-            throw new Error('agentAccessToken is required for Agent Service mode.');
+            throw new Error('agentAccessToken is required for Agent Service v1 mode.');
           }
         } else {
           // Standard mode with model
@@ -624,8 +650,10 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
         }
 
         console.log(`[${getTimestamp()}] Connecting to Voice Live API...`);
-        console.log(`[${getTimestamp()}] URL: ${wsUrl.replace(/api-key=[^&]+/, 'api-key=***').replace(/agent-access-token=[^&]+/, 'agent-access-token=***')}`);
-        if (isAgentMode) {
+        console.log(`[${getTimestamp()}] URL: ${wsUrl.replace(/api-key=[^&]+/, 'api-key=***').replace(/agent-access-token=[^&]+/, 'agent-access-token=***').replace(/token=[^&]+/, 'token=***')}`);
+        if (connection.agentName) {
+          console.log(`[${getTimestamp()}] Foundry Agent: ${connection.agentName}, Project: ${projectIdentifier}`);
+        } else if (connection.agentId) {
           console.log(`[${getTimestamp()}] Agent: ${connection.agentId}, Project: ${projectIdentifier}`);
         } else {
           console.log(`[${getTimestamp()}] Model: ${connection.model || 'gpt-realtime'}`);
