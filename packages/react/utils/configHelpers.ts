@@ -19,6 +19,8 @@ import type {
   StandardVoice,
   TurnDetectionConfig,
   Tool,
+  GreetingConfig,
+  InterimResponseConfig,
 } from '../types/voiceLive';
 
 // ============================================================================
@@ -968,6 +970,48 @@ export class SessionConfigBuilder {
   /** Set tool choice mode */
   toolChoice(choice: 'auto' | 'none' | 'required'): this {
     this.config = withToolChoice(choice, this.config);
+    return this;
+  }
+
+  /**
+   * Configure proactive greeting (assistant speaks first)
+   *
+   * @example
+   * ```tsx
+   * // LLM-generated greeting
+   * sessionConfig().greeting({ type: 'llm', text: 'Greet the user warmly.' })
+   *
+   * // Pre-generated greeting (exact text)
+   * sessionConfig().greeting({ type: 'pregenerated', text: 'Hello! How can I help?' })
+   * ```
+   */
+  greeting(config: GreetingConfig): this {
+    this.config.greeting = config;
+    return this;
+  }
+
+  /**
+   * Configure interim responses (filler messages during tool execution or latency)
+   *
+   * @example
+   * ```tsx
+   * // LLM-generated filler
+   * sessionConfig().interimResponse({
+   *   type: 'llm_interim_response',
+   *   triggers: ['tool', 'latency'],
+   *   latencyThresholdInMs: 3000,
+   * })
+   *
+   * // Static filler texts
+   * sessionConfig().interimResponse({
+   *   type: 'static_interim_response',
+   *   triggers: ['tool'],
+   *   texts: ['Let me look that up...', 'One moment please...'],
+   * })
+   * ```
+   */
+  interimResponse(config: InterimResponseConfig): this {
+    this.config.interimResponse = config;
     return this;
   }
 

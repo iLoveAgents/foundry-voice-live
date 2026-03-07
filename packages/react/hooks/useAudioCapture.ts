@@ -76,13 +76,48 @@ export function useAudioCapture({
   autoStart = false,
 }: AudioCaptureConfig = {}): AudioCaptureReturn {
   const [isCapturing, setIsCapturing] = useState(false);
+  const [isMuted, setIsMuted] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const isMutedRef = useRef(false);
 
   const streamRef = useRef<MediaStream | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const audioWorkletNodeRef = useRef<AudioWorkletNode | null>(null);
   const sourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
   const blobUrlRef = useRef<string | null>(null);
+  const audioBufferRef = useRef<Int16Array[]>([]);
+  const bufferedSamplesRef = useRef<number>(0);
+
+  // Buffer size: 2400 samples = 4800 bytes = 100ms at 24kHz mono PCM16
+  // Reduces WebSocket message frequency by batching small worklet outputs
+  const BUFFER_SAMPLES = 2400;
+
+  /**
+   * Flush exactly BUFFER_SAMPLES from the buffer, leaving any remainder.
+   * This ensures bounded message sizes (~100ms chunks) regardless of input timing.
+   */
+  const flushAudioBuffer = useCallback(() => {
+    if (bufferedSamplesRef.current < BUFFER_SAMPLES || !onAudioData) return;
+
+    // Merge buffered chunks into a flat array
+    const chunks = audioBufferRef.current;
+    const totalSamples = bufferedSamplesRef.current;
+    const flat = new Int16Array(totalSamples);
+    let offset = 0;
+    for (const chunk of chunks) {
+      flat.set(chunk, offset);
+      offset += chunk.length;
+    }
+
+    // Send exactly BUFFER_SAMPLES, keep remainder
+    const output = flat.slice(0, BUFFER_SAMPLES);
+    const remainder = flat.slice(BUFFER_SAMPLES);
+
+    audioBufferRef.current = remainder.length > 0 ? [remainder] : [];
+    bufferedSamplesRef.current = remainder.length;
+
+    onAudioData(output.buffer);
+  }, [onAudioData]);
 
   /**
    * Start capturing audio from the microphone
@@ -91,9 +126,19 @@ export function useAudioCapture({
     try {
       setError(null);
 
-      // Request microphone access
+      // Request microphone access with sensible defaults for voice applications
+      const defaultConstraints: MediaTrackConstraints = {
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true,
+        sampleRate: sampleRate,
+        channelCount: 1,
+      };
+      const mergedConstraints = audioConstraints
+        ? { ...defaultConstraints, ...audioConstraints }
+        : defaultConstraints;
       const stream = await navigator.mediaDevices.getUserMedia({
-        audio: audioConstraints || true,
+        audio: mergedConstraints,
       });
       streamRef.current = stream;
 
@@ -123,9 +168,19 @@ export function useAudioCapture({
       audioWorkletNodeRef.current = workletNode;
 
       // Set up audio data handler BEFORE connecting
+      // Buffer incoming samples into ~100ms chunks to reduce WebSocket message frequency
       if (onAudioData) {
         workletNode.port.onmessage = (event) => {
-          onAudioData(event.data as ArrayBuffer);
+          if (isMutedRef.current) return;
+
+          const incoming = new Int16Array(event.data as ArrayBuffer);
+          audioBufferRef.current.push(incoming);
+          bufferedSamplesRef.current += incoming.length;
+
+          // Flush when we've accumulated enough samples
+          while (bufferedSamplesRef.current >= BUFFER_SAMPLES) {
+            flushAudioBuffer();
+          }
         };
       }
 
@@ -140,7 +195,7 @@ export function useAudioCapture({
       console.error('Audio capture error:', err);
       throw err;
     }
-  }, [sampleRate, workletPath, audioConstraints, onAudioData]);
+  }, [sampleRate, workletPath, audioConstraints, onAudioData, flushAudioBuffer]);
 
   /**
    * Stop capturing audio and release resources
@@ -176,6 +231,14 @@ export function useAudioCapture({
       blobUrlRef.current = null;
     }
 
+    // Clear audio buffer
+    audioBufferRef.current = [];
+    bufferedSamplesRef.current = 0;
+
+    // Reset mute state so a new capture session starts unmuted
+    isMutedRef.current = false;
+    setIsMuted(false);
+
     setIsCapturing(false);
   }, []);
 
@@ -197,15 +260,34 @@ export function useAudioCapture({
     }
   }, []);
 
+  /**
+   * Toggle mute - instant, keeps worklet running
+   * Uses ref for synchronous check in audio callback (no re-render delay)
+   */
+  const toggleMute = useCallback(() => {
+    setIsMuted((prev) => {
+      isMutedRef.current = !prev;
+      return !prev;
+    });
+  }, []);
+
   // Update audio data handler when callback changes
   useEffect(() => {
     const workletNode = audioWorkletNodeRef.current;
     if (workletNode && onAudioData) {
       workletNode.port.onmessage = (event) => {
-        onAudioData(event.data as ArrayBuffer);
+        if (isMutedRef.current) return;
+
+        const incoming = new Int16Array(event.data as ArrayBuffer);
+        audioBufferRef.current.push(incoming);
+        bufferedSamplesRef.current += incoming.length;
+
+        while (bufferedSamplesRef.current >= BUFFER_SAMPLES) {
+          flushAudioBuffer();
+        }
       };
     }
-  }, [onAudioData]);
+  }, [onAudioData, flushAudioBuffer]);
 
   // Auto-start if requested
   useEffect(() => {
@@ -225,10 +307,12 @@ export function useAudioCapture({
     stream: streamRef.current,
     audioContext: audioContextRef.current,
     isCapturing,
+    isMuted,
     error,
     startCapture,
     stopCapture,
     pauseCapture,
     resumeCapture,
+    toggleMute,
   };
 }

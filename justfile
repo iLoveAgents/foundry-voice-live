@@ -84,7 +84,7 @@ lint:
 
 # Fix linting issues
 lint-fix:
-    pnpm -r run lint -- --fix
+    pnpm -r run lint:fix
 
 # Format all files with prettier
 format:
@@ -139,17 +139,3 @@ update:
 # Clean all build artifacts
 clean:
     rm -rf packages/*/dist examples/dist
-    rm -rf packages/*/.turbo examples/.turbo
-
-# ============================================
-# Future: Python tasks (uncomment when needed)
-# ============================================
-
-# build-python:
-#     cd packages/proxy-python && poetry build
-
-# test-python:
-#     cd packages/proxy-python && poetry run pytest
-
-# publish-python:
-#     cd packages/proxy-python && poetry publish

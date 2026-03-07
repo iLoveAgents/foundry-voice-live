@@ -51,10 +51,105 @@ import type {
   UseVoiceLiveConfig,
   UseVoiceLiveReturn,
   VoiceLiveEvent,
+  SessionState,
 } from '../types/voiceLive';
 import { buildSessionConfig, buildAgentSessionConfig } from '../utils/sessionBuilder';
 import { useAudioCapture } from './useAudioCapture';
 import { arrayBufferToBase64 } from '../utils/audioHelpers';
+
+/**
+ * Inline AudioWorklet processor for playback with Lanczos-3 resampling.
+ * Runs entirely off the main thread for optimal performance.
+ *
+ * Receives PCM16 Int16Array buffers via postMessage, resamples from source
+ * sample rate to output sample rate using Lanczos-3 interpolation, and
+ * plays back via a queue-based buffer for gapless audio.
+ */
+const AUDIO_PLAYBACK_PROCESSOR_CODE = `
+class AudioPlaybackProcessor extends AudioWorkletProcessor {
+  constructor(options) {
+    super();
+    this.bufferQueue = [];
+    this.currentBuffer = null;
+    this.currentOffset = 0;
+    this.sourceSampleRate = (options && options.processorOptions && options.processorOptions.sourceSampleRate) || 24000;
+    this.ratio = sampleRate / this.sourceSampleRate;
+
+    this.port.onmessage = (event) => {
+      if (event.data === null) {
+        // Stop signal - clear queue (barge-in)
+        this.bufferQueue = [];
+        this.currentBuffer = null;
+        this.currentOffset = 0;
+      } else {
+        // Receive Int16Array buffer, convert and resample
+        const int16 = new Int16Array(event.data);
+        const resampled = this.resample(int16);
+        this.bufferQueue.push(resampled);
+      }
+    };
+  }
+
+  // Lanczos-3 kernel
+  lanczos(x) {
+    if (x === 0) return 1;
+    if (Math.abs(x) >= 3) return 0;
+    const px = Math.PI * x;
+    const pa = px / 3;
+    return (Math.sin(px) * Math.sin(pa)) / (px * pa);
+  }
+
+  // Convert Int16 PCM to Float32 and resample using Lanczos-3
+  resample(int16) {
+    const sourceLen = int16.length;
+    const outputLen = Math.ceil(sourceLen * this.ratio);
+    const output = new Float32Array(outputLen);
+
+    for (let i = 0; i < outputLen; i++) {
+      const srcIdx = i / this.ratio;
+      const center = Math.floor(srcIdx);
+      const frac = srcIdx - center;
+
+      let sample = 0;
+      for (let j = -2; j <= 3; j++) {
+        const idx = center + j;
+        if (idx >= 0 && idx < sourceLen) {
+          sample += (int16[idx] / 32768.0) * this.lanczos(frac - j);
+        }
+      }
+      output[i] = sample;
+    }
+    return output;
+  }
+
+  process(inputs, outputs) {
+    const channel = outputs[0][0];
+    if (!channel) return true;
+
+    for (let i = 0; i < channel.length; i++) {
+      if (!this.currentBuffer || this.currentOffset >= this.currentBuffer.length) {
+        if (this.bufferQueue.length > 0) {
+          this.currentBuffer = this.bufferQueue.shift();
+          this.currentOffset = 0;
+        } else {
+          channel[i] = 0;
+          continue;
+        }
+      }
+      channel[i] = this.currentBuffer[this.currentOffset];
+      this.currentOffset++;
+    }
+    return true;
+  }
+}
+
+registerProcessor('audio-playback-processor', AudioPlaybackProcessor);
+`;
+
+function createPlaybackProcessorBlobUrl(): string {
+  const blob = new Blob([AUDIO_PLAYBACK_PROCESSOR_CODE], { type: 'application/javascript' });
+  return URL.createObjectURL(blob);
+}
 
 /**
  * Utility to get timestamp for logging
@@ -83,10 +178,12 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
     audioSampleRate = 24000,
     audioConstraints,
     onEvent,
+    onTranscript,
     toolExecutor,
   } = config;
 
   const [connectionState, setConnectionState] = useState<UseVoiceLiveReturn['connectionState']>('disconnected');
+  const [sessionState, setSessionState] = useState<SessionState>('idle');
   const [isReady, setIsReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [videoStream, setVideoStream] = useState<MediaStream | null>(null);
@@ -99,12 +196,14 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
   const audioStreamDestinationRef = useRef<MediaStreamAudioDestinationNode | null>(null);
   const audioAnalyserRef = useRef<AnalyserNode | null>(null);
   const audioGainRef = useRef<GainNode | null>(null);
-  const audioQueueRef = useRef<AudioBufferSourceNode[]>([]);
-  const nextPlayTimeRef = useRef<number>(0);
+  const playbackWorkletRef = useRef<AudioWorkletNode | null>(null);
+  const playbackBlobUrlRef = useRef<string | null>(null);
+  const playbackInitPromiseRef = useRef<Promise<void> | null>(null);
   const currentResponseIdRef = useRef<string | null>(null);
   const responseStartTimeRef = useRef<number | null>(null);
   const isFirstChunkRef = useRef<boolean>(true);
   const isAgentModeRef = useRef<boolean>(false);
+  const assistantTranscriptRef = useRef<string>('');
 
   // Keep a stable ref for sendEvent to use in audio capture callback
   const sendEventRef = useRef<(event: VoiceLiveEvent) => void>();
@@ -128,8 +227,10 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
    */
   const {
     isCapturing: isMicActive,
+    isMuted,
     startCapture: startMic,
     stopCapture: stopMic,
+    toggleMute,
   } = useAudioCapture({
     sampleRate: audioSampleRate,
     audioConstraints: typeof audioConstraints === 'boolean' ? undefined : audioConstraints,
@@ -182,173 +283,96 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
 
   /**
    * Stop all audio playback immediately (for interruptions/barge-in)
-   * Following Microsoft's WebSocket interruption pattern
+   * Sends null to the playback worklet to clear its queue
    */
   const stopAudioPlayback = useCallback(() => {
-    // Stop all scheduled audio sources
-    audioQueueRef.current.forEach((source) => {
-      try {
-        source.stop();
-      } catch (e) {
-        // Source may have already stopped naturally
-      }
-    });
-    audioQueueRef.current = [];
-
-    // Reset playback scheduling
-    nextPlayTimeRef.current = 0;
-
+    if (playbackWorkletRef.current) {
+      playbackWorkletRef.current.port.postMessage(null);
+    }
     console.log(`[${getTimestamp()}] Audio playback stopped (user interruption)`);
   }, []);
 
   /**
-   * Play audio chunk for voice-only mode with proper sequential scheduling
-   * Following Microsoft Microsoft Foundry Voice Live API and OpenAI Realtime API patterns
+   * Initialize the playback AudioWorklet (lazy, on first audio chunk)
+   * Sets up the worklet with Lanczos-3 resampling running off the main thread
+   */
+  const initPlaybackWorklet = useCallback(async () => {
+    if (playbackWorkletRef.current) return;
+
+    // Guard against concurrent init calls (race condition on first audio chunks)
+    if (playbackInitPromiseRef.current) {
+      await playbackInitPromiseRef.current;
+      return;
+    }
+
+    const audioContext = audioContextRef.current;
+    if (!audioContext) return;
+
+    const initPromise = (async () => {
+      const blobUrl = createPlaybackProcessorBlobUrl();
+      playbackBlobUrlRef.current = blobUrl;
+
+      await audioContext.audioWorklet.addModule(blobUrl);
+
+      const workletNode = new AudioWorkletNode(audioContext, 'audio-playback-processor', {
+        processorOptions: { sourceSampleRate: audioSampleRate },
+      });
+
+      // Connect worklet to gain node (for visualization) or directly to destination
+      if (audioGainRef.current) {
+        workletNode.connect(audioGainRef.current);
+      } else {
+        workletNode.connect(audioContext.destination);
+      }
+
+      playbackWorkletRef.current = workletNode;
+      console.log(`[${getTimestamp()}] Playback worklet initialized (Lanczos-3 resampling, off main thread)`);
+    })();
+
+    playbackInitPromiseRef.current = initPromise;
+    await initPromise;
+  }, [audioSampleRate]);
+
+  /**
+   * Play audio chunk for voice-only mode via AudioWorklet
+   * Decodes base64 PCM16 and sends raw Int16Array to worklet for
+   * Lanczos-3 resampling and queue-based gapless playback (all off main thread)
    */
   const playAudioChunk = useCallback(async (base64Audio: string) => {
     try {
-      // Initialize AudioContext with optimal configuration for real-time audio
-      // latencyHint: "interactive" minimizes latency for real-time applications
-      // Reference: W3C Web Audio API - https://www.w3.org/TR/webaudio/
-      if (!audioContextRef.current) {
-        audioContextRef.current = new AudioContext({
-          latencyHint: 'interactive',
-          // Let browser choose optimal sample rate (typically 48kHz)
-        });
-        nextPlayTimeRef.current = 0;
-        console.log(`AudioContext created with sample rate: ${audioContextRef.current.sampleRate}Hz`);
-        console.log(`Base latency: ${(audioContextRef.current.baseLatency * 1000).toFixed(2)}ms`);
-
-        // Create gain node for routing audio to multiple destinations
-        audioGainRef.current = audioContextRef.current.createGain();
-        audioGainRef.current.gain.value = 1.0;
-
-        // Create analyser for visualization
-        audioAnalyserRef.current = audioContextRef.current.createAnalyser();
-        audioAnalyserRef.current.fftSize = 256;
-        audioAnalyserRef.current.smoothingTimeConstant = 0.8;
-
-        // Trigger component re-render to expose audioContext and audioAnalyser
-        forceUpdate({});
-      }
-
       const audioContext = audioContextRef.current;
+      if (!audioContext) return;
 
       // Resume AudioContext if suspended (browser autoplay policy)
-      // Await resume to ensure context is in running state before scheduling audio
       if (audioContext.state === 'suspended') {
         await audioContext.resume();
-        console.log(`AudioContext resumed from suspended state. New state: ${audioContext.state}`);
       }
 
-      // Decode base64 to PCM16 (following Microsoft's pattern)
+      // Initialize worklet on first chunk
+      if (!playbackWorkletRef.current) {
+        await initPlaybackWorklet();
+      }
+
+      // Track response start time for viseme sync
+      if (isFirstChunkRef.current) {
+        responseStartTimeRef.current = audioContext.currentTime;
+        isFirstChunkRef.current = false;
+      }
+
+      // Decode base64 to raw bytes
       const binaryString = atob(base64Audio);
       const bytes = new Uint8Array(binaryString.length);
       for (let i = 0; i < binaryString.length; i++) {
         bytes[i] = binaryString.charCodeAt(i);
       }
 
-      // Convert PCM16 to Float32 for Web Audio API
-      // PCM16 range: -32768 to 32767 → Float32 range: -1.0 to 1.0
-      const pcm16 = new Int16Array(bytes.buffer);
-      const float32Source = new Float32Array(pcm16.length);
-      for (let i = 0; i < pcm16.length; i++) {
-        const sample = pcm16[i];
-        if (sample !== undefined) {
-          float32Source[i] = sample / 32768.0;
-        }
-      }
-
-      // Resample from 24kHz (Azure) to AudioContext sample rate (typically 48kHz)
-      // Using Lanczos-3 interpolation for professional audio quality
-      // Reference: Web Audio API Best Practices - https://www.w3.org/TR/webaudio/
-      const sourceSampleRate = 24000;
-      const targetSampleRate = audioContext.sampleRate;
-      const sampleRateRatio = targetSampleRate / sourceSampleRate;
-      const outputLength = Math.ceil(float32Source.length * sampleRateRatio);
-      const float32 = new Float32Array(outputLength);
-
-      // Lanczos-3 kernel function for high-quality resampling
-      const lanczosA = 3;
-      const lanczosKernel = (x: number): number => {
-        if (Math.abs(x) >= lanczosA) return 0;
-        if (x === 0) return 1;
-        const pi = Math.PI;
-        const px = pi * x;
-        const pa = px / lanczosA;
-        return (Math.sin(px) * Math.sin(pa)) / (px * pa);
-      };
-
-      // Lanczos-3 resampling (professional audio quality)
-      for (let i = 0; i < outputLength; i++) {
-        const sourceIndex = i / sampleRateRatio;
-        const centerIndex = Math.floor(sourceIndex);
-        const fraction = sourceIndex - centerIndex;
-
-        let interpolatedSample = 0;
-
-        // Apply Lanczos kernel across 6 samples (3 on each side)
-        for (let j = -lanczosA + 1; j <= lanczosA; j++) {
-          const sampleIndex = centerIndex + j;
-          if (sampleIndex >= 0 && sampleIndex < float32Source.length) {
-            const distance = fraction - j;
-            const sample = float32Source[sampleIndex];
-            if (sample !== undefined) {
-              interpolatedSample += sample * lanczosKernel(distance);
-            }
-          }
-        }
-
-        float32[i] = interpolatedSample;
-      }
-
-      // Create AudioBuffer at the AudioContext's sample rate
-      const audioBuffer = audioContext.createBuffer(1, float32.length, targetSampleRate);
-      audioBuffer.getChannelData(0).set(float32);
-
-      // Calculate scheduled play time for sequential playback
-      const currentTime = audioContext.currentTime;
-
-      // Schedule audio playback with lookahead for first chunk to prevent glitches
-      // 400ms scheduling window allows the audio pipeline to fully initialize
-      // Reference: Web Audio API scheduling best practices
-      let scheduleTime: number;
-      if (isFirstChunkRef.current) {
-        // First chunk: schedule 400ms ahead for smooth startup
-        // Ensures AudioContext is fully running and pipeline is initialized
-        scheduleTime = Math.max(currentTime + 0.4, nextPlayTimeRef.current);
-        responseStartTimeRef.current = scheduleTime;
-        isFirstChunkRef.current = false;
-        console.log(`First chunk scheduled at +${((scheduleTime - currentTime) * 1000).toFixed(0)}ms (context state: ${audioContext.state})`);
-      } else {
-        // Subsequent chunks: continuous scheduling for gapless playback
-        scheduleTime = Math.max(currentTime, nextPlayTimeRef.current);
-      }
-
-      // Create and schedule audio source
-      const source = audioContext.createBufferSource();
-      source.buffer = audioBuffer;
-
-      // Connect audio source to appropriate destination
-      // Voice-only mode: route through gain node to enable visualization
-      // Fallback: connect directly to audio destination
-      if (audioGainRef.current) {
-        source.connect(audioGainRef.current);
-      } else {
-        source.connect(audioContext.destination);
-      }
-
-      source.start(scheduleTime);
-
-      // Update next play time to maintain continuous playback without gaps
-      nextPlayTimeRef.current = scheduleTime + audioBuffer.duration;
-
-      // Track for cleanup
-      audioQueueRef.current.push(source);
+      // Transfer PCM16 buffer to worklet (transferable for zero-copy performance)
+      const buffer = bytes.buffer;
+      playbackWorkletRef.current?.port.postMessage(buffer, [buffer]);
     } catch (err) {
       console.error('Error playing audio chunk:', err);
     }
-  }, [forceUpdate]);
+  }, [initPlaybackWorklet]);
 
   /**
    * Handle WebSocket messages
@@ -489,6 +513,7 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
             // Voice-only mode (no avatar) - session is ready immediately
             console.log(`[${getTimestamp()}] Voice-only session ready`);
             setIsReady(true);
+            setSessionState('listening');
           }
           break;
 
@@ -499,23 +524,26 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
             await pcRef.current.setRemoteDescription(remoteDesc);
             console.log(`[${getTimestamp()}] Avatar WebRTC established`);
             setIsReady(true);
+            setSessionState('listening');
           }
           break;
 
         case 'response.created':
+          setSessionState('speaking');
+          // Reset transcript accumulator for new response
+          assistantTranscriptRef.current = '';
           // Track current response for interruption handling
           if (data.response?.id) {
             currentResponseIdRef.current = data.response.id;
-            // Reset for new response (for viseme sync and audio scheduling)
+            // Reset for new response (for viseme sync)
             isFirstChunkRef.current = true;
             responseStartTimeRef.current = null;
-            // Reset audio scheduling to play immediately
-            nextPlayTimeRef.current = audioContextRef.current?.currentTime || 0;
           }
           break;
 
         case 'input_audio_buffer.speech_started':
           console.log(`[${getTimestamp()}] User speaking (interrupting)...`);
+          setSessionState('listening');
           // Microsoft's official pattern for WebSocket barge-in:
           // Stop client-side audio playback immediately
           // Server handles truncation with auto_truncate: true
@@ -524,10 +552,14 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
 
         case 'input_audio_buffer.speech_stopped':
           console.log(`[${getTimestamp()}] User stopped speaking`);
+          setSessionState('thinking');
           break;
 
         case 'conversation.item.input_audio_transcription.completed':
           console.log(`[${getTimestamp()}] User said: "${data.transcript}"`);
+          if (onTranscript && data.transcript) {
+            onTranscript('user', data.transcript, true);
+          }
           break;
 
         case 'response.audio.delta':
@@ -538,12 +570,20 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
           }
           break;
 
-        case 'response.audio.done':
-          // Reset playback scheduling for next response
-          // Use current AudioContext time instead of 0 to avoid scheduling issues
-          if (data.response_id === currentResponseIdRef.current) {
-            nextPlayTimeRef.current = audioContextRef.current?.currentTime || 0;
+        case 'response.audio_transcript.delta':
+          if (onTranscript && data.delta) {
+            assistantTranscriptRef.current += data.delta;
+            onTranscript('assistant', assistantTranscriptRef.current, false);
           }
+          break;
+
+        case 'response.done':
+          // Emit final assistant transcript if accumulated
+          if (onTranscript && assistantTranscriptRef.current) {
+            onTranscript('assistant', assistantTranscriptRef.current, true);
+            assistantTranscriptRef.current = '';
+          }
+          setSessionState('listening');
           break;
 
         case 'response.audio_transcript.done':
@@ -558,13 +598,26 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
           }
           break;
 
-        case 'error':
+        case 'error': {
+          const errorCode = data.error?.code || '';
+          const errorMessage = data.error?.message || 'Unknown API error';
+
+          // Filter benign errors that occur during normal barge-in
+          if (
+            errorCode === 'response_cancel_not_active' ||
+            errorMessage.toLowerCase().includes('no active response')
+          ) {
+            console.debug(`[${getTimestamp()}] Benign cancel error (ignored):`, errorMessage);
+            break;
+          }
+
           console.error(`[${getTimestamp()}] API Error:`, data.error);
-          setError(data.error?.message || 'Unknown API error');
+          setError(errorMessage);
           break;
+        }
       }
     },
-    [onEvent, sendEvent, toolExecutor, playAudioChunk, stopAudioPlayback, videoStream, session]
+    [onEvent, onTranscript, sendEvent, toolExecutor, playAudioChunk, stopAudioPlayback, videoStream, session]
   );
 
   /**
@@ -743,22 +796,25 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
     // Stop microphone capture
     stopMic();
 
-    // Stop any playing audio
-    audioQueueRef.current.forEach((source) => {
-      try {
-        source.stop();
-      } catch (e) {
-        // Ignore if already stopped
-      }
-    });
-    audioQueueRef.current = [];
+    // Stop playback worklet
+    if (playbackWorkletRef.current) {
+      playbackWorkletRef.current.port.postMessage(null);
+      playbackWorkletRef.current.disconnect();
+      playbackWorkletRef.current = null;
+    }
+    playbackInitPromiseRef.current = null;
+
+    // Cleanup playback blob URL
+    if (playbackBlobUrlRef.current) {
+      URL.revokeObjectURL(playbackBlobUrlRef.current);
+      playbackBlobUrlRef.current = null;
+    }
 
     // Close audio context
     if (audioContextRef.current) {
       audioContextRef.current.close();
       audioContextRef.current = null;
     }
-    nextPlayTimeRef.current = 0;
 
     // Close WebSocket
     if (wsRef.current) {
@@ -775,6 +831,7 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
     setVideoStream(null);
     setAudioStream(null);
     setIsReady(false);
+    setSessionState('idle');
     setConnectionState('disconnected');
   }, [stopMic]);
 
@@ -794,6 +851,44 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
       });
     }
   }, [isReady, autoStartMic, isMicActive, startMic]);
+
+  // Send proactive greeting when session is ready
+  useEffect(() => {
+    if (!isReady || !session?.greeting) return;
+
+    const { type, text } = session.greeting;
+    console.log(`[${getTimestamp()}] Sending proactive greeting (${type})...`);
+
+    if (type === 'llm') {
+      // LLM-generated greeting: add system message and trigger response
+      sendEvent({
+        type: 'conversation.item.create',
+        item: {
+          type: 'message',
+          role: 'system',
+          content: [{ type: 'input_text', text }],
+        },
+      });
+      sendEvent({
+        type: 'response.create',
+        event_id: `evt_llmgreeting_${Date.now()}`,
+      });
+    } else if (type === 'pregenerated') {
+      // Pre-generated greeting: use preGeneratedAssistantMessage
+      sendEvent({
+        type: 'response.create',
+        event_id: `evt_greeting_${Date.now()}`,
+        response: {
+          preGeneratedAssistantMessage: {
+            type: 'message',
+            role: 'assistant',
+            content: [{ type: 'output_text', text }],
+          },
+        },
+      });
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isReady]);
 
   // Cleanup on unmount
   useEffect(() => {
@@ -816,17 +911,20 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
 
   return {
     connectionState,
+    sessionState,
     videoStream,
     audioStream,
     audioContext: audioContextRef.current,
     audioAnalyser: audioAnalyserRef.current,
     isReady,
     isMicActive,
+    isMuted,
     error,
     connect,
     disconnect,
     startMic,
     stopMic,
+    toggleMute,
     sendEvent,
     updateSession,
     getAudioPlaybackTime,

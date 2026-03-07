@@ -295,13 +295,16 @@ import { useVoiceLive } from '@iloveagents/foundry-voice-live-react';
 
 ```typescript
 const {
-  connectionState,  // 'disconnected' | 'connecting' | 'connected'
+  connectionState,  // 'disconnected' | 'connecting' | 'connected' | 'error'
+  sessionState,     // 'idle' | 'listening' | 'thinking' | 'speaking'
   videoStream,      // MediaStream | null (avatar video)
   audioStream,      // MediaStream | null (audio playback)
   audioAnalyser,    // AnalyserNode | null (for visualization)
-  isMicActive,      // boolean
+  isMicActive,      // boolean - whether microphone is capturing
+  isMuted,          // boolean - microphone mute state
   connect,          // () => Promise<void>
   disconnect,       // () => void
+  toggleMute,       // () => void - instant mute/unmute
   sendEvent,        // (event: any) => void
   updateSession,    // (config) => void
   error,            // string | null
@@ -311,14 +314,21 @@ const {
     apiKey?: string,            // For dev only
     proxyUrl?: string,          // Secure proxy URL (production)
   },
-  session: {
-    instructions?: string,
-    voice?: { name: string, type: 'azure-standard' | 'azure-hd' },
-    avatar?: { character: string, style: string },
-    turnDetection?: { type: 'semantic_vad' | 'server_vad' | 'none' },
-    tools?: ToolDefinition[],
-  },
+  session: sessionConfig()
+    .instructions('You are a helpful assistant.')
+    .hdVoice('en-US-Ava:DragonHDLatestNeural')
+    .semanticVAD({ interruptResponse: true, removeFillerWords: true })
+    .echoCancellation()
+    .noiseReduction()
+    .greeting({ type: 'llm', text: 'Greet the user warmly in English.' })
+    .interimResponse({
+      type: 'llm_interim_response',
+      triggers: ['tool', 'latency'],
+      latencyThresholdInMs: 3000,
+    })
+    .build(),
   onEvent?: (event: VoiceLiveEvent) => void,
+  onTranscript?: (role: 'user' | 'assistant', text: string, isFinal: boolean) => void,
   toolExecutor?: (name: string, args: string, callId: string) => void,
 });
 ```
