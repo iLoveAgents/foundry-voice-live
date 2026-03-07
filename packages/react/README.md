@@ -91,7 +91,7 @@ Microphone starts automatically when connected. No manual audio setup needed.
 docker run -p 8080:8080 \
   -e FOUNDRY_RESOURCE_NAME=your-foundry-resource \
   -e FOUNDRY_API_KEY="your-api-key" \
-  -e ALLOWED_ORGINS="*" \
+  -e ALLOWED_ORIGINS="*" \
   ghcr.io/iloveagents/foundry-voice-live-proxy:latest
 ```
 
@@ -100,7 +100,7 @@ Or with npx:
 ```bash
 FOUNDRY_RESOURCE_NAME=your-foundry-resource \
 FOUNDRY_API_KEY="your-api-key" \
-ALLOWED_ORGINS="*" \
+ALLOWED_ORIGINS="*" \
 npx @iloveagents/foundry-voice-live-proxy-node
 ```
 
@@ -130,10 +130,51 @@ function App() {
 }
 ```
 
+### Foundry Agents
+
+Connect to [Foundry Agents](https://learn.microsoft.com/azure/ai-services/speech-service/voice-live-agents-quickstart) — client passes agent config as URL params, proxy handles auth:
+
+```tsx
+import { useVoiceLive, sessionConfig } from '@iloveagents/foundry-voice-live-react';
+
+function App() {
+  const { connect, disconnect, audioStream } = useVoiceLive({
+    connection: {
+      proxyUrl: 'ws://localhost:8080/ws?agentName=MyAgent&projectName=myProject',
+    },
+    session: sessionConfig()
+      .voice('en-US-AvaMultilingualNeural')
+      .semanticVAD({ interruptResponse: true })
+      .echoCancellation()
+      .noiseReduction()
+      .build(),
+  });
+
+  return (
+    <>
+      <button onClick={connect}>Start</button>
+      <button onClick={disconnect}>Stop</button>
+      <audio ref={el => { if (el && audioStream) el.srcObject = audioStream; }} autoPlay />
+    </>
+  );
+}
+```
+
+Proxy needs `FOUNDRY_RESOURCE_NAME` and `API_VERSION=2026-01-01-preview`. For MSAL auth, also pass `token` in the URL.
+
+To resume a previous conversation, add `conversationId` to the URL:
+
+```text
+ws://localhost:8080/ws?agentName=MyAgent&projectName=myProject&conversationId=conv_abc123
+```
+
+For direct connections (without proxy), set `conversationId` on the connection config instead.
+
 ### Authentication Options
 
 - **API Key via Proxy** — Backend holds the key, client uses `proxyUrl`
 - **MSAL Token** — Pass token in query string: `proxyUrl + '?token=' + msalToken`
+- **Foundry Agents** — Proxy uses `DefaultAzureCredential` (or pass MSAL `token`)
 
 See [proxy package docs](https://www.npmjs.com/package/@iloveagents/foundry-voice-live-proxy-node) and [proxy examples](https://github.com/iLoveAgents/foundry-voice-live/tree/main/examples/src/pages).
 
@@ -320,7 +361,9 @@ Working examples for all features:
 | [Viseme](https://github.com/iLoveAgents/foundry-voice-live/blob/main/examples/src/pages/VisemeExample.tsx)              | Lip-sync data        |
 | [Live2D Avatar](https://github.com/iLoveAgents/foundry-voice-live/blob/main/examples/src/pages/Live2DAvatarExample.tsx) | Live2D integration   |
 | [3D Avatar](https://github.com/iLoveAgents/foundry-voice-live/blob/main/examples/src/pages/Avatar3DExample.tsx)         | React Three Fiber    |
-| [Agent Service](https://github.com/iLoveAgents/foundry-voice-live/blob/main/examples/src/pages/AgentService.tsx)        | Foundry Agent        |
+| [Foundry Agent](https://github.com/iLoveAgents/foundry-voice-live/blob/main/examples/src/pages/FoundryAgent.tsx)        | Foundry Agent (server-side auth) |
+| [Foundry Agent MSAL](https://github.com/iLoveAgents/foundry-voice-live/blob/main/examples/src/pages/FoundryAgentMSAL.tsx) | Foundry Agent (MSAL auth) |
+| [Agent Service](https://github.com/iLoveAgents/foundry-voice-live/blob/main/examples/src/pages/AgentService.tsx)        | Agent Service (classic v1)  |
 
 Run examples locally:
 

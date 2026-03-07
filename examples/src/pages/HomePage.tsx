@@ -52,7 +52,20 @@ const samples: Record<string, SampleInfo[]> = {
       description: 'Entra ID authentication with avatar',
     },
   ],
-  'Agent Service': [
+  'Foundry Agents': [
+    {
+      path: '/foundry-agent',
+      title: 'Foundry Agent',
+      description:
+        'Proxy handles auth via DefaultAzureCredential. No MSAL needed.',
+    },
+    {
+      path: '/foundry-agent-msal',
+      title: 'Foundry Agent (MSAL)',
+      description: 'Per-user Entra ID authentication with MSAL in the browser.',
+    },
+  ],
+  'Agent Service (classic)': [
     {
       path: '/agent-service',
       title: 'Agent Service (Voice)',

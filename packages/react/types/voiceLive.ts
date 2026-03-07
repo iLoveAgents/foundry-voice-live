@@ -76,17 +76,38 @@ export interface VoiceLiveConnectionConfig {
 
   // ===== Agent Service Mode (mutually exclusive with model) =====
 
-  /** Agent ID for Azure AI Agent Service */
+  /** Agent ID for Azure AI Agent Service (classic v1) */
   agentId?: string;
 
   /** Project name for Azure AI Agent Service (recommended) */
   projectName?: string;
 
-  /** Project ID for Azure AI Agent Service (deprecated - use projectName) */
-  projectId?: string;
-
-  /** Agent access token for Azure AI Agent Service (required for Agent mode) */
+  /** Agent access token for Azure AI Agent Service (required for classic Agent mode v1) */
   agentAccessToken?: string;
+
+  // ===== Foundry Agents (v2) =====
+
+  /**
+   * Agent name as configured in Azure AI Foundry portal.
+   * Uses Foundry Agents v2 API with Entra ID authentication.
+   * Requires proxy for browser apps (Authorization header not settable from browser WebSocket).
+   *
+   * @example 'VoiceLiveAgent'
+   * @see {@link https://learn.microsoft.com/azure/ai-services/speech-service/voice-live-agents-quickstart}
+   */
+  agentName?: string;
+
+  /**
+   * Resume a previous conversation (Foundry Agents v2).
+   * Pass the conversation ID from a previous session to continue where it left off.
+   */
+  conversationId?: string;
+
+  /**
+   * Pin a specific agent version (Foundry Agents v2).
+   * If not set, defaults to the latest version.
+   */
+  agentVersion?: string;
 
   // ===== Proxy Mode =====
 
@@ -97,13 +118,29 @@ export interface VoiceLiveConnectionConfig {
    * Supports @iloveagents/foundry-voice-live-proxy-node or custom proxy servers.
    * Mode is automatically detected by the proxy based on URL parameters.
    *
-   * Standard mode: 'ws://localhost:8080/ws?model=gpt-realtime'
-   * Standard with MSAL: 'ws://localhost:8080/ws?model=gpt-realtime&token=${msalToken}'
-   * Agent mode (auto-detected): 'ws://localhost:8080/ws?agentId=xxx&projectName=yyy&token=${msalToken}'
+   * Standard mode:         'ws://localhost:8080/ws?model=gpt-realtime'
+   * Standard with MSAL:    'ws://localhost:8080/ws?model=gpt-realtime&token=${msalToken}'
+   * Agent v1 (classic):    'ws://localhost:8080/ws?agentId=xxx&projectName=yyy&token=${msalToken}'
+   * Foundry Agent:         'ws://localhost:8080/ws?agentName=MyAgent&projectName=myProject'
+   * Foundry Agent (MSAL):  'ws://localhost:8080/ws?agentName=MyAgent&projectName=myProject&token=${msalToken}'
    *
    * @see {@link https://github.com/iLoveAgents/foundry-voice-live-proxy}
    */
   proxyUrl?: string;
+
+  /**
+   * Explicitly enable agent mode for session configuration.
+   *
+   * When true, session.update omits fields not supported in agent mode
+   * (temperature, instructions, maxResponseOutputTokens).
+   *
+   * Usually auto-detected from agentName/agentId in the URL or connection config.
+   * Set explicitly when the proxy handles agent config server-side and the
+   * proxy URL doesn't contain agent params.
+   *
+   * @default auto-detected from URL params or connection config
+   */
+  agentMode?: boolean;
 }
 
 // ============================================================================
@@ -885,38 +922,3 @@ export interface UseVoiceLiveReturn {
   getAudioPlaybackTime: () => number | null;
 }
 
-// ============================================================================
-// AGENT SERVICE CONFIGURATION
-// ============================================================================
-
-/**
- * Configuration for Azure AI Agent Service mode
- */
-export interface AgentServiceConfig {
-  /** Azure AI Foundry resource name */
-  resourceName: string;
-
-  /** Agent ID */
-  agentId: string;
-
-  /** Project ID */
-  projectId: string;
-
-  /** API key or token authentication */
-  apiKey?: string;
-  token?: string;
-
-  /**
-   * API version
-   * @default '2025-10-01'
-   */
-  apiVersion?: string;
-
-  // Session configuration (instructions NOT supported in agent mode)
-  session?: Omit<VoiceLiveSessionConfig, 'instructions'>;
-
-  // Lifecycle & handlers
-  autoConnect?: boolean;
-  onEvent?: (event: VoiceLiveEvent) => void;
-  toolExecutor?: (name: string, args: string, callId: string) => void;
-}

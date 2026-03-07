@@ -6,9 +6,10 @@ Package: `@iloveagents/foundry-voice-live-proxy-node`
 
 Secure WebSocket proxy between browser clients and Voice Live API.
 
-- Hides Foundry credentials from client-side code
-- Handles authentication via MSAL token or API key
-- Provides rate limiting and security headers
+- Transparent message pass-through (does not parse or modify WebSocket payloads)
+- Handles authentication: API key, MSAL token passthrough, or DefaultAzureCredential
+- Supports Standard (Voice/Avatar), Foundry Agents, and Agent Service (classic) modes
+- Mode is auto-detected from URL query parameters
 
 ## Commands
 
@@ -22,21 +23,19 @@ just dev-proxy        # Start dev server (port 8080)
 
 ```text
 src/
-  index.ts            # Express + WebSocket server
+  index.ts            # Express + WebSocket server, buildAzureUrl, token acquisition
+  types.ts            # TypeScript type definitions (QueryParams, ProxyConfig, etc.)
   __tests__/          # Unit tests
 Dockerfile
 docker-compose.yml
 ```
 
-## Environment
+## Key Concepts
 
-```bash
-FOUNDRY_RESOURCE_NAME=your-resource
-FOUNDRY_API_KEY=your-key
-PORT=8080
-```
-
-`FOUNDRY_API_KEY` is optional when using MSAL authentication.
+- `buildAzureUrl()` is async — resolves auth (API key, MSAL token, or DefaultAzureCredential)
+- Token from URL `?token=` is moved to `Authorization: Bearer` header (browser WebSocket limitation)
+- `@azure/identity` `DefaultAzureCredential` handles token caching/refresh internally
+- Environment vars in `.env` configure defaults; URL params can override
 
 ## Design
 
@@ -45,9 +44,4 @@ PORT=8080
 - Docker-ready with health checks
 - Environment-based configuration
 
-## Docker
-
-```bash
-docker build -t foundry-voice-live-proxy .
-docker run -p 8080:8080 --env-file .env foundry-voice-live-proxy
-```
+See `README.md` for full configuration, auth modes, query parameters, and deployment options.

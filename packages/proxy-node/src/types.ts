@@ -3,29 +3,29 @@
  */
 
 /**
- * Connection mode for Microsoft Foundry Voice Live API
- * Note: Mode is automatically inferred from URL parameters (agentId/projectName presence)
- */
-export type ConnectionMode = "standard" | "agent";
-
-/**
  * Query parameters from WebSocket connection URL
  *
  * Mode is automatically inferred:
- * - Agent mode: If agentId or projectName is provided
+ * - Agent mode: If agentId, agentName, or projectName is provided
  * - Standard mode: Otherwise
  */
 export interface QueryParams {
-  /** @deprecated Mode is now auto-detected from agentId/projectName presence */
-  mode?: ConnectionMode;
   /** Model name for standard mode (default: gpt-realtime) */
   model?: string;
-  /** MSAL Bearer token for authentication */
+  /** MSAL Bearer token for authentication (or auto-acquired via Azure CLI) */
   token?: string;
-  /** Agent ID - triggers agent mode when present */
+  /** Agent ID for Agent Service v1 (classic) - triggers agent mode when present */
   agentId?: string;
+  /** Agent name for Foundry Agents v2 - triggers agent mode when present */
+  agentName?: string;
   /** Project name - triggers agent mode when present */
   projectName?: string;
+  /** Resume conversation (Foundry Agents v2) */
+  conversationId?: string;
+  /** Pin agent version (Foundry Agents v2) */
+  agentVersion?: string;
+  /** Override API version (default: from proxy config) */
+  apiVersion?: string;
 }
 
 /**
@@ -38,13 +38,14 @@ export interface AzureConnectionConfig {
 
 /**
  * Proxy server configuration
- * Agent parameters (agentId, projectName) must be provided by client in URL
  */
 export interface ProxyConfig {
   port: number;
   apiVersion: string;
   azureResourceName: string;
   foundryApiKey?: string; // Optional: for anonymous API key auth
+  foundryAgentName?: string; // Optional: default agent name from .env
+  foundryProjectName?: string; // Optional: default project name from .env
 }
 
 /**
@@ -65,8 +66,8 @@ export interface EnvironmentConfig {
   API_VERSION?: string;
   FOUNDRY_RESOURCE_NAME?: string;
   FOUNDRY_API_KEY?: string;
-  AGENT_ID?: string;
-  PROJECT_NAME?: string;
+  FOUNDRY_AGENT_NAME?: string;
+  FOUNDRY_PROJECT_NAME?: string;
   ALLOWED_ORIGINS?: string;
   RATE_LIMIT_WINDOW_MS?: string;
   RATE_LIMIT_MAX_REQUESTS?: string;

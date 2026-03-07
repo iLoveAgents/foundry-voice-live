@@ -106,6 +106,46 @@ Microphone starts automatically when connected. No manual audio setup needed.
 
 > 📖 See the **[React SDK README](./packages/react/README.md)** for full configuration options, function calling, event handling, and more examples.
 
+### Foundry Agents
+
+Connect to [Foundry Agents](https://learn.microsoft.com/azure/ai-services/speech-service/voice-live-agents-quickstart) — the client passes agent config as URL params, the proxy handles auth via `DefaultAzureCredential` (service principal, managed identity, or Azure CLI for dev):
+
+```tsx
+import { useVoiceLive, sessionConfig } from '@iloveagents/foundry-voice-live-react';
+
+function App() {
+  const { connect, disconnect, audioStream } = useVoiceLive({
+    connection: {
+      proxyUrl: 'ws://localhost:8080/ws?agentName=MyAgent&projectName=myProject',
+    },
+    session: sessionConfig()
+      .voice('en-US-AvaMultilingualNeural')
+      .semanticVAD({ interruptResponse: true })
+      .echoCancellation()
+      .noiseReduction()
+      .build(),
+  });
+
+  return (
+    <>
+      <button onClick={connect}>Start</button>
+      <button onClick={disconnect}>Stop</button>
+      <audio ref={el => { if (el && audioStream) el.srcObject = audioStream; }} autoPlay />
+    </>
+  );
+}
+```
+
+Configure the proxy `.env` with `FOUNDRY_RESOURCE_NAME` and `API_VERSION=2026-01-01-preview`.
+
+To resume a previous conversation, add `conversationId` to the URL:
+
+```text
+ws://localhost:8080/ws?agentName=MyAgent&projectName=myProject&conversationId=conv_abc123
+```
+
+For per-user MSAL auth, also pass `token` as a URL param. See the [examples](./examples/) for both patterns.
+
 ### Production (Proxy)
 
 **Never expose API keys in client-side code.** Use the proxy:
@@ -115,13 +155,13 @@ Microphone starts automatically when connected. No manual audio setup needed.
 docker run -p 8080:8080 \
   -e FOUNDRY_RESOURCE_NAME=your-foundry-resource \
   -e FOUNDRY_API_KEY="your-api-key" \
-  -e ALLOWED_ORGINS="*" \
+  -e ALLOWED_ORIGINS="*" \
   ghcr.io/iloveagents/foundry-voice-live-proxy:latest
 
 # Or with npx
 FOUNDRY_RESOURCE_NAME=your-foundry-resource \
 FOUNDRY_API_KEY="your-api-key" \
-ALLOWED_ORGINS="*" \
+ALLOWED_ORIGINS="*" \
 npx @iloveagents/foundry-voice-live-proxy-node
 ```
 

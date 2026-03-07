@@ -125,27 +125,50 @@ FOUNDRY_RESOURCE_NAME=your-resource
 2. Assign "Cognitive Services User" role on your AI Foundry resource
 3. Configure MSAL in your frontend app
 
-### 3. Agent Mode
+### 3. Foundry Agents (Recommended)
 
-Best for: custom agents built in Azure AI Foundry.
+Best for: agents built in [Azure AI Foundry](https://learn.microsoft.com/azure/ai-services/speech-service/voice-live-agents-quickstart).
+
+**Server-side auth** — proxy acquires tokens via `DefaultAzureCredential`:
 
 ```typescript
-// Frontend - pass agentId, projectName, and token
-const token = await msalInstance.acquireTokenSilent({
-  scopes: ["https://ai.azure.com/.default"],
-});
+// Frontend - pass agent config, proxy handles auth
 const ws = new WebSocket(
-  `ws://localhost:8080/ws?agentId=asst_abc123&projectName=my-project&token=${token.accessToken}`
+  "ws://localhost:8080/ws?agentName=MyAgent&projectName=myProject"
 );
 ```
 
 ```bash
 # Backend .env
 FOUNDRY_RESOURCE_NAME=your-resource
-# agentId and projectName come from client URL
+API_VERSION=2026-01-01-preview
 ```
 
-**Mode detection is automatic:** Agent mode activates when both `agentId` and `projectName` are present.
+For local dev, run `az login`. In production, use managed identity or a service principal.
+
+**MSAL auth** — per-user Entra ID tokens:
+
+```typescript
+// Frontend - pass agent config + MSAL token
+const token = await msalInstance.acquireTokenSilent({
+  scopes: ["https://ai.azure.com/.default"],
+});
+const ws = new WebSocket(
+  `ws://localhost:8080/ws?agentName=MyAgent&projectName=myProject&token=${token.accessToken}`
+);
+```
+
+**Mode detection is automatic:** Foundry Agent mode activates when `agentName` is present in the URL.
+
+### 4. Agent Service (Classic v1)
+
+Legacy mode for agents using `agentId`:
+
+```typescript
+const ws = new WebSocket(
+  `ws://localhost:8080/ws?agentId=asst_abc123&projectName=my-project&token=${token.accessToken}`
+);
+```
 
 ## Deployment
 
@@ -207,25 +230,31 @@ az containerapp create \
 
 ### WebSocket Query Parameters
 
-| Parameter     | Required    | Description                      | Example        |
-| ------------- | ----------- | -------------------------------- | -------------- |
-| `token`       | Conditional | MSAL access token                | `eyJ0eXAi...`  |
-| `agentId`     | Conditional | Agent ID (enables Agent mode)    | `asst_123xyz`  |
-| `projectName` | Conditional | Project name (with agentId)      | `my-project`   |
-| `model`       | No          | Model override                   | `gpt-realtime` |
+| Parameter        | Required    | Description                                  | Example           |
+| ---------------- | ----------- | -------------------------------------------- | ------------------ |
+| `agentName`      | Conditional | Foundry Agent name (enables v2 mode)         | `MyAgent`          |
+| `projectName`    | Conditional | Foundry project name (with agentName/agentId)| `my-project`       |
+| `token`          | Conditional | MSAL access token                            | `eyJ0eXAi...`      |
+| `conversationId` | No          | Resume a previous conversation               | `conv_abc123`      |
+| `agentVersion`   | No          | Pin a specific agent version                 | `1.0`              |
+| `apiVersion`     | No          | Override API version                         | `2026-01-01-preview` |
+| `model`          | No          | Model override (standard mode)               | `gpt-realtime`     |
+| `agentId`        | Conditional | Agent ID (classic v1 mode)                   | `asst_123xyz`      |
 
 ### Environment Variables
 
-| Variable                   | Required    | Default                 | Description                  |
-| -------------------------- | ----------- | ----------------------- | ---------------------------- |
-| `FOUNDRY_RESOURCE_NAME`    | Yes         | -                       | Azure AI Foundry resource    |
-| `FOUNDRY_API_KEY`          | Conditional | -                       | API key (if not using MSAL)  |
-| `PORT`                     | No          | `8080`                  | Server port                  |
-| `API_VERSION`              | No          | `2025-10-01`            | Azure API version            |
-| `ALLOWED_ORIGINS`          | No          | `http://localhost:3000` | CORS origins (comma-sep)     |
-| `RATE_LIMIT_MAX_REQUESTS`  | No          | `100`                   | Max requests per window      |
-| `RATE_LIMIT_WINDOW_MS`     | No          | `60000`                 | Rate limit window (ms)       |
-| `MAX_CONNECTIONS`          | No          | `1000`                  | Max concurrent connections   |
+| Variable | Required | Default | Description |
+| --- | --- | --- | --- |
+| `FOUNDRY_RESOURCE_NAME` | Yes | - | Azure AI Foundry resource |
+| `FOUNDRY_API_KEY` | Conditional | - | API key (if not using MSAL) |
+| `FOUNDRY_AGENT_NAME` | No | - | Default agent name (fallback) |
+| `FOUNDRY_PROJECT_NAME` | No | - | Default project name (fallback) |
+| `PORT` | No | `8080` | Server port |
+| `API_VERSION` | No | `2025-10-01` | Azure API version (`2026-01-01-preview` for Foundry Agents) |
+| `ALLOWED_ORIGINS` | No | `http://localhost:3000` | CORS origins (comma-sep) |
+| `RATE_LIMIT_MAX_REQUESTS` | No | `100` | Max requests per window |
+| `RATE_LIMIT_WINDOW_MS` | No | `60000` | Rate limit window (ms) |
+| `MAX_CONNECTIONS` | No | `1000` | Max concurrent connections |
 
 ### Health Check Response
 
@@ -245,8 +274,9 @@ az containerapp create \
 | Connection fails | Check `.env` values, verify with `curl http://localhost:8080/health` |
 | "Blocked by CORS" | Add your origin to `ALLOWED_ORIGINS` |
 | "Too many requests" | Rate limit hit - wait or increase `RATE_LIMIT_MAX_REQUESTS` |
-| "Missing token" | Agent mode requires MSAL token in URL |
+| "Missing token" | Classic agent mode (v1) requires MSAL token. Foundry Agents (v2) can use DefaultAzureCredential instead |
 | "API key required" | Standard mode needs `FOUNDRY_API_KEY` or client MSAL token |
+| "Failed to acquire Entra ID token" | Run `az login` for local dev, or configure managed identity/service principal |
 
 ## Support
 

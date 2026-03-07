@@ -31,6 +31,12 @@ presets/        # Configuration presets
 index.ts        # Public API
 ```
 
+## Key Concepts
+
+- Agent mode is auto-detected from URL params (`agentName=`, `agentId=`)
+- In agent mode, `buildAgentSessionConfig()` strips fields unsupported by agents (`temperature`, `instructions`)
+- `sessionConfig()` builder produces config compatible with both standard and agent modes
+
 ## Design
 
 - Zero runtime dependencies (peer deps: React only)

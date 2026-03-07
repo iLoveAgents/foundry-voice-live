@@ -9,7 +9,7 @@
  *
  * All other parameters pass through transparently from client to Azure API.
  * Built with Express, includes CORS, rate limiting, and security best practices.
- * Supports Voice, Avatar, and Agent Service scenarios with both API key and MSAL token auth.
+ * Supports Voice, Avatar, Agent Service (v1), and Foundry Agents (v2) with API key, MSAL, and Azure CLI auth.
  */
 
 import express from "express";
@@ -21,6 +21,7 @@ import { WebSocket } from "ws";
 import dotenv from "dotenv";
 import { parse } from "url";
 import * as appInsights from "applicationinsights";
+import { DefaultAzureCredential } from "@azure/identity";
 import type {
   QueryParams,
   AzureConnectionConfig,
@@ -93,6 +94,8 @@ const config: ProxyConfig = {
   apiVersion: process.env.API_VERSION || "2025-10-01",
   azureResourceName: process.env.FOUNDRY_RESOURCE_NAME || "",
   foundryApiKey: process.env.FOUNDRY_API_KEY,
+  foundryAgentName: process.env.FOUNDRY_AGENT_NAME,
+  foundryProjectName: process.env.FOUNDRY_PROJECT_NAME,
 };
 
 const securityConfig: SecurityConfig = {
@@ -111,6 +114,36 @@ if (!config.azureResourceName) {
 
 // Track active connections
 let activeConnections = 0;
+
+// Entra ID credential for Foundry Agents server-side authentication
+let credential: DefaultAzureCredential | null = null;
+
+/**
+ * Acquire Entra ID token using DefaultAzureCredential
+ * Supports Azure CLI, managed identity, environment variables, and more.
+ * Token caching and refresh is handled internally by the SDK.
+ */
+async function getEntraToken(): Promise<string> {
+  if (!credential) {
+    credential = new DefaultAzureCredential();
+  }
+  try {
+    const response = await credential.getToken("https://ai.azure.com/.default");
+    if (!response) {
+      throw new Error("No token returned");
+    }
+    logger.info("[Auth] Entra ID token acquired", {
+      expiresAt: new Date(response.expiresOnTimestamp).toISOString(),
+    });
+    return response.token;
+  } catch (error) {
+    throw new Error(
+      `Entra ID token acquisition failed. Ensure Azure CLI is logged in (az login) ` +
+      `or configure managed identity.\n` +
+      `Original error: ${error instanceof Error ? error.message : String(error)}`
+    );
+  }
+}
 
 /**
  * Security Middleware
@@ -168,55 +201,91 @@ app.use(express.json());
 /**
  * Build Azure WebSocket URL based on connection parameters
  *
- * Mode is automatically inferred from URL parameters:
- * - Agent mode: If agentId or projectName is present
+ * Mode is automatically inferred from URL parameters (with .env fallback):
+ * - Foundry Agents (v2): If agentName is present (URL or .env)
+ * - Agent Service (v1): If agentId is present
  * - Standard mode: Otherwise (Voice/Avatar)
  *
  * Authentication methods:
- * - Agent mode: MSAL token from browser (required)
+ * - Foundry Agents: MSAL token from browser OR server-side DefaultAzureCredential
+ * - Agent Service v1: MSAL token from browser (required)
  * - Standard mode: MSAL token from browser OR API key from backend
  */
-function buildAzureUrl(query: QueryParams): AzureConnectionConfig {
-  const base = `wss://${config.azureResourceName}.services.ai.azure.com/voice-live/realtime?api-version=${config.apiVersion}`;
+async function buildAzureUrl(query: QueryParams): Promise<AzureConnectionConfig> {
+  const apiVersion = query.apiVersion || config.apiVersion;
+  const base = `wss://${config.azureResourceName}.services.ai.azure.com/voice-live/realtime?api-version=${apiVersion}`;
 
-  // Auto-detect Agent mode: If agentId or projectName is provided in the URL
-  // Client must provide both parameters - no .env fallback (transparent proxy)
-  const isAgentMode = !!(query.agentId || query.projectName);
+  // Resolve agentName/projectName: URL params take priority, .env as fallback
+  const agentName = query.agentName || config.foundryAgentName;
+  const projectName = query.projectName || config.foundryProjectName;
 
-  if (isAgentMode) {
-    // Agent mode: requires both agentId and projectName from client
-    if (!query.agentId || !query.projectName) {
-      throw new Error("Agent mode requires both agentId and projectName in URL");
+  // ===== Foundry Agents (v2): agentName-based =====
+  if (agentName) {
+    if (!projectName) {
+      throw new Error("Foundry Agents requires both agentName and projectName (URL params or .env)");
+    }
+
+    logger.info("[Proxy] Mode: Foundry Agents (v2)", {
+      agentName,
+      projectName,
+      source: query.agentName ? "url" : "env",
+    });
+
+    let agentUrl = `${base}&agent-name=${encodeURIComponent(agentName)}&agent-project-name=${encodeURIComponent(projectName)}`;
+
+    if (query.conversationId) {
+      agentUrl += `&conversation-id=${encodeURIComponent(query.conversationId)}`;
+    }
+    if (query.agentVersion) {
+      agentUrl += `&agent-version=${encodeURIComponent(query.agentVersion)}`;
+    }
+
+    // Auth priority: browser MSAL token > server-side DefaultAzureCredential
+    if (query.token) {
+      logger.info("[Proxy] Auth: MSAL token (browser passthrough)");
+      return {
+        url: agentUrl,
+        headers: { Authorization: `Bearer ${query.token}` },
+      };
+    }
+
+    // Server-side: acquire token via DefaultAzureCredential (Azure CLI, managed identity, etc.)
+    logger.info("[Proxy] Auth: DefaultAzureCredential (server-side)");
+    const token = await getEntraToken();
+    return {
+      url: agentUrl,
+      headers: { Authorization: `Bearer ${token}` },
+    };
+  }
+
+  // ===== Agent Service (v1 classic): agentId-based =====
+  if (query.agentId) {
+    if (!query.projectName) {
+      throw new Error("Agent Service v1 requires both agentId and projectName in URL");
     }
     if (!query.token) {
-      throw new Error("Agent mode requires token parameter (MSAL)");
+      throw new Error("Agent Service v1 requires token parameter (MSAL)");
     }
 
-    logger.info("[Proxy] Mode: Agent", { agentId: query.agentId, projectName: query.projectName });
-    logger.info("[Proxy] Auth: MSAL token (Agent mode)");
+    logger.info("[Proxy] Mode: Agent Service (v1 classic)", {
+      agentId: query.agentId,
+      projectName: query.projectName,
+    });
 
-    // Agent mode: Move token from URL to Authorization header (same as Standard mode)
-    // Azure API requires token in Authorization header for MSAL authentication
     const agentUrl = `${base}&agent-id=${query.agentId}&agent-project-name=${query.projectName}`;
-    logger.info(`[Proxy] Agent URL: ${agentUrl}`);
-
     return {
       url: agentUrl,
       headers: { Authorization: `Bearer ${query.token}` },
     };
   }
 
-  // Standard mode: Voice/Avatar
+  // ===== Standard mode: Voice/Avatar =====
   const model = query.model || "gpt-realtime";
   logger.info("[Proxy] Mode: Standard (Voice/Avatar)", { model });
 
   // Option 1: Token-based auth (MSAL from browser)
-  // Proxy job: Move token from URL to Authorization header (browser WebSocket limitation)
   if (query.token) {
-    logger.info("[Proxy] Auth: MSAL token (user-level)", {
-      tokenLength: query.token.length,
-      tokenPrefix: query.token.substring(0, 20) + "...",
-    });
+    logger.info("[Proxy] Auth: MSAL token (user-level)");
     return {
       url: `${base}&model=${model}`,
       headers: { Authorization: `Bearer ${query.token}` },
@@ -224,7 +293,6 @@ function buildAzureUrl(query: QueryParams): AzureConnectionConfig {
   }
 
   // Option 2: API key auth (from backend .env)
-  // Proxy job: Hide API key on server (not exposed to browser)
   if (config.foundryApiKey) {
     logger.info("[Proxy] Auth: API key (shared)");
     return {
@@ -242,7 +310,7 @@ function buildAzureUrl(query: QueryParams): AzureConnectionConfig {
  * Connect to Azure with appropriate authentication
  */
 async function connectToAzure(query: QueryParams): Promise<WebSocket> {
-  const { url, headers } = buildAzureUrl(query);
+  const { url, headers } = await buildAzureUrl(query);
 
   logger.info("[Proxy] Connecting to Azure...", {
     hasAuthHeader: !!headers.Authorization,
@@ -284,8 +352,13 @@ app.get("/health", (_req, res) => {
  * - With API key: ws://localhost:8080/ws?model=gpt-realtime
  * - With MSAL: ws://localhost:8080/ws?model=gpt-realtime&token=MSAL_TOKEN
  *
- * Agent Mode (auto-detected when agentId/projectName present):
- * - With MSAL: ws://localhost:8080/ws?agentId=xxx&projectName=yyy&token=MSAL_TOKEN
+ * Foundry Agents (v2 - auto-detected when agentName present in URL or .env):
+ * - Server auth: ws://localhost:8080/ws  (when FOUNDRY_AGENT_NAME + FOUNDRY_PROJECT_NAME in .env)
+ * - URL params:  ws://localhost:8080/ws?agentName=MyAgent&projectName=myProject
+ * - With MSAL:   ws://localhost:8080/ws?agentName=MyAgent&projectName=myProject&token=MSAL_TOKEN
+ *
+ * Agent Service (v1 classic - auto-detected when agentId present):
+ * - With MSAL:  ws://localhost:8080/ws?agentId=xxx&projectName=yyy&token=MSAL_TOKEN
  */
 app.ws("/ws", async (ws, req) => {
   // Check connection limit
@@ -314,9 +387,10 @@ app.ws("/ws", async (ws, req) => {
     logger.info("[Proxy] Connected to Azure");
 
     // Determine mode for telemetry
-    const mode = query.agentId || query.projectName ? "agent" : "standard";
+    const agentName = query.agentName || config.foundryAgentName;
+    const mode = agentName ? "foundry-agent" : query.agentId ? "agent-v1" : "standard";
     const model = query.model || "gpt-realtime";
-    logger.trackEvent("WebSocketConnected", { mode, model });
+    logger.trackEvent("WebSocketConnected", { mode, model, agentName });
 
     // Bidirectional message proxy
     ws.on("message", (msg) => {
@@ -440,8 +514,12 @@ app.listen(config.port, () => {
   logger.info(`  WebSocket:  ws://localhost:${config.port}/ws`);
   logger.info(`  Health:     http://localhost:${config.port}/health`);
   logger.info(
-    `\nMode Detection: Automatic (Agent if agentId/projectName present, otherwise Standard)`
+    `\nMode Detection: Automatic (Foundry Agent if agentName, Agent v1 if agentId, otherwise Standard)`
   );
+  if (config.foundryAgentName) {
+    logger.info(`\nFoundry Agent: ${config.foundryAgentName} (project: ${config.foundryProjectName})`);
+  }
+  logger.info(`Foundry Agents: Supported (DefaultAzureCredential + MSAL passthrough)`);
   logger.info(`\nSecurity:`);
   logger.info(`  CORS:       ${securityConfig.allowedOrigins.length} allowed origin(s)`);
   logger.info(
