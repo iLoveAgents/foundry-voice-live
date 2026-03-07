@@ -946,13 +946,13 @@ export interface UseVoiceLiveConfig {
 }
 
 /**
- * Return type for useVoiceLive hook
- */
-/**
  * Session activity state - tracks what the session is doing
  */
 export type SessionState = 'idle' | 'listening' | 'thinking' | 'speaking';
 
+/**
+ * Return type for useVoiceLive hook
+ */
 export interface UseVoiceLiveReturn {
   /** Current connection state */
   connectionState: 'disconnected' | 'connecting' | 'connected' | 'error';

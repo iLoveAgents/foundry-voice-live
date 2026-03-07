@@ -198,6 +198,7 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
   const audioGainRef = useRef<GainNode | null>(null);
   const playbackWorkletRef = useRef<AudioWorkletNode | null>(null);
   const playbackBlobUrlRef = useRef<string | null>(null);
+  const playbackInitPromiseRef = useRef<Promise<void> | null>(null);
   const currentResponseIdRef = useRef<string | null>(null);
   const responseStartTimeRef = useRef<number | null>(null);
   const isFirstChunkRef = useRef<boolean>(true);
@@ -298,27 +299,38 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
   const initPlaybackWorklet = useCallback(async () => {
     if (playbackWorkletRef.current) return;
 
+    // Guard against concurrent init calls (race condition on first audio chunks)
+    if (playbackInitPromiseRef.current) {
+      await playbackInitPromiseRef.current;
+      return;
+    }
+
     const audioContext = audioContextRef.current;
     if (!audioContext) return;
 
-    const blobUrl = createPlaybackProcessorBlobUrl();
-    playbackBlobUrlRef.current = blobUrl;
+    const initPromise = (async () => {
+      const blobUrl = createPlaybackProcessorBlobUrl();
+      playbackBlobUrlRef.current = blobUrl;
 
-    await audioContext.audioWorklet.addModule(blobUrl);
+      await audioContext.audioWorklet.addModule(blobUrl);
 
-    const workletNode = new AudioWorkletNode(audioContext, 'audio-playback-processor', {
-      processorOptions: { sourceSampleRate: audioSampleRate },
-    });
+      const workletNode = new AudioWorkletNode(audioContext, 'audio-playback-processor', {
+        processorOptions: { sourceSampleRate: audioSampleRate },
+      });
 
-    // Connect worklet to gain node (for visualization) or directly to destination
-    if (audioGainRef.current) {
-      workletNode.connect(audioGainRef.current);
-    } else {
-      workletNode.connect(audioContext.destination);
-    }
+      // Connect worklet to gain node (for visualization) or directly to destination
+      if (audioGainRef.current) {
+        workletNode.connect(audioGainRef.current);
+      } else {
+        workletNode.connect(audioContext.destination);
+      }
 
-    playbackWorkletRef.current = workletNode;
-    console.log(`[${getTimestamp()}] Playback worklet initialized (Lanczos-3 resampling, off main thread)`);
+      playbackWorkletRef.current = workletNode;
+      console.log(`[${getTimestamp()}] Playback worklet initialized (Lanczos-3 resampling, off main thread)`);
+    })();
+
+    playbackInitPromiseRef.current = initPromise;
+    await initPromise;
   }, [audioSampleRate]);
 
   /**
@@ -790,6 +802,7 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
       playbackWorkletRef.current.disconnect();
       playbackWorkletRef.current = null;
     }
+    playbackInitPromiseRef.current = null;
 
     // Cleanup playback blob URL
     if (playbackBlobUrlRef.current) {

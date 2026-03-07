@@ -300,6 +300,7 @@ const {
   videoStream,      // MediaStream | null (avatar video)
   audioStream,      // MediaStream | null (audio playback)
   audioAnalyser,    // AnalyserNode | null (for visualization)
+  isMicActive,      // boolean - whether microphone is capturing
   isMuted,          // boolean - microphone mute state
   connect,          // () => Promise<void>
   disconnect,       // () => void

@@ -93,24 +93,30 @@ export function useAudioCapture({
   const BUFFER_SAMPLES = 2400;
 
   /**
-   * Flush buffered audio samples as a single merged chunk
+   * Flush exactly BUFFER_SAMPLES from the buffer, leaving any remainder.
+   * This ensures bounded message sizes (~100ms chunks) regardless of input timing.
    */
   const flushAudioBuffer = useCallback(() => {
+    if (bufferedSamplesRef.current < BUFFER_SAMPLES || !onAudioData) return;
+
+    // Merge buffered chunks into a flat array
     const chunks = audioBufferRef.current;
     const totalSamples = bufferedSamplesRef.current;
-    if (totalSamples === 0 || !onAudioData) return;
-
-    const merged = new Int16Array(totalSamples);
+    const flat = new Int16Array(totalSamples);
     let offset = 0;
     for (const chunk of chunks) {
-      merged.set(chunk, offset);
+      flat.set(chunk, offset);
       offset += chunk.length;
     }
 
-    audioBufferRef.current = [];
-    bufferedSamplesRef.current = 0;
+    // Send exactly BUFFER_SAMPLES, keep remainder
+    const output = flat.slice(0, BUFFER_SAMPLES);
+    const remainder = flat.slice(BUFFER_SAMPLES);
 
-    onAudioData(merged.buffer);
+    audioBufferRef.current = remainder.length > 0 ? [remainder] : [];
+    bufferedSamplesRef.current = remainder.length;
+
+    onAudioData(output.buffer);
   }, [onAudioData]);
 
   /**
@@ -228,6 +234,10 @@ export function useAudioCapture({
     // Clear audio buffer
     audioBufferRef.current = [];
     bufferedSamplesRef.current = 0;
+
+    // Reset mute state so a new capture session starts unmuted
+    isMutedRef.current = false;
+    setIsMuted(false);
 
     setIsCapturing(false);
   }, []);

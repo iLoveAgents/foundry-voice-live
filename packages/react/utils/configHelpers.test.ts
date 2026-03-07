@@ -452,6 +452,62 @@ describe('Session Builder', () => {
     expect(config.instructions).toBe('Hello');
   });
 
+  it('builder supports greeting (LLM)', () => {
+    const config = sessionConfig()
+      .greeting({ type: 'llm', text: 'Greet the user warmly in English.' })
+      .build();
+
+    expect(config.greeting).toEqual({
+      type: 'llm',
+      text: 'Greet the user warmly in English.',
+    });
+  });
+
+  it('builder supports greeting (pregenerated)', () => {
+    const config = sessionConfig()
+      .greeting({ type: 'pregenerated', text: 'Hello! How can I help you today?' })
+      .build();
+
+    expect(config.greeting).toEqual({
+      type: 'pregenerated',
+      text: 'Hello! How can I help you today?',
+    });
+  });
+
+  it('builder supports interimResponse (LLM)', () => {
+    const config = sessionConfig()
+      .interimResponse({
+        type: 'llm_interim_response',
+        triggers: ['tool', 'latency'],
+        latencyThresholdInMs: 3000,
+        instructions: 'Provide a brief filler message.',
+      })
+      .build();
+
+    expect(config.interimResponse).toEqual({
+      type: 'llm_interim_response',
+      triggers: ['tool', 'latency'],
+      latencyThresholdInMs: 3000,
+      instructions: 'Provide a brief filler message.',
+    });
+  });
+
+  it('builder supports interimResponse (static)', () => {
+    const config = sessionConfig()
+      .interimResponse({
+        type: 'static_interim_response',
+        triggers: ['tool'],
+        texts: ['One moment please...', 'Let me check that for you.'],
+      })
+      .build();
+
+    expect(config.interimResponse).toEqual({
+      type: 'static_interim_response',
+      triggers: ['tool'],
+      texts: ['One moment please...', 'Let me check that for you.'],
+    });
+  });
+
   it('full builder example works', () => {
     const config = sessionConfig()
       .instructions('You are a helpful assistant.')
