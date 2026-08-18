@@ -42,6 +42,9 @@ Targets Voice Live API **`2026-07-15` (GA)**. This release contains breaking cha
 - `ConnectionState` gains `'reconnecting'`; an unexpected close without `reconnect` now releases the audio graph (`audioStream`/`audioContext` become null until the next `connect()`).
 
 #### Fixed
+- The response gate only advances when a request actually reached the service: `sendText()` during a reconnect (or while disconnected) no longer leaves it busy, which would have queued every later turn behind a response that never starts. A rejected request also releases the turn queued behind it instead of dropping it and emitting a phantom `response.create` later.
+- `startMic()` before `connect()` keeps its track again (the connection-scope refactor briefly released it), so the documented "pre-arm the microphone from a user gesture" pattern works.
+- A tool batch from a superseded session can no longer delete the live session's batch stored under the same (per-session) response id, which would have left the new tool outputs without their follow-up response.
 - `response.create` is serialized against the *service*: a request stays outstanding until `response.done`, so two `sendText()` calls before the first `response.created` no longer send two overlapping requests (the service rejects the second, losing that turn). An API error clears the flag so later turns still work.
 - Microphone audio is only streamed once the session is configured: during a reconnect and between socket-open and `session.updated` chunks are dropped instead of being warned about ten times a second or processed by a session that has not received `session.update` yet.
 - `1001 Going Away` now triggers reconnect. It reaches the client only when the *service* restarts — the client's own 1001 (navigation/unmount) is never observed because `disconnect()` detaches the transport callbacks first.

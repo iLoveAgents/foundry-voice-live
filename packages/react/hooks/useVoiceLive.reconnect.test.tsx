@@ -797,4 +797,135 @@ describe('useVoiceLive (reconnect)', () => {
       errorSpy.mockRestore();
     }
   });
+
+  it('keeps a pre-connect microphone acquisition (startMic before connect)', async () => {
+    const { stream, track } = makeFakeMicStream();
+    const restoreFakes = installBrowserFakes({ getUserMedia: async () => stream as unknown as MediaStream });
+    try {
+      const hook = renderHook(() =>
+        useVoiceLive({
+          ...baseConfig,
+          connection: { resourceName: 'my-res', apiKey: 'secret', transport: 'webrtc' },
+          autoStartMic: false,
+        })
+      );
+      // A user gesture can arm the microphone before connecting; connect() then passes it as
+      // localTrack, so the acquisition must survive having no connection yet
+      await act(async () => {
+        await hook.result.current.startMic();
+      });
+      expect(hook.result.current.isMicActive).toBe(true);
+      expect(track.stop).not.toHaveBeenCalled();
+
+      await act(async () => {
+        await hook.result.current.connect();
+      });
+      const ws = FakeWebSocket.instances.at(-1)!;
+      await act(async () => {
+        ws.open();
+      });
+      await vi.waitFor(() => expect(ws.lastSent('rtc.call.sdp.create')).toBeTruthy());
+      const pc = FakePeerConnection.instances.at(-1)!;
+      // the pre-started track is the transceiver's track, not a late replaceTrack
+      expect(pc.transceivers[0]!.kindOrTrack).toMatchObject({ kind: 'audio' });
+      expect(hook.result.current.isMicActive).toBe(true);
+    } finally {
+      restoreFakes();
+    }
+  });
+
+  it('does not let a send that never left the client block later turns', async () => {
+    const { hook, ws } = await connectAndReady({
+      ...baseConfig,
+      reconnect: { initialDelayMs: 10, jitter: 0 },
+    });
+    await act(async () => {
+      ws.drop(1006);
+    });
+    expect(hook.result.current.connectionState).toBe('reconnecting');
+    // sending during backoff cannot reach the service — it must not occupy the response gate
+    await act(async () => {
+      hook.result.current.sendText('lost turn');
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10);
+    });
+    const ws2 = FakeWebSocket.instances.at(-1)!;
+    await act(async () => {
+      ws2.open();
+      ws2.receive({ type: 'session.created', session: { id: 's2' } });
+      ws2.receive({ type: 'session.updated', session: { id: 's2' } });
+    });
+    // the new session answers normally instead of queueing forever
+    await act(async () => {
+      hook.result.current.sendText('new turn');
+    });
+    expect(ws2.sent.filter((e) => e.type === 'response.create')).toHaveLength(1);
+  });
+
+  it('a stale tool batch does not evict the new session batch under the same response id', async () => {
+    let resolveTool: (v: object) => void = () => undefined;
+    const toolExecutor = vi.fn(
+      () =>
+        new Promise<object>((r) => {
+          resolveTool = r;
+        })
+    );
+    const { hook, ws } = await connectAndReady({
+      ...baseConfig,
+      toolExecutor,
+      reconnect: { initialDelayMs: 10, jitter: 0 },
+    });
+    // session A: a tool call for response id "resp-1" that never settles before the drop
+    await act(async () => {
+      ws.receive({ type: 'response.created', response: { id: 'resp-1' } });
+      ws.receive({
+        type: 'response.function_call_arguments.done',
+        response_id: 'resp-1',
+        call_id: 'call-a',
+        name: 'slow',
+        arguments: '{}',
+      });
+      ws.drop(1006);
+      await vi.advanceTimersByTimeAsync(10);
+    });
+    const ws2 = FakeWebSocket.instances.at(-1)!;
+    await act(async () => {
+      ws2.open();
+      ws2.receive({ type: 'session.created', session: { id: 's2' } });
+      ws2.receive({ type: 'session.updated', session: { id: 's2' } });
+    });
+    // session B reuses the same (per-session) response id and has its own tool call
+    let resolveB: (v: object) => void = () => undefined;
+    toolExecutor.mockImplementationOnce(
+      () =>
+        new Promise<object>((r) => {
+          resolveB = r;
+        })
+    );
+    await act(async () => {
+      ws2.receive({ type: 'response.created', response: { id: 'resp-1' } });
+      ws2.receive({
+        type: 'response.function_call_arguments.done',
+        response_id: 'resp-1',
+        call_id: 'call-b',
+        name: 'slow',
+        arguments: '{}',
+      });
+      ws2.receive({ type: 'response.done', response: { id: 'resp-1' } });
+    });
+    // the stale executor from session A settles now — it must not delete session B's batch
+    await act(async () => {
+      resolveTool({ ok: 'stale' });
+    });
+    await act(async () => {
+      resolveB({ ok: 'fresh' });
+    });
+    const outputs = ws2.sent.filter((e) => e.type === 'conversation.item.create');
+    expect(outputs).toHaveLength(1);
+    expect(outputs[0].item.call_id).toBe('call-b');
+    // B's follow-up response still happens
+    expect(ws2.sent.filter((e) => e.type === 'response.create')).toHaveLength(1);
+    expect(hook.result.current.isReady).toBe(true);
+  });
 });

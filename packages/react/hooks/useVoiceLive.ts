@@ -276,16 +276,16 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
    * Send an event to the Voice Live API (WebSocket / WebRTC control channel)
    */
   const sendEvent = useCallback(
-    (event: VoiceLiveClientEvent | VoiceLiveEvent): void => {
+    (event: VoiceLiveClientEvent | VoiceLiveEvent): boolean => {
       const active = sessionRef.current?.transport;
-      if (active && active.state === 'open') {
-        if (!VERBOSE_CLIENT_EVENTS.has(event.type)) {
-          log.debug('Sending:', event.type);
-        }
-        active.send(JSON.stringify(event));
-      } else {
+      if (!active || active.state !== 'open') {
         log.warn('Not connected, cannot send event:', event.type);
+        return false;
       }
+      if (!VERBOSE_CLIENT_EVENTS.has(event.type)) {
+        log.debug('Sending:', event.type);
+      }
+      return active.send(JSON.stringify(event));
     },
     [log]
   );
@@ -297,7 +297,11 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
   const finishToolBatchIfReady = useCallback(
     (key: string, batch: ToolBatch, session: LiveSession): void => {
       if (batch.pending > 0 || !batch.responseDone) return;
-      toolBatchesRef.current.delete(key);
+      // A stale executor must not evict the live session's batch stored under the same
+      // (service-assigned, per-session) response id — delete only our own entry
+      if (toolBatchesRef.current.get(key) === batch) {
+        toolBatchesRef.current.delete(key);
+      }
       if (batch.sentOutput && sessionRef.current === session && session.scope.isActive) {
         // Every output of this response is on the wire — ask for the answer. This goes through
         // the same deferral as sendText(), so a user turn and a tool batch completing in the
@@ -318,7 +322,10 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
       log.debug(`Response ${gate.currentState} — queued one response.create for response.done`);
       return;
     }
-    sendEvent({ type: 'response.create' });
+    if (!sendEvent({ type: 'response.create' })) {
+      // Nothing reached the service (disconnected, or mid-reconnect): the gate must not stay busy
+      gate.onRequestNotSent();
+    }
   }, [sendEvent, log]);
   requestResponseRef.current = requestResponse;
 
@@ -662,7 +669,9 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
           // Exactly one response.create for everything requested while this response ran
           if ((responseGateRef.current as ResponseGate).onResponseDone()) {
             log.debug('Sending queued response.create');
-            sendEvent({ type: 'response.create' });
+            if (!sendEvent({ type: 'response.create' })) {
+              (responseGateRef.current as ResponseGate).onRequestNotSent();
+            }
           }
           break;
         }
@@ -764,9 +773,14 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
           }
 
           log.error('API Error:', data.error);
-          // The error may be the rejection of a response.create we are waiting on; letting the
-          // gate fall back to idle keeps later turns possible instead of deferring them forever
-          (responseGateRef.current as ResponseGate).onError();
+          // The error may be the rejection of a response.create we are waiting on: no response.done
+          // will follow, so the gate falls back to idle and any queued turn is sent now
+          if ((responseGateRef.current as ResponseGate).onError()) {
+            log.debug('Sending queued response.create after an API error');
+            if (!sendEvent({ type: 'response.create' })) {
+              (responseGateRef.current as ResponseGate).onRequestNotSent();
+            }
+          }
           setError(errorMessage);
           break;
         }
@@ -794,13 +808,16 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
 
   const startRtcMic = useCallback(async (): Promise<void> => {
     const mic = micRef.current as WebRtcMicrophone;
-    // The microphone belongs to the *connection*: it is deliberately kept across reconnects and
-    // re-attached to the new transport. `stopMic()`/`disconnect()` supersede a pending
-    // acquisition inside `WebRtcMicrophone` itself, which then resolves to null.
+    // The microphone belongs to the *connection*: it is kept across reconnects and re-attached to
+    // the new transport. `stopMic()`/`disconnect()` supersede a pending acquisition inside
+    // `WebRtcMicrophone` itself, which then resolves to null.
+    // `startMic()` before `connect()` is supported (a user gesture can pre-arm the microphone and
+    // connect() passes it as `localTrack`), so a *missing* connection is fine here — only a
+    // connection that has since ended invalidates the acquisition.
     const scope = connectionScopeRef.current;
     const track = await mic.start(configRef.current.audioConstraints);
     if (!track) return; // superseded by stop() while the permission prompt was open
-    if (!scope?.isActive) {
+    if (scope && !scope.isActive) {
       log.debug('Microphone acquired after disconnect — releasing it');
       mic.stop();
       return;
@@ -809,7 +826,7 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
     if (transport) {
       await transport.setMicrophoneTrack(track);
       // `replaceTrack` is async too: a disconnect()/stopMic() during it must still win
-      if (!scope.isActive || !mic.isActive) {
+      if ((scope && !scope.isActive) || !mic.isActive) {
         log.debug('Microphone attached after the session ended — releasing it');
         mic.stop();
         return;
@@ -1037,6 +1054,8 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
         connectionScope.pruneChildren();
         const session = createTransport(kind, connectionScope);
         sessionRef.current = session;
+        // A new conversation has no outstanding requests, whatever happened before it
+        (responseGateRef.current as ResponseGate).reset();
         session.transport.connect(url, kind === 'webrtc' ? buildSession(currentSession) : {}, {
           // WebRTC: keep sending the microphone that was started before connect()/reconnect
           localTrack: kind === 'webrtc' ? micRef.current?.track ?? null : undefined,

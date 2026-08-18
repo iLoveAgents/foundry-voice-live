@@ -119,6 +119,37 @@ describe('ResponseGate', () => {
     expect(gate.request()).toBe(false); // still must not overlap
   });
 
+  it('sends the queued turn when the request it was waiting behind is rejected', () => {
+    const gate = new ResponseGate();
+    expect(gate.request()).toBe(true); // sent
+    expect(gate.request()).toBe(false); // queued behind it
+    // the first request is rejected by the service: no response.done will ever arrive
+    expect(gate.onError()).toBe(true); // → send the queued turn now
+    expect(gate.hasQueuedRequest).toBe(false);
+    expect(gate.currentState).toBe('requested');
+    // ...and its completion must not emit a second, phantom response.create
+    expect(gate.onResponseDone()).toBe(false);
+    expect(gate.currentState).toBe('idle');
+  });
+
+  it('frees the gate when an approved request could not be sent', () => {
+    const gate = new ResponseGate();
+    expect(gate.request()).toBe(true);
+    gate.onRequestNotSent(); // e.g. the transport was not open
+    expect(gate.currentState).toBe('idle');
+    expect(gate.isBusy).toBe(false);
+    // later turns are sent instead of being queued behind a response that never starts
+    expect(gate.request()).toBe(true);
+  });
+
+  it('ignores onRequestNotSent for a response the service already acknowledged', () => {
+    const gate = new ResponseGate();
+    gate.request();
+    gate.onResponseCreated();
+    gate.onRequestNotSent();
+    expect(gate.currentState).toBe('active');
+  });
+
   it('reset() forgets state for a new session', () => {
     const gate = new ResponseGate();
     gate.request();

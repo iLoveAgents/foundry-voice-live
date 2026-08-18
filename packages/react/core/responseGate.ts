@@ -71,10 +71,27 @@ export class ResponseGate {
 
   /**
    * The service reported an error. It may have been the rejection of the request we are waiting
-   * on, in which case no `response.done` will arrive — so treat the conversation as idle again
-   * rather than deferring every later turn forever.
+   * on, in which case no `response.done` will arrive — so the conversation is idle again rather
+   * than deferring every later turn forever.
+   *
+   * @returns true when a queued request should be sent now (it never reached the service)
    */
-  onError(): void {
+  onError(): boolean {
+    if (this.state !== 'requested') return false; // an error during a running response is not ours
+    if (this.queued) {
+      this.queued = false;
+      return true; // stay 'requested': the caller sends the queued turn instead
+    }
+    this.state = 'idle';
+    return false;
+  }
+
+  /**
+   * The `response.create` that `request()` just approved could not be sent (no open transport).
+   * Nothing reached the service, so the gate must not stay busy — otherwise every later turn is
+   * queued behind a response that will never start.
+   */
+  onRequestNotSent(): void {
     if (this.state === 'requested') {
       this.state = 'idle';
     }
