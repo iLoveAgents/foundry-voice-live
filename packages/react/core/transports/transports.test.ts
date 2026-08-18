@@ -353,6 +353,16 @@ describe('WebRtcTransport', () => {
     await expect(attach).rejects.toThrow('device gone');
   });
 
+  it('settles a pending microphone attachment when the socket closes remotely', async () => {
+    const cb = makeCallbacks();
+    const t = new WebRtcTransport(cb);
+    t.connect('wss://x/calls', {});
+    const attach = t.setMicrophoneTrack({ kind: 'audio' } as never);
+    const ws = FakeWebSocket.instances.at(-1)!;
+    ws.drop(1006); // remote close, not an explicit close() by the caller
+    await expect(attach).rejects.toThrow(/before the microphone was attached/);
+  });
+
   it('settles a pending microphone attachment when the transport closes first', async () => {
     const cb = makeCallbacks();
     const t = new WebRtcTransport(cb);

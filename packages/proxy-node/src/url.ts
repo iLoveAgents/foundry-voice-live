@@ -246,9 +246,39 @@ export async function buildAzureUrl(
   return result("entra-credential", bearer(await deps.getEntraToken()));
 }
 
+/** Query parameters whose value must never reach a log or telemetry sink */
+const SECRET_PARAMS = new Set(["token", "api-key", "apikey", "authorization"]);
+
 /**
- * Mask secrets (`token`, `api-key`, `Authorization`) in a URL query string for logging.
+ * Mask secrets (`token`, `api-key`, `Authorization`) in a URL for logging.
+ *
+ * Parameter *names* are decoded before matching: the server reads them decoded
+ * (`parse(url, true)` turns `to%6ben` into `token` and authenticates with it), so a raw-string
+ * match would let an encoded key slip a bearer token into the logs.
  */
 export function redactUrl(url: string): string {
-  return url.replace(/([?&])(token|api-key|authorization)=[^&]*/gi, "$1$2=REDACTED");
+  const isAbsolute = /^[a-z][a-z0-9+.-]*:/i.test(url);
+  try {
+    const parsed = new URL(url, isAbsolute ? undefined : "http://redact.invalid");
+    let redacted = false;
+    for (const key of [...parsed.searchParams.keys()]) {
+      if (SECRET_PARAMS.has(key.trim().toLowerCase())) {
+        parsed.searchParams.set(key, "REDACTED");
+        redacted = true;
+      }
+    }
+    if (!redacted) return url;
+    return isAbsolute ? parsed.toString() : `${parsed.pathname}${parsed.search}${parsed.hash}`;
+  } catch {
+    // Unparseable input still gets the best-effort treatment rather than being logged raw
+    return url.replace(/([?&])([^=&]*)=[^&]*/g, (match, sep: string, key: string) => {
+      let decoded = key;
+      try {
+        decoded = decodeURIComponent(key);
+      } catch {
+        // keep the raw key
+      }
+      return SECRET_PARAMS.has(decoded.trim().toLowerCase()) ? `${sep}${key}=REDACTED` : match;
+    });
+  }
 }

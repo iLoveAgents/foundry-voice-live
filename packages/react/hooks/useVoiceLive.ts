@@ -1145,12 +1145,15 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
     setRtcMuted(next);
   }, []);
 
-  // Unified mic API (dispatches on transport)
-  const startMic = transport === 'webrtc' ? startRtcMic : startWsMic;
-  const stopMic = transport === 'webrtc' ? stopRtcMic : stopWsMic;
-  const toggleMute = transport === 'webrtc' ? toggleRtcMute : toggleWsMute;
-  const isMicActive = transport === 'webrtc' ? rtcMicActive : wsMicActive;
-  const isMuted = transport === 'webrtc' ? rtcMuted : wsMuted;
+  // Unified mic API. It follows the transport of the *live* session: changing
+  // `connection.transport` while connected only takes effect on the next attempt, so the controls
+  // must keep operating on the microphone that is actually running until then.
+  const activeTransport = sessionRef.current?.transport.kind ?? transport;
+  const startMic = activeTransport === 'webrtc' ? startRtcMic : startWsMic;
+  const stopMic = activeTransport === 'webrtc' ? stopRtcMic : stopWsMic;
+  const toggleMute = activeTransport === 'webrtc' ? toggleRtcMute : toggleWsMute;
+  const isMicActive = activeTransport === 'webrtc' ? rtcMicActive : wsMicActive;
+  const isMuted = activeTransport === 'webrtc' ? rtcMuted : wsMuted;
 
   /**
    * Release the media/session objects of the current connection (transport, avatar, player,

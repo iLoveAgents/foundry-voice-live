@@ -237,6 +237,9 @@ export class WebRtcTransport implements VoiceLiveTransport {
           log?.debug('Offer rejected after the control channel closed — ignoring');
           return;
         }
+        this.settlePendingTrack(
+          err instanceof Error ? err : new Error('Failed to create the WebRTC offer')
+        );
         this.notify(
           'onError',
           this.callbacks.onError,
@@ -299,6 +302,7 @@ export class WebRtcTransport implements VoiceLiveTransport {
       // Invalidate any negotiation still in flight: an offer that resolves after this must not
       // send SDP on the dead socket or arm a negotiation timer that fires 30 s later
       this.generation += 1;
+      this.settlePendingTrack(new Error('Control channel closed before the microphone was attached'));
       if (this.ws === ws) this.ws = null;
       if (this.negotiationTimer) {
         clearTimeout(this.negotiationTimer);
@@ -363,10 +367,17 @@ export class WebRtcTransport implements VoiceLiveTransport {
       }
     }
     this.teardownMedia();
-    this.pendingTrack?.reject(new Error('Transport closed before the microphone was attached'));
-    this.pendingTrack = null;
+    this.settlePendingTrack(new Error('Transport closed before the microphone was attached'));
     this.preCallQueue = [];
     this.seen.clear();
+  }
+
+  /** Fail a microphone attachment that can no longer happen, so the caller is never left waiting */
+  private settlePendingTrack(reason: Error): void {
+    const pending = this.pendingTrack;
+    if (!pending) return;
+    this.pendingTrack = null;
+    pending.reject(reason);
   }
 
   /**

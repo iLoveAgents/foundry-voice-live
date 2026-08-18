@@ -50,6 +50,8 @@ Targets Voice Live API **`2026-07-15` (GA)**. This release contains breaking cha
 - A blocked or unavailable `AudioContext` no longer aborts a WebRTC connection (playback there is the remote RTP track; the graph is only used for visualization), and a throwing consumer `onOpen` can no longer break a transport's own negotiation.
 - A `sendToolResult()` you call yourself counts towards the response's tool batch, so it shares the single follow-up instead of racing a second one; the `toolExecutor` contract (returning `undefined` means no automatic output for that call) is now spelled out in the README.
 - A microphone attachment requested before the WebRTC transceiver exists no longer resolves optimistically: the promise settles with the real outcome, so `isMicActive` cannot claim a live microphone that never attached.
+- A microphone attachment still waiting for the transceiver is now also settled when the control channel closes remotely or the offer fails, not only on an explicit `close()` — `startMic()` used to hang forever if the session died during negotiation.
+- The microphone controls (`startMic` / `stopMic` / `toggleMute` / `isMicActive` / `isMuted`) act on the transport of the **live** session rather than the current `connection.transport` prop: changing the prop mid-session only takes effect on the next connect, and until then the controls kept operating on the wrong capture path.
 - Foundry agent sessions reserve the response slot on `speech_stopped` like every other session — they use server VAD too, so a turn submitted before `response.created` could overlap the response the agent was already starting.
 - Avatar tracks delivered without an associated stream (some browsers) are wrapped instead of dropped, which used to leave a blank avatar and no audio on a session that reported itself ready.
 - Agent mode is detected from a **non-empty `agentName`**, matching the proxy: a URL carrying only `projectName` (or an empty `agentName`) made the hook build an agent-mode session and silently strip instructions, tools, temperature and the voice from a standard one.
@@ -126,6 +128,7 @@ Targets Voice Live API **`2026-07-15` (GA)**. This release contains breaking cha
 - Foundry Agents passthrough for `agentAuthenticationIdentityClientId` and `foundryResourceOverride`.
 - Keyless standard mode: falls back to `DefaultAzureCredential` when neither `token` nor `FOUNDRY_API_KEY` is configured.
 - Pure `src/url.ts` module with real unit tests.
+- Log/telemetry redaction decodes parameter names before matching, so a percent-encoded secret parameter (`?to%6Ben=…`, which the server still accepts) is redacted instead of printed verbatim.
 
 #### Changed
 - Default `API_VERSION` is `2026-07-15` (was `2025-10-01`); no `API_VERSION` override needed for Foundry agents anymore.

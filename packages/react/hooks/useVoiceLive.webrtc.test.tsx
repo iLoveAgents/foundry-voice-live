@@ -192,6 +192,39 @@ describe('useVoiceLive (webrtc)', () => {
     hook.unmount();
   });
 
+  it('keeps the microphone controls on the live session when the transport prop changes', async () => {
+    const hook = renderHook(({ config }) => useVoiceLive(config), { initialProps: { config: baseConfig } });
+    await act(async () => {
+      await hook.result.current.connect();
+    });
+    const pc = FakePeerConnection.instances[FakePeerConnection.instances.length - 1]!;
+    const ws = FakeWebSocket.instances[FakeWebSocket.instances.length - 1]!;
+    await act(async () => {
+      ws.open();
+    });
+    await act(async () => {
+      pc.setConnectionState('connected');
+      pc.dataChannels[0]!.open();
+    });
+    await act(async () => {
+      await hook.result.current.startMic();
+    });
+    expect(hook.result.current.isMicActive).toBe(true);
+
+    // Switching the prop only takes effect on the next connect — the running WebRTC microphone
+    // must stay controllable until then, not silently hand over to the WebSocket capture path.
+    hook.rerender({
+      config: { ...baseConfig, connection: { ...baseConfig.connection, transport: 'websocket' as const } },
+    });
+    expect(hook.result.current.isMicActive).toBe(true);
+    await act(async () => {
+      hook.result.current.toggleMute();
+    });
+    expect(hook.result.current.isMuted).toBe(true);
+    expect(mic.track.enabled).toBe(false);
+    hook.unmount();
+  });
+
   it('auto-starts the microphone once the peer connection is connected', async () => {
     const { hook, pc } = await connectWebRtc({ ...baseConfig, autoStartMic: true });
     expect(navigator.mediaDevices.getUserMedia).not.toHaveBeenCalled();

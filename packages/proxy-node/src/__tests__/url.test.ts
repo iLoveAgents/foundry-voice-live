@@ -502,3 +502,18 @@ describe("redactUrl", () => {
     expect(redactUrl("/ws?myToken=keep&api-key-id=keep")).toBe("/ws?myToken=keep&api-key-id=keep");
   });
 });
+
+describe("redactUrl (encoded parameter names)", () => {
+  it("redacts secrets whose parameter name is percent-encoded", () => {
+    // the server decodes the key and authenticates with it, so the logger must decode it too
+    expect(redactUrl("/ws?to%6Ben=SECRET")).not.toContain("SECRET");
+    expect(redactUrl("/ws?TOKEN=SECRET")).not.toContain("SECRET");
+    expect(redactUrl("wss://host/ws?api%2Dkey=SECRET")).not.toContain("SECRET");
+  });
+
+  it("still redacts the plain forms and leaves everything else intact", () => {
+    expect(redactUrl("/ws?model=gpt-realtime&token=SECRET")).toBe("/ws?model=gpt-realtime&token=REDACTED");
+    expect(redactUrl("/ws?model=gpt-realtime")).toBe("/ws?model=gpt-realtime");
+    expect(redactUrl("wss://host/voice-live/realtime?api-version=2026-07-15&api-key=SECRET")).not.toContain("SECRET");
+  });
+});
