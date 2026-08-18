@@ -2,12 +2,13 @@
  * useVoiceLive Hook - Comprehensive Implementation
  *
  * React hook for Microsoft Foundry Voice Live API with full parameter support.
- * Supports all Voice Live features with sensible defaults.
+ * Supports all Voice Live features with sensible defaults, two transports
+ * (WebSocket audio or WebRTC audio + control channel) and Foundry agents.
  *
  * @example
  * ```tsx
  * // Simple usage with defaults
- * const { connectionState, videoStream, connect } = useVoiceLive({
+ * const { connectionState, audioStream, connect } = useVoiceLive({
  *   connection: {
  *     resourceName: 'my-resource',
  *     apiKey: 'xxx',
@@ -18,8 +19,9 @@
  * const api = useVoiceLive({
  *   connection: {
  *     resourceName: 'my-resource',
- *     apiKey: 'xxx',
- *     model: 'gpt-4o', // or any model
+ *     token: entraAccessToken,
+ *     model: 'gpt-4.1',
+ *     transport: 'webrtc', // preview, voice-only
  *   },
  *   session: {
  *     instructions: 'You are helpful',
@@ -36,134 +38,58 @@
  *         model: 'semantic_detection_v1',
  *       },
  *     },
- *     avatar: {
- *       character: 'lisa',
- *       style: 'casual-sitting',
- *     },
+ *     interimResponse: { type: 'llm_interim_response', triggers: ['tool', 'latency'] },
  *   },
- *   toolExecutor: (name, args, id) => {},
+ *   toolExecutor: async (name, args) => ({ ok: true }), // returned value is sent automatically
  * });
  * ```
  */
 
-import { useState, useRef, useCallback, useEffect } from 'react';
+import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import type {
   UseVoiceLiveConfig,
   UseVoiceLiveReturn,
   VoiceLiveEvent,
+  VoiceLiveSessionConfig,
   SessionState,
+  ConnectionState,
+  ToolResult,
 } from '../types/voiceLive';
-import { buildSessionConfig, buildAgentSessionConfig } from '../utils/sessionBuilder';
-import { useAudioCapture } from './useAudioCapture';
+import type { VoiceLiveServerEvent, VoiceLiveClientEvent } from '../types/events';
+import { buildSessionConfig, buildAgentSessionConfig, validateConfig } from '../utils/sessionBuilder';
+import { buildGreetingEvents } from '../utils/greeting';
+import { buildVoiceLiveUrl, validateTransport, redactUrl } from '../utils/connectionUrl';
+import { createLogger } from '../utils/logger';
 import { arrayBufferToBase64 } from '../utils/audioHelpers';
+import { WebSocketTransport } from '../core/transports/websocketTransport';
+import { WebRtcTransport } from '../core/transports/webrtcTransport';
+import type {
+  TransportCallbacks,
+  TransportCloseInfo,
+  TransportKind,
+  VoiceLiveTransport,
+} from '../core/transports/types';
+import { OutputAudioGraph, PcmPlayer } from '../core/audioOutput';
+import { AvatarConnection } from '../core/avatarConnection';
+import { WebRtcMicrophone } from '../core/microphone';
+import { resolveReconnectOptions, computeBackoffDelay, isReconnectableClose } from '../core/reconnect';
+import { useAudioCapture } from './useAudioCapture';
 
-/**
- * Inline AudioWorklet processor for playback with Lanczos-3 resampling.
- * Runs entirely off the main thread for optimal performance.
- *
- * Receives PCM16 Int16Array buffers via postMessage, resamples from source
- * sample rate to output sample rate using Lanczos-3 interpolation, and
- * plays back via a queue-based buffer for gapless audio.
- */
-const AUDIO_PLAYBACK_PROCESSOR_CODE = `
-class AudioPlaybackProcessor extends AudioWorkletProcessor {
-  constructor(options) {
-    super();
-    this.bufferQueue = [];
-    this.currentBuffer = null;
-    this.currentOffset = 0;
-    this.sourceSampleRate = (options && options.processorOptions && options.processorOptions.sourceSampleRate) || 24000;
-    this.ratio = sampleRate / this.sourceSampleRate;
+/** High-frequency events that are not logged even at debug level */
+const VERBOSE_SERVER_EVENTS = new Set<string>([
+  'response.audio.delta',
+  'response.audio_transcript.delta',
+  'response.text.delta',
+  'conversation.item.input_audio_transcription.delta',
+  'response.function_call_arguments.delta',
+  'response.mcp_call_arguments.delta',
+  'response.foundry_agent_call_arguments.delta',
+  'response.animation_viseme.delta',
+  'response.animation_blendshapes.delta',
+  'response.audio_timestamp.delta',
+]);
 
-    this.port.onmessage = (event) => {
-      if (event.data === null) {
-        // Stop signal - clear queue (barge-in)
-        this.bufferQueue = [];
-        this.currentBuffer = null;
-        this.currentOffset = 0;
-      } else {
-        // Receive Int16Array buffer, convert and resample
-        const int16 = new Int16Array(event.data);
-        const resampled = this.resample(int16);
-        this.bufferQueue.push(resampled);
-      }
-    };
-  }
-
-  // Lanczos-3 kernel
-  lanczos(x) {
-    if (x === 0) return 1;
-    if (Math.abs(x) >= 3) return 0;
-    const px = Math.PI * x;
-    const pa = px / 3;
-    return (Math.sin(px) * Math.sin(pa)) / (px * pa);
-  }
-
-  // Convert Int16 PCM to Float32 and resample using Lanczos-3
-  resample(int16) {
-    const sourceLen = int16.length;
-    const outputLen = Math.ceil(sourceLen * this.ratio);
-    const output = new Float32Array(outputLen);
-
-    for (let i = 0; i < outputLen; i++) {
-      const srcIdx = i / this.ratio;
-      const center = Math.floor(srcIdx);
-      const frac = srcIdx - center;
-
-      let sample = 0;
-      for (let j = -2; j <= 3; j++) {
-        const idx = center + j;
-        if (idx >= 0 && idx < sourceLen) {
-          sample += (int16[idx] / 32768.0) * this.lanczos(frac - j);
-        }
-      }
-      output[i] = sample;
-    }
-    return output;
-  }
-
-  process(inputs, outputs) {
-    const channel = outputs[0][0];
-    if (!channel) return true;
-
-    for (let i = 0; i < channel.length; i++) {
-      if (!this.currentBuffer || this.currentOffset >= this.currentBuffer.length) {
-        if (this.bufferQueue.length > 0) {
-          this.currentBuffer = this.bufferQueue.shift();
-          this.currentOffset = 0;
-        } else {
-          channel[i] = 0;
-          continue;
-        }
-      }
-      channel[i] = this.currentBuffer[this.currentOffset];
-      this.currentOffset++;
-    }
-    return true;
-  }
-}
-
-registerProcessor('audio-playback-processor', AudioPlaybackProcessor);
-`;
-
-function createPlaybackProcessorBlobUrl(): string {
-  const blob = new Blob([AUDIO_PLAYBACK_PROCESSOR_CODE], { type: 'application/javascript' });
-  return URL.createObjectURL(blob);
-}
-
-/**
- * Utility to get timestamp for logging
- */
-const getTimestamp = (): string => {
-  const now = new Date();
-  return `${now.getHours().toString().padStart(2, '0')}:${now
-    .getMinutes()
-    .toString()
-    .padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')}.${now
-    .getMilliseconds()
-    .toString()
-    .padStart(3, '0')}`;
-};
+const VERBOSE_CLIENT_EVENTS = new Set<string>(['input_audio_buffer.append']);
 
 /**
  * Hook for Microsoft Foundry Voice Live API integration
@@ -177,60 +103,81 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
     autoStartMic = true,
     audioSampleRate = 24000,
     audioConstraints,
-    onEvent,
-    onTranscript,
-    toolExecutor,
+    logLevel = 'warn',
   } = config;
 
-  const [connectionState, setConnectionState] = useState<UseVoiceLiveReturn['connectionState']>('disconnected');
+  const transport = connection.transport ?? 'websocket';
+
+  // The latest config (session, connection, callbacks) is read through a ref inside the
+  // callbacks below, so their identity does not change when callers pass inline objects or
+  // closures on every render — this keeps `connect`/effects stable and avoids reconnect loops.
+  const configRef = useRef<UseVoiceLiveConfig>(config);
+  configRef.current = config;
+  const logLevelRef = useRef(logLevel);
+  logLevelRef.current = logLevel;
+  const log = useMemo(() => createLogger(() => logLevelRef.current), []);
+
+  // ===== React state =====
+  const [connectionState, setConnectionState] = useState<ConnectionState>('disconnected');
   const [sessionState, setSessionState] = useState<SessionState>('idle');
   const [isReady, setIsReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [videoStream, setVideoStream] = useState<MediaStream | null>(null);
   const [audioStream, setAudioStream] = useState<MediaStream | null>(null);
+  const [sessionExpiresAt, setSessionExpiresAt] = useState<number | null>(null);
+  const [reconnectAttempt, setReconnectAttempt] = useState(0);
+  const [rtcMicActive, setRtcMicActive] = useState(false);
+  const [rtcMuted, setRtcMuted] = useState(false);
   const [, forceUpdate] = useState({});
 
-  const wsRef = useRef<WebSocket | null>(null);
-  const pcRef = useRef<RTCPeerConnection | null>(null);
-  const audioContextRef = useRef<AudioContext | null>(null);
-  const audioStreamDestinationRef = useRef<MediaStreamAudioDestinationNode | null>(null);
-  const audioAnalyserRef = useRef<AnalyserNode | null>(null);
-  const audioGainRef = useRef<GainNode | null>(null);
-  const playbackWorkletRef = useRef<AudioWorkletNode | null>(null);
-  const playbackBlobUrlRef = useRef<string | null>(null);
-  const playbackInitPromiseRef = useRef<Promise<void> | null>(null);
-  const currentResponseIdRef = useRef<string | null>(null);
-  const responseStartTimeRef = useRef<number | null>(null);
-  const isFirstChunkRef = useRef<boolean>(true);
-  const isAgentModeRef = useRef<boolean>(false);
-  const assistantTranscriptRef = useRef<string>('');
+  // ===== Core objects (framework-agnostic, see ../core) =====
+  const transportRef = useRef<VoiceLiveTransport | null>(null);
+  const transportKindRef = useRef<TransportKind>(transport);
+  const graphRef = useRef<OutputAudioGraph | null>(null);
+  const playerRef = useRef<PcmPlayer | null>(null);
+  const avatarRef = useRef<AvatarConnection | null>(null);
+  const micRef = useRef<WebRtcMicrophone | null>(null);
+  if (!micRef.current) micRef.current = new WebRtcMicrophone();
 
-  // Keep a stable ref for sendEvent to use in audio capture callback
-  const sendEventRef = useRef<(event: VoiceLiveEvent) => void>();
+  // ===== Protocol state =====
+  const isAgentModeRef = useRef<boolean>(false);
+  const currentResponseIdRef = useRef<string | null>(null);
+  const responseActiveRef = useRef<boolean>(false);
+  const pendingResponseCreateRef = useRef<boolean>(false);
+  const assistantTranscriptRef = useRef<string>('');
+  const userTranscriptRef = useRef<string>('');
+  const videoStreamRef = useRef<MediaStream | null>(null);
+  const greetingSentRef = useRef<boolean>(false);
+
+  // ===== Connection generation + reconnect bookkeeping =====
+  // `connectIdRef` changes on every connect()/disconnect(); callbacks from an older generation
+  // (or from a transport that is no longer current) are ignored.
+  const connectIdRef = useRef<number>(0);
+  const reconnectAttemptRef = useRef<number>(0);
+  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Stable refs so transport callbacks always see the latest closures
+  const sendEventRef = useRef<(event: VoiceLiveClientEvent | VoiceLiveEvent) => void>();
+  const handleServerEventRef = useRef<(event: VoiceLiveServerEvent) => void>();
+  const openConnectionRef = useRef<(connectId: number, mode: 'initial' | 'reconnect') => Promise<void>>();
 
   /**
-   * Handle audio data from microphone
+   * Handle audio data from microphone (WebSocket transport)
    * Converts to base64 and sends to Voice Live API
    */
-  const handleAudioData = useCallback((audioData: ArrayBuffer) => {
-    const base64Audio = arrayBufferToBase64(audioData);
-    if (sendEventRef.current) {
-      sendEventRef.current({
-        type: 'input_audio_buffer.append',
-        audio: base64Audio,
-      });
-    }
+  const handleAudioData = useCallback((audioData: ArrayBuffer): void => {
+    sendEventRef.current?.({ type: 'input_audio_buffer.append', audio: arrayBufferToBase64(audioData) });
   }, []);
 
   /**
-   * Integrate audio capture for microphone input
+   * Integrate audio capture for microphone input (WebSocket transport)
    */
   const {
-    isCapturing: isMicActive,
-    isMuted,
-    startCapture: startMic,
-    stopCapture: stopMic,
-    toggleMute,
+    isCapturing: wsMicActive,
+    isMuted: wsMuted,
+    startCapture: startWsMic,
+    stopCapture: stopWsMic,
+    toggleMute: toggleWsMute,
   } = useAudioCapture({
     sampleRate: audioSampleRate,
     audioConstraints: typeof audioConstraints === 'boolean' ? undefined : audioConstraints,
@@ -239,338 +186,333 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
   });
 
   /**
-   * Send an event to the Voice Live API
+   * Build the wire session object for the current mode (standard vs Foundry agent)
    */
-  const sendEvent = useCallback((event: VoiceLiveEvent): void => {
-    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-      // Skip logging for verbose events
-      const skipSendLogging = [
-        'input_audio_buffer.append',
-        'conversation.item.create',
-        'response.create',
-      ];
-      if (!skipSendLogging.includes(event.type)) {
-        console.log(`[${getTimestamp()}] Sending:`, event.type);
-      }
-      wsRef.current.send(JSON.stringify(event));
-    } else {
-      console.warn('WebSocket not connected, cannot send event:', event.type);
-    }
-  }, []);
-
-  // Keep sendEventRef up to date
-  useEffect(() => {
-    sendEventRef.current = sendEvent;
-  }, [sendEvent]);
-
-  /**
-   * Update session configuration
-   */
-  const updateSession = useCallback(
-    (partialSession: Partial<typeof session>) => {
-      const updatedSession = buildSessionConfig({
-        ...session,
-        ...partialSession,
-      });
-
-      sendEvent({
-        type: 'session.update',
-        session: updatedSession,
-      });
-    },
-    [session, sendEvent]
+  const buildSession = useCallback(
+    (sessionConfig?: VoiceLiveSessionConfig): Record<string, unknown> =>
+      isAgentModeRef.current ? buildAgentSessionConfig(sessionConfig) : buildSessionConfig(sessionConfig),
+    []
   );
 
   /**
-   * Stop all audio playback immediately (for interruptions/barge-in)
-   * Sends null to the playback worklet to clear its queue
+   * Send an event to the Voice Live API (WebSocket / WebRTC control channel)
    */
-  const stopAudioPlayback = useCallback(() => {
-    if (playbackWorkletRef.current) {
-      playbackWorkletRef.current.port.postMessage(null);
-    }
-    console.log(`[${getTimestamp()}] Audio playback stopped (user interruption)`);
-  }, []);
+  const sendEvent = useCallback(
+    (event: VoiceLiveClientEvent | VoiceLiveEvent): void => {
+      const active = transportRef.current;
+      if (active && active.state === 'open') {
+        if (!VERBOSE_CLIENT_EVENTS.has(event.type)) {
+          log.debug('Sending:', event.type);
+        }
+        active.send(JSON.stringify(event));
+      } else {
+        log.warn('Not connected, cannot send event:', event.type);
+      }
+    },
+    [log]
+  );
+  sendEventRef.current = sendEvent;
 
   /**
-   * Initialize the playback AudioWorklet (lazy, on first audio chunk)
-   * Sets up the worklet with Lanczos-3 resampling running off the main thread
+   * Ask the model for a response. If a response is still in progress the request is deferred
+   * until `response.done` (Voice Live rejects overlapping responses).
    */
-  const initPlaybackWorklet = useCallback(async () => {
-    if (playbackWorkletRef.current) return;
-
-    // Guard against concurrent init calls (race condition on first audio chunks)
-    if (playbackInitPromiseRef.current) {
-      await playbackInitPromiseRef.current;
+  const requestResponse = useCallback((): void => {
+    if (responseActiveRef.current) {
+      pendingResponseCreateRef.current = true;
+      log.debug('Response in progress — deferring response.create until response.done');
       return;
     }
-
-    const audioContext = audioContextRef.current;
-    if (!audioContext) return;
-
-    const initPromise = (async () => {
-      const blobUrl = createPlaybackProcessorBlobUrl();
-      playbackBlobUrlRef.current = blobUrl;
-
-      await audioContext.audioWorklet.addModule(blobUrl);
-
-      const workletNode = new AudioWorkletNode(audioContext, 'audio-playback-processor', {
-        processorOptions: { sourceSampleRate: audioSampleRate },
-      });
-
-      // Connect worklet to gain node (for visualization) or directly to destination
-      if (audioGainRef.current) {
-        workletNode.connect(audioGainRef.current);
-      } else {
-        workletNode.connect(audioContext.destination);
-      }
-
-      playbackWorkletRef.current = workletNode;
-      console.log(`[${getTimestamp()}] Playback worklet initialized (Lanczos-3 resampling, off main thread)`);
-    })();
-
-    playbackInitPromiseRef.current = initPromise;
-    await initPromise;
-  }, [audioSampleRate]);
+    sendEvent({ type: 'response.create' });
+  }, [sendEvent, log]);
 
   /**
-   * Play audio chunk for voice-only mode via AudioWorklet
-   * Decodes base64 PCM16 and sends raw Int16Array to worklet for
-   * Lanczos-3 resampling and queue-based gapless playback (all off main thread)
+   * Stop local audio playback immediately (barge-in / cancel; WebSocket transport)
    */
-  const playAudioChunk = useCallback(async (base64Audio: string) => {
-    try {
-      const audioContext = audioContextRef.current;
-      if (!audioContext) return;
-
-      // Resume AudioContext if suspended (browser autoplay policy)
-      if (audioContext.state === 'suspended') {
-        await audioContext.resume();
-      }
-
-      // Initialize worklet on first chunk
-      if (!playbackWorkletRef.current) {
-        await initPlaybackWorklet();
-      }
-
-      // Track response start time for viseme sync
-      if (isFirstChunkRef.current) {
-        responseStartTimeRef.current = audioContext.currentTime;
-        isFirstChunkRef.current = false;
-      }
-
-      // Decode base64 to raw bytes
-      const binaryString = atob(base64Audio);
-      const bytes = new Uint8Array(binaryString.length);
-      for (let i = 0; i < binaryString.length; i++) {
-        bytes[i] = binaryString.charCodeAt(i);
-      }
-
-      // Transfer PCM16 buffer to worklet (transferable for zero-copy performance)
-      const buffer = bytes.buffer;
-      playbackWorkletRef.current?.port.postMessage(buffer, [buffer]);
-    } catch (err) {
-      console.error('Error playing audio chunk:', err);
+  const stopAudioPlayback = useCallback((): void => {
+    if (playerRef.current) {
+      playerRef.current.stop();
+      log.debug('Audio playback stopped');
     }
-  }, [initPlaybackWorklet]);
+  }, [log]);
 
   /**
-   * Handle WebSocket messages
+   * Send a user text message and (by default) trigger a response
    */
-  const handleMessage = useCallback(
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    async (event: MessageEvent): Promise<void> => {
-      // Using any for parsed JSON since events have various structures
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const data: any = JSON.parse(event.data);
-
-      // Skip verbose event logging
-      const skipLogging = [
-        'response.audio.delta',
-        'response.audio_transcript.delta',
-        'response.text.delta',
-        'response.audio.done',
-        'response.content_part.added',
-        'response.content_part.done',
-        'response.output_item.done',
-        'conversation.item.created',
-        'response.created',
-        'response.function_call_arguments.delta',
-        'response.output_item.added',
-        'response.animation_viseme.delta',
-        'response.audio_timestamp.delta',
-      ];
-
-      if (!skipLogging.includes(data.type)) {
-        console.log(`[${getTimestamp()}]`, data.type);
+  const sendText = useCallback(
+    (text: string, options: { triggerResponse?: boolean } = {}): void => {
+      sendEvent({
+        type: 'conversation.item.create',
+        item: { type: 'message', role: 'user', content: [{ type: 'input_text', text }] },
+      });
+      if (options.triggerResponse !== false) {
+        requestResponse();
       }
+    },
+    [sendEvent, requestResponse]
+  );
+
+  /**
+   * Send a function-call result and (by default) trigger a response
+   */
+  const sendToolResult = useCallback(
+    (callId: string, output: ToolResult, options: { triggerResponse?: boolean } = {}): void => {
+      sendEvent({
+        type: 'conversation.item.create',
+        item: {
+          type: 'function_call_output',
+          call_id: callId,
+          output: typeof output === 'string' ? output : JSON.stringify(output),
+        },
+      });
+      if (options.triggerResponse !== false) {
+        requestResponse();
+      }
+    },
+    [sendEvent, requestResponse]
+  );
+
+  /**
+   * Cancel the in-progress response and flush local playback
+   */
+  const cancelResponse = useCallback((): void => {
+    sendEvent({ type: 'response.cancel' });
+    stopAudioPlayback();
+  }, [sendEvent, stopAudioPlayback]);
+
+  /** Clear the server-side input audio buffer */
+  const clearInputAudio = useCallback((): void => {
+    sendEvent({ type: 'input_audio_buffer.clear' });
+  }, [sendEvent]);
+
+  /** Commit the input audio buffer as a user turn (manual turn detection) */
+  const commitInputAudio = useCallback((): void => {
+    sendEvent({ type: 'input_audio_buffer.commit' });
+  }, [sendEvent]);
+
+  /** Approve or deny a pending MCP tool call */
+  const approveMcpCall = useCallback(
+    (approvalRequestId: string, approve: boolean): void => {
+      sendEvent({
+        type: 'conversation.item.create',
+        item: { type: 'mcp_approval_response', approval_request_id: approvalRequestId, approve },
+      });
+    },
+    [sendEvent]
+  );
+
+  /**
+   * Update session configuration (agent-mode aware)
+   */
+  const updateSession = useCallback(
+    (partialSession: Partial<VoiceLiveSessionConfig>): void => {
+      sendEvent({
+        type: 'session.update',
+        session: buildSession({ ...configRef.current.session, ...partialSession }),
+      });
+    },
+    [sendEvent, buildSession]
+  );
+
+  /**
+   * The output audio graph (AudioContext + gain + analyser), created once per connection.
+   * Triggers a re-render when the context is created so `audioContext`/`audioAnalyser` update.
+   */
+  const ensureGraph = useCallback((): OutputAudioGraph => {
+    let graph = graphRef.current;
+    if (!graph) {
+      graph = new OutputAudioGraph({ log });
+      graphRef.current = graph;
+    }
+    if (graph.ensure()) {
+      forceUpdate({});
+    }
+    return graph;
+  }, [log]);
+
+  /** The PCM player for the WebSocket transport (lazy) */
+  const ensurePlayer = useCallback((): PcmPlayer => {
+    let player = playerRef.current;
+    if (!player) {
+      player = new PcmPlayer(ensureGraph(), {
+        sourceSampleRate: configRef.current.audioSampleRate ?? 24000,
+        log,
+      });
+      playerRef.current = player;
+    }
+    return player;
+  }, [ensureGraph, log]);
+
+  /** Mark the session ready (both transports) and settle a pending reconnect */
+  const announceReady = useCallback((): void => {
+    setIsReady(true);
+    setSessionState('listening');
+    if (reconnectAttemptRef.current > 0) {
+      log.info(`Reconnected after ${reconnectAttemptRef.current} attempt(s)`);
+      reconnectAttemptRef.current = 0;
+      setReconnectAttempt(0);
+      configRef.current.onReconnected?.();
+    }
+  }, [log]);
+
+  /**
+   * Set up the avatar media connection after `session.updated` (WebSocket transport)
+   */
+  const connectAvatar = useCallback(
+    async (iceServers: RTCIceServer[]): Promise<void> => {
+      log.debug('Setting up avatar WebRTC...');
+      avatarRef.current?.close();
+      const avatar = new AvatarConnection(
+        {
+          onVideoStream: (stream) => {
+            videoStreamRef.current = stream;
+            setVideoStream(stream);
+          },
+          onAudioStream: (stream) => setAudioStream(stream),
+          onError: (message) => {
+            log.error(`Avatar: ${message}`);
+            setError(message);
+          },
+        },
+        { log }
+      );
+      avatarRef.current = avatar;
+      const clientSdp = await avatar.createOffer(iceServers);
+      if (avatarRef.current !== avatar) return; // torn down meanwhile
+      sendEvent({ type: 'session.avatar.connect', client_sdp: clientSdp });
+      log.debug('Avatar connection request sent');
+    },
+    [log, sendEvent]
+  );
+
+  /**
+   * Handle a server event (from the WebSocket or the WebRTC data channel)
+   */
+  const handleServerEvent = useCallback(
+    async (data: VoiceLiveServerEvent): Promise<void> => {
+      if (!VERBOSE_SERVER_EVENTS.has(data.type)) {
+        log.debug(data.type);
+      }
+
+      const { onEvent, onTranscript, onWarning, onMcpApprovalRequest, onSessionUpdated, toolExecutor } =
+        configRef.current;
 
       // Call custom event handler if provided
-      if (onEvent) {
-        onEvent(data);
-      }
+      onEvent?.(data);
+
+      const isWebRtc = transportKindRef.current === 'webrtc';
 
       // Handle specific events
       switch (data.type) {
         case 'session.created': {
-          console.log(`[${getTimestamp()}] Session created`);
-
-          // Send session.update immediately after session.created
-          // Don't start audio capture until session is configured
-          const sessionConfig = isAgentModeRef.current
-            ? buildAgentSessionConfig(session)
-            : buildSessionConfig(session);
-
-          console.log(`[${getTimestamp()}] Configuring session...`);
-          sendEvent({
-            type: 'session.update',
-            session: sessionConfig,
-          });
+          if (data.session?.expires_at) {
+            setSessionExpiresAt(data.session.expires_at * 1000);
+          }
+          if (isWebRtc) {
+            // Session config was passed inside rtc.call.sdp.create
+            log.debug('Session created (webrtc)');
+            break;
+          }
+          // Configure the session before any audio flows
+          log.debug('Configuring session...');
+          sendEvent({ type: 'session.update', session: buildSession(configRef.current.session) });
           break;
         }
 
-        case 'session.updated':
-          console.log(`[${getTimestamp()}] Session configured`);
+        case 'session.updated': {
+          if (data.session?.expires_at) {
+            setSessionExpiresAt(data.session.expires_at * 1000);
+          }
+          onSessionUpdated?.(data.session as Record<string, unknown>);
 
-          // Set up WebRTC after session update (avatar mode)
+          if (isWebRtc) {
+            // Readiness is driven by the peer connection + data channel state in WebRTC mode
+            log.debug('Session configured (webrtc)');
+            break;
+          }
+          log.debug('Session configured');
+
           if (data.session?.avatar?.ice_servers) {
-            console.log(`[${getTimestamp()}] Setting up avatar WebRTC...`);
-
-            const newConfig: RTCConfiguration = {
-              iceServers: data.session.avatar.ice_servers,
-            };
-            const newPc = new RTCPeerConnection(newConfig);
-            pcRef.current = newPc;
-
-            // Handle incoming tracks
-            newPc.ontrack = (event) => {
-              if (event.track.kind === 'video') {
-                console.log(`[${getTimestamp()}] Video stream connected`);
-                setVideoStream(event.streams[0] || null);
-              } else if (event.track.kind === 'audio') {
-                console.log(`[${getTimestamp()}] Audio stream connected`);
-                setAudioStream(event.streams[0] || null);
-              }
-            };
-
-            // Log connection state changes
-            newPc.oniceconnectionstatechange = () => {
-              if (newPc.iceConnectionState === 'connected') {
-                console.log(`[${getTimestamp()}] ICE connected`);
-              } else if (newPc.iceConnectionState === 'failed') {
-                console.log(`[${getTimestamp()}] ICE connection failed`);
-                setError('ICE connection failed');
-              }
-            };
-
-            newPc.onconnectionstatechange = () => {
-              if (newPc.connectionState === 'connected') {
-                console.log(`[${getTimestamp()}] WebRTC connected`);
-              } else if (newPc.connectionState === 'failed') {
-                console.log(`[${getTimestamp()}] WebRTC connection failed`);
-                setError('WebRTC connection failed');
-              }
-            };
-
-            newPc.onicecandidate = (event) => {
-              if (!event.candidate) {
-                console.log(`[${getTimestamp()}] ICE gathering complete`);
-              }
-            };
-
-            // Add transceivers
-            newPc.addTransceiver('video', { direction: 'recvonly' });
-            newPc.addTransceiver('audio', { direction: 'recvonly' });
-
-            // Create offer
-            const offer = await newPc.createOffer();
-            await newPc.setLocalDescription(offer);
-
-            // Wait for ICE gathering
-            await new Promise<void>((resolve) => {
-              if (newPc.iceGatheringState === 'complete') {
-                resolve();
-              } else {
-                newPc.addEventListener('icegatheringstatechange', () => {
-                  if (newPc.iceGatheringState === 'complete') {
-                    resolve();
-                  }
-                });
-              }
-            });
-
-            // Send avatar connect event
-            const localDesc = newPc.localDescription;
-            if (localDesc) {
-              const encodedSdp = btoa(JSON.stringify(localDesc));
-              sendEvent({
-                type: 'session.avatar.connect',
-                client_sdp: encodedSdp,
-              });
-              console.log(`[${getTimestamp()}] Avatar connection request sent`);
+            try {
+              await connectAvatar(data.session.avatar.ice_servers);
+            } catch (err) {
+              log.error('Avatar setup failed:', err);
+              setError(err instanceof Error ? err.message : 'Avatar setup failed');
             }
           } else {
             // Voice-only mode (no avatar) - session is ready immediately
-            console.log(`[${getTimestamp()}] Voice-only session ready`);
-            setIsReady(true);
-            setSessionState('listening');
+            log.info('Voice session ready');
+            announceReady();
           }
           break;
+        }
 
         case 'session.avatar.connecting':
-          if (data.server_sdp && pcRef.current) {
-            const decodedSdp = atob(data.server_sdp);
-            const remoteDesc = JSON.parse(decodedSdp);
-            await pcRef.current.setRemoteDescription(remoteDesc);
-            console.log(`[${getTimestamp()}] Avatar WebRTC established`);
-            setIsReady(true);
-            setSessionState('listening');
+          if (data.server_sdp && avatarRef.current) {
+            try {
+              await avatarRef.current.applyServerSdp(data.server_sdp);
+              log.info('Avatar WebRTC established');
+              announceReady();
+            } catch (err) {
+              log.error('Failed to apply avatar SDP:', err);
+              setError(err instanceof Error ? err.message : 'Failed to apply avatar SDP');
+            }
           }
           break;
 
         case 'response.created':
+          responseActiveRef.current = true;
           setSessionState('speaking');
           // Reset transcript accumulator for new response
           assistantTranscriptRef.current = '';
-          // Track current response for interruption handling
+          // Track current response for interruption handling + viseme sync
           if (data.response?.id) {
             currentResponseIdRef.current = data.response.id;
-            // Reset for new response (for viseme sync)
-            isFirstChunkRef.current = true;
-            responseStartTimeRef.current = null;
+            playerRef.current?.markResponseStart();
           }
           break;
 
         case 'input_audio_buffer.speech_started':
-          console.log(`[${getTimestamp()}] User speaking (interrupting)...`);
+          log.debug('User speaking (interrupting)...');
           setSessionState('listening');
-          // Microsoft's official pattern for WebSocket barge-in:
-          // Stop client-side audio playback immediately
-          // Server handles truncation with auto_truncate: true
-          stopAudioPlayback();
-          break;
-
-        case 'input_audio_buffer.speech_stopped':
-          console.log(`[${getTimestamp()}] User stopped speaking`);
-          setSessionState('thinking');
-          break;
-
-        case 'conversation.item.input_audio_transcription.completed':
-          console.log(`[${getTimestamp()}] User said: "${data.transcript}"`);
-          if (onTranscript && data.transcript) {
-            onTranscript('user', data.transcript, true);
+          userTranscriptRef.current = '';
+          if (!isWebRtc) {
+            // Microsoft's official pattern for WebSocket barge-in: stop client-side playback
+            // immediately; the server handles truncation with auto_truncate: true
+            stopAudioPlayback();
           }
           break;
 
+        case 'input_audio_buffer.speech_stopped':
+          log.debug('User stopped speaking');
+          setSessionState('thinking');
+          break;
+
+        case 'conversation.item.input_audio_transcription.delta':
+          if (onTranscript && data.delta) {
+            userTranscriptRef.current += data.delta;
+            onTranscript('user', userTranscriptRef.current, false);
+          }
+          break;
+
+        case 'conversation.item.input_audio_transcription.completed':
+          log.debug(`User said: "${data.transcript}"`);
+          if (onTranscript && data.transcript) {
+            onTranscript('user', data.transcript, true);
+          }
+          userTranscriptRef.current = '';
+          break;
+
         case 'response.audio.delta':
-          // Play audio for voice-only mode (no avatar)
-          // Only play if this is the current response (not interrupted)
-          if (data.delta && !videoStream && data.response_id === currentResponseIdRef.current) {
-            playAudioChunk(data.delta);
+          // Play audio for WebSocket voice-only mode (no avatar), only for the current response
+          if (isWebRtc) break;
+          if (data.delta && !videoStreamRef.current && data.response_id === currentResponseIdRef.current) {
+            void ensurePlayer().enqueue(data.delta);
           }
           break;
 
         case 'response.audio_transcript.delta':
+        case 'response.text.delta':
           if (onTranscript && data.delta) {
             assistantTranscriptRef.current += data.delta;
             onTranscript('assistant', assistantTranscriptRef.current, false);
@@ -578,24 +520,73 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
           break;
 
         case 'response.done':
+          responseActiveRef.current = false;
           // Emit final assistant transcript if accumulated
           if (onTranscript && assistantTranscriptRef.current) {
             onTranscript('assistant', assistantTranscriptRef.current, true);
             assistantTranscriptRef.current = '';
           }
           setSessionState('listening');
+          // A response.create requested while this response was running goes out now
+          if (pendingResponseCreateRef.current) {
+            pendingResponseCreateRef.current = false;
+            log.debug('Sending deferred response.create');
+            sendEvent({ type: 'response.create' });
+          }
           break;
 
         case 'response.audio_transcript.done':
           if (data.transcript) {
-            console.log(`[${getTimestamp()}] Assistant: "${data.transcript}"`);
+            log.debug(`Assistant: "${data.transcript}"`);
+          }
+          break;
+
+        case 'response.text.done':
+          if (data.text) {
+            log.debug(`Assistant (text): "${data.text}"`);
+          }
+          break;
+
+        case 'conversation.item.truncated':
+          log.debug(`Assistant turn truncated at ${data.audio_end_ms} ms (item ${data.item_id})`);
+          break;
+
+        case 'conversation.item.created':
+          if (data.item?.type === 'mcp_approval_request') {
+            log.info(`MCP approval requested: ${data.item.server_label}/${data.item.name}`);
+            onMcpApprovalRequest?.({
+              approvalRequestId: data.item.id ?? '',
+              serverLabel: data.item.server_label ?? '',
+              name: data.item.name ?? '',
+              arguments: data.item.arguments ?? '',
+            });
           }
           break;
 
         case 'response.function_call_arguments.done':
           if (toolExecutor) {
-            toolExecutor(data.name, data.arguments, data.call_id);
+            const { name, arguments: args, call_id: callId } = data;
+            Promise.resolve()
+              .then(() => toolExecutor(name, args, callId))
+              .then((result) => {
+                if (result !== undefined) {
+                  sendToolResult(callId, result);
+                }
+              })
+              .catch((err) => {
+                log.error(`toolExecutor failed for ${name}:`, err);
+              });
           }
+          break;
+
+        case 'warning':
+          log.warn('Service warning:', data.warning);
+          onWarning?.(data.warning);
+          break;
+
+        // Negotiation events are handled inside WebRtcTransport (answer applied / error reported)
+        case 'rtc.call.sdp.created':
+        case 'rtc.call.error':
           break;
 
         case 'error': {
@@ -607,235 +598,299 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
             errorCode === 'response_cancel_not_active' ||
             errorMessage.toLowerCase().includes('no active response')
           ) {
-            console.debug(`[${getTimestamp()}] Benign cancel error (ignored):`, errorMessage);
+            log.debug('Benign cancel error (ignored):', errorMessage);
             break;
           }
 
-          console.error(`[${getTimestamp()}] API Error:`, data.error);
+          log.error('API Error:', data.error);
           setError(errorMessage);
           break;
         }
+
+        default:
+          break;
       }
     },
-    [onEvent, onTranscript, sendEvent, toolExecutor, playAudioChunk, stopAudioPlayback, videoStream, session]
+    [log, sendEvent, sendToolResult, buildSession, ensurePlayer, stopAudioPlayback, connectAvatar, announceReady]
   );
+  handleServerEventRef.current = handleServerEvent;
+
+  // ===== WebRTC microphone control =====
+
+  const startRtcMic = useCallback(async (): Promise<void> => {
+    const mic = micRef.current as WebRtcMicrophone;
+    const track = await mic.start(configRef.current.audioConstraints);
+    if (track && transportRef.current) {
+      await transportRef.current.setMicrophoneTrack(track);
+    }
+    setRtcMicActive(true);
+    log.debug('WebRTC microphone started');
+  }, [log]);
+
+  const stopRtcMic = useCallback((): void => {
+    micRef.current?.stop();
+    transportRef.current?.setMicrophoneTrack(null).catch(() => undefined);
+    setRtcMicActive(false);
+    log.debug('WebRTC microphone stopped');
+  }, [log]);
+
+  const toggleRtcMute = useCallback((): void => {
+    const mic = micRef.current as WebRtcMicrophone;
+    const next = !mic.isMuted;
+    mic.setMuted(next);
+    setRtcMuted(next);
+  }, []);
+
+  // Unified mic API (dispatches on transport)
+  const startMic = transport === 'webrtc' ? startRtcMic : startWsMic;
+  const stopMic = transport === 'webrtc' ? stopRtcMic : stopWsMic;
+  const toggleMute = transport === 'webrtc' ? toggleRtcMute : toggleWsMute;
+  const isMicActive = transport === 'webrtc' ? rtcMicActive : wsMicActive;
+  const isMuted = transport === 'webrtc' ? rtcMuted : wsMuted;
+
+  /**
+   * Release the media/session objects of the current connection (transport, avatar, player,
+   * audio graph). Used by disconnect() and between reconnect attempts (`keepAudio`).
+   */
+  const releaseConnection = useCallback((options: { keepAudio: boolean }): void => {
+    transportRef.current?.close();
+    transportRef.current = null;
+    avatarRef.current?.close();
+    avatarRef.current = null;
+    videoStreamRef.current = null;
+    setVideoStream(null);
+    if (options.keepAudio) {
+      // Between reconnect attempts: keep the AudioContext (user gesture) but flush playback
+      playerRef.current?.stop();
+      graphRef.current?.detachRemoteStream();
+    } else {
+      playerRef.current?.dispose();
+      playerRef.current = null;
+      graphRef.current?.close();
+      graphRef.current = null;
+      setAudioStream(null);
+    }
+    currentResponseIdRef.current = null;
+    responseActiveRef.current = false;
+    pendingResponseCreateRef.current = false;
+    assistantTranscriptRef.current = '';
+    userTranscriptRef.current = '';
+  }, []);
+
+  /**
+   * Schedule a reconnect attempt after an unexpected close, or settle into
+   * 'disconnected' / 'error' when reconnecting is off or exhausted.
+   */
+  const handleUnexpectedClose = useCallback(
+    (connectId: number, info: TransportCloseInfo): void => {
+      const policy = resolveReconnectOptions(configRef.current.reconnect);
+      const attempt = reconnectAttemptRef.current + 1;
+      if (policy && isReconnectableClose(info) && attempt <= policy.maxAttempts) {
+        const delayMs = computeBackoffDelay(attempt, policy);
+        reconnectAttemptRef.current = attempt;
+        setReconnectAttempt(attempt);
+        setConnectionState('reconnecting');
+        log.warn(
+          `Connection lost (code ${info.code}${info.reason ? `, ${info.reason}` : ''}) — reconnect attempt ${attempt}/${policy.maxAttempts} in ${delayMs} ms`
+        );
+        configRef.current.onReconnecting?.(attempt, delayMs);
+        // Keep the AudioContext (created on the user's gesture) but drop everything else
+        releaseConnection({ keepAudio: true });
+        reconnectTimerRef.current = setTimeout(() => {
+          reconnectTimerRef.current = null;
+          if (connectIdRef.current !== connectId) return; // disconnect()/connect() happened meanwhile
+          void openConnectionRef.current?.(connectId, 'reconnect');
+        }, delayMs);
+        return;
+      }
+      if (policy && reconnectAttemptRef.current > 0) {
+        const message = `Connection lost — giving up after ${reconnectAttemptRef.current} reconnect attempt(s)`;
+        log.error(message);
+        setError(message);
+        setConnectionState('error');
+      } else {
+        setConnectionState((state) => (state === 'error' ? state : 'disconnected'));
+      }
+      reconnectAttemptRef.current = 0;
+      setReconnectAttempt(0);
+      releaseConnection({ keepAudio: false });
+    },
+    [log, releaseConnection]
+  );
+
+  /**
+   * Create the transport for one connection attempt and wire its callbacks. Callbacks from a
+   * stale generation or a transport that has been replaced are ignored.
+   */
+  const createTransport = useCallback(
+    (kind: TransportKind, connectId: number): VoiceLiveTransport => {
+      let created: VoiceLiveTransport | null = null;
+      const isStale = (): boolean => connectIdRef.current !== connectId || transportRef.current !== created;
+
+      const callbacks: TransportCallbacks = {
+        onOpen: () => {
+          if (isStale()) return;
+          log.info(kind === 'webrtc' ? 'Control channel connected' : 'WebSocket connected');
+          setConnectionState('connected');
+          const graph = ensureGraph();
+          if (kind === 'websocket' && !configRef.current.session?.avatar) {
+            // Voice-only WebSocket mode: expose played audio as a MediaStream
+            const stream = graph.ensureDestination();
+            if (stream) setAudioStream(stream);
+          }
+        },
+        onEvent: (event) => {
+          if (isStale()) return;
+          void handleServerEventRef.current?.(event);
+        },
+        onError: (message, cause) => {
+          if (isStale()) return;
+          log.error(message, cause ?? '');
+          setError(message);
+          setConnectionState('error');
+        },
+        onClose: (info) => {
+          if (isStale()) return;
+          log.info(`Connection closed - Code: ${info.code}, Reason: ${info.reason || 'none'}, Clean: ${info.wasClean}`);
+          if (!info.wasClean) {
+            log.warn('Connection closed unexpectedly');
+          }
+          setIsReady(false);
+          setSessionState('idle');
+          transportRef.current = null; // already closed — releaseConnection() must not close it again
+          handleUnexpectedClose(connectId, info);
+        },
+        onReady: (reason) => {
+          if (isStale()) return;
+          log.debug(`Transport ready (${reason})`);
+          announceReady();
+        },
+        onRemoteStream: (stream) => {
+          if (isStale()) return;
+          setAudioStream(stream);
+          // Remote tracks start muted and unmute once RTP packets arrive — useful for diagnostics
+          stream.getAudioTracks().forEach((track) => {
+            track.addEventListener('unmute', () => log.debug('Remote audio flowing (track unmuted)'), { once: true });
+          });
+          ensureGraph().attachRemoteStream(stream);
+        },
+      };
+
+      created =
+        kind === 'webrtc'
+          ? new WebRtcTransport(callbacks, {
+              rtcConfiguration: configRef.current.connection.rtcConfiguration,
+              log,
+            })
+          : new WebSocketTransport(callbacks, { log });
+      return created;
+    },
+    [log, ensureGraph, announceReady, handleUnexpectedClose]
+  );
+
+  /**
+   * Open a connection for the given generation (initial connect or reconnect attempt)
+   */
+  const openConnection = useCallback(
+    async (connectId: number, mode: 'initial' | 'reconnect'): Promise<void> => {
+      const { connection: currentConnection, session: currentSession } = configRef.current;
+      const kind: TransportKind = currentConnection.transport ?? 'websocket';
+
+      try {
+        setError(null);
+        setConnectionState(mode === 'initial' ? 'connecting' : 'reconnecting');
+
+        // Fresh token per attempt when a provider is configured
+        const token = currentConnection.getToken ? await currentConnection.getToken() : currentConnection.token;
+        if (connectIdRef.current !== connectId) return; // disconnected while acquiring the token
+        const resolvedConnection = token ? { ...currentConnection, token } : currentConnection;
+
+        const { url, isAgentMode, modeLabel } = buildVoiceLiveUrl(resolvedConnection);
+        isAgentModeRef.current = isAgentMode;
+        transportKindRef.current = kind;
+
+        log.info(`${mode === 'reconnect' ? 'Reconnecting' : 'Connecting'} (${modeLabel}, ${kind}) → ${redactUrl(url)}`);
+        if (mode === 'initial') {
+          validateConfig(currentSession ?? {}, isAgentMode, currentConnection.model).forEach((warning) =>
+            log.warn(warning)
+          );
+        }
+        if (kind === 'webrtc') {
+          validateTransport(resolvedConnection, currentSession);
+        }
+
+        // Replace whatever transport is left from a previous attempt (silently)
+        transportRef.current?.close();
+        const nextTransport = createTransport(kind, connectId);
+        transportRef.current = nextTransport;
+        nextTransport.connect(url, kind === 'webrtc' ? buildSession(currentSession) : {}, {
+          // WebRTC: keep sending the microphone that was started before connect()/reconnect
+          localTrack: kind === 'webrtc' ? micRef.current?.track ?? null : undefined,
+        });
+      } catch (err) {
+        const errorMessage = err instanceof Error ? err.message : 'Failed to connect';
+        log.error('Connection error:', err);
+        setError(errorMessage);
+        setConnectionState('error');
+      }
+    },
+    [log, buildSession, createTransport]
+  );
+  openConnectionRef.current = openConnection;
 
   /**
    * Connect to Voice Live API
    */
-  const connect = useCallback(async () => {
-    try {
-      setError(null);
-      setConnectionState('connecting');
-
-      // Build WebSocket URL
-      let wsUrl: string;
-      let isAgentMode = false;
-
-      // Proxy mode: use proxy URL if provided
-      if (connection.proxyUrl) {
-        wsUrl = connection.proxyUrl;
-        // Detect agent mode from URL parameters
-        // Mode is auto-detected by proxy, but we check here for logging
-        isAgentMode = connection.agentMode || wsUrl.includes('agentId=') || wsUrl.includes('agentName=') || wsUrl.includes('projectName=');
-        isAgentModeRef.current = isAgentMode;
-        const mode = wsUrl.includes('agentName=') ? 'Foundry Agents v2'
-          : wsUrl.includes('agentId=') ? 'Agent Service v1 (classic)'
-          : 'Standard (Voice/Avatar)';
-        console.log(`[${getTimestamp()}] Connecting via proxy...`);
-        console.log(`[${getTimestamp()}] URL: ${wsUrl.replace(/token=[^&]+/, 'token=***')}`);
-        console.log(`[${getTimestamp()}] Mode: ${mode}`);
-      } else {
-        // Direct connection mode
-        const projectIdentifier = connection.projectName;
-        isAgentMode = !!(connection.agentId || connection.agentName) && !!projectIdentifier;
-        isAgentModeRef.current = isAgentMode;
-
-        if (connection.agentName && projectIdentifier) {
-          // Foundry Agents v2 - uses agent-name query param and Entra ID bearer token
-          const apiVersion = connection.apiVersion || '2026-01-01-preview';
-          wsUrl = `wss://${connection.resourceName}.services.ai.azure.com/voice-live/realtime`
-            + `?api-version=${apiVersion}`
-            + `&agent-name=${encodeURIComponent(connection.agentName)}`
-            + `&agent-project-name=${encodeURIComponent(projectIdentifier)}`;
-
-          if (connection.conversationId) {
-            wsUrl += `&conversation-id=${encodeURIComponent(connection.conversationId)}`;
-          }
-          if (connection.agentVersion) {
-            wsUrl += `&agent-version=${encodeURIComponent(connection.agentVersion)}`;
-          }
-
-          // Foundry Agents v2: Entra ID bearer token
-          // Browser WebSocket can't set Authorization header, so token goes in query param
-          // For production, use proxy which moves token to Authorization header
-          if (connection.token) {
-            wsUrl += `&token=${encodeURIComponent(connection.token)}`;
-          } else {
-            throw new Error(
-              'Foundry Agents requires either proxyUrl (recommended) or token for direct connection.'
-            );
-          }
-        } else if (connection.agentId && projectIdentifier) {
-          // Agent Service v1 (classic) - per Azure docs: use agent-id and agent-project-name
-          wsUrl = `wss://${connection.resourceName}.services.ai.azure.com/voice-live/realtime?api-version=${
-            connection.apiVersion || '2025-10-01'
-          }&agent-id=${connection.agentId}&agent-project-name=${projectIdentifier}`;
-
-          // Agent Service v1 authentication: agent-access-token query parameter
-          if (connection.agentAccessToken) {
-            wsUrl += `&agent-access-token=${encodeURIComponent(connection.agentAccessToken)}`;
-          } else {
-            throw new Error('agentAccessToken is required for Agent Service v1 mode.');
-          }
-        } else {
-          // Standard mode with model
-          const model = connection.model || 'gpt-realtime'; // Default to best quality
-          wsUrl = `wss://${connection.resourceName}.services.ai.azure.com/voice-live/realtime?api-version=${
-            connection.apiVersion || '2025-10-01'
-          }&model=${model}`;
-
-          // Standard mode authentication: use api-key
-          if (connection.apiKey) {
-            wsUrl += `&api-key=${encodeURIComponent(connection.apiKey)}`;
-          }
-          // Note: Token auth via Authorization header would need different WebSocket setup
-        }
-
-        console.log(`[${getTimestamp()}] Connecting to Voice Live API...`);
-        console.log(`[${getTimestamp()}] URL: ${wsUrl.replace(/api-key=[^&]+/, 'api-key=***').replace(/agent-access-token=[^&]+/, 'agent-access-token=***').replace(/token=[^&]+/, 'token=***')}`);
-        if (connection.agentName) {
-          console.log(`[${getTimestamp()}] Foundry Agent: ${connection.agentName}, Project: ${projectIdentifier}`);
-        } else if (connection.agentId) {
-          console.log(`[${getTimestamp()}] Agent: ${connection.agentId}, Project: ${projectIdentifier}`);
-        } else {
-          console.log(`[${getTimestamp()}] Model: ${connection.model || 'gpt-realtime'}`);
-        }
-      }
-
-      const ws = new WebSocket(wsUrl);
-      wsRef.current = ws;
-
-      ws.onopen = () => {
-        console.log(`[${getTimestamp()}] WebSocket connected`);
-        setConnectionState('connected');
-
-        // Initialize AudioContext early on connection with optimal configuration
-        if (!audioContextRef.current) {
-          audioContextRef.current = new AudioContext({
-            latencyHint: 'interactive',
-          });
-          console.log(`[${getTimestamp()}] AudioContext created with sample rate: ${audioContextRef.current.sampleRate}Hz`);
-          console.log(`[${getTimestamp()}] Base latency: ${(audioContextRef.current.baseLatency * 1000).toFixed(2)}ms`);
-
-          // Create gain node for routing audio to multiple destinations
-          audioGainRef.current = audioContextRef.current.createGain();
-          audioGainRef.current.gain.value = 1.0;
-
-          // Create analyser for visualization
-          audioAnalyserRef.current = audioContextRef.current.createAnalyser();
-          audioAnalyserRef.current.fftSize = 256;
-          audioAnalyserRef.current.smoothingTimeConstant = 0.8;
-
-          // Trigger component re-render to expose audioContext and audioAnalyser
-          forceUpdate({});
-        }
-
-        // Create MediaStreamDestination only for voice-only mode (not avatar)
-        if (!audioStreamDestinationRef.current && !session?.avatar && audioGainRef.current) {
-          audioStreamDestinationRef.current = audioContextRef.current.createMediaStreamDestination();
-
-          // Connect gain to both MediaStreamDestination (for playback) and analyser (for visualization)
-          audioGainRef.current.connect(audioStreamDestinationRef.current);
-          if (audioAnalyserRef.current) {
-            audioGainRef.current.connect(audioAnalyserRef.current);
-          }
-
-          setAudioStream(audioStreamDestinationRef.current.stream);
-          console.log(`[${getTimestamp()}] Audio visualization stream created`);
-        }
-
-        // Don't send session.update yet - wait for session.created from Azure
-      };
-
-      ws.onmessage = handleMessage;
-
-      ws.onerror = (error) => {
-        console.error(`[${getTimestamp()}] WebSocket error:`, error);
-        setError('WebSocket connection error');
-        setConnectionState('error');
-      };
-
-      ws.onclose = (event) => {
-        console.log(`[${getTimestamp()}] WebSocket closed - Code: ${event.code}, Reason: ${event.reason || 'No reason provided'}, Clean: ${event.wasClean}`);
-        if (!event.wasClean) {
-          console.error(`[${getTimestamp()}] WebSocket closed unexpectedly!`);
-        }
-        setConnectionState('disconnected');
-        setIsReady(false);
-      };
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Failed to connect';
-      console.error(`[${getTimestamp()}] Connection error:`, err);
-      setError(errorMessage);
-      setConnectionState('error');
+  const connect = useCallback(async (): Promise<void> => {
+    // Idempotent: a second call while a transport is connecting/open is a no-op
+    const active = transportRef.current;
+    if (active && (active.state === 'connecting' || active.state === 'open')) {
+      log.warn('connect() ignored: already connecting or connected');
+      return;
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [
-    connection,
-    session,
-    handleMessage,
-  ]);
+    // A manual connect() supersedes a pending reconnect
+    if (reconnectTimerRef.current) {
+      clearTimeout(reconnectTimerRef.current);
+      reconnectTimerRef.current = null;
+    }
+    reconnectAttemptRef.current = 0;
+    setReconnectAttempt(0);
+    greetingSentRef.current = false;
+
+    const connectId = ++connectIdRef.current;
+    await openConnection(connectId, 'initial');
+  }, [log, openConnection]);
 
   /**
    * Disconnect from Voice Live API
    */
-  const disconnect = useCallback(() => {
-    console.log(`[${getTimestamp()}] Disconnecting...`);
-
-    // Stop microphone capture
-    stopMic();
-
-    // Stop playback worklet
-    if (playbackWorkletRef.current) {
-      playbackWorkletRef.current.port.postMessage(null);
-      playbackWorkletRef.current.disconnect();
-      playbackWorkletRef.current = null;
+  const disconnect = useCallback((): void => {
+    log.info('Disconnecting...');
+    connectIdRef.current++;
+    if (reconnectTimerRef.current) {
+      clearTimeout(reconnectTimerRef.current);
+      reconnectTimerRef.current = null;
     }
-    playbackInitPromiseRef.current = null;
+    reconnectAttemptRef.current = 0;
+    greetingSentRef.current = false;
 
-    // Cleanup playback blob URL
-    if (playbackBlobUrlRef.current) {
-      URL.revokeObjectURL(playbackBlobUrlRef.current);
-      playbackBlobUrlRef.current = null;
-    }
+    // Stop microphone capture (both transports)
+    stopWsMic();
+    micRef.current?.stop();
+    micRef.current?.setMuted(false);
+    setRtcMicActive(false);
+    setRtcMuted(false);
 
-    // Close audio context
-    if (audioContextRef.current) {
-      audioContextRef.current.close();
-      audioContextRef.current = null;
-    }
+    releaseConnection({ keepAudio: false });
 
-    // Close WebSocket
-    if (wsRef.current) {
-      wsRef.current.close();
-      wsRef.current = null;
-    }
-
-    // Close peer connection
-    if (pcRef.current) {
-      pcRef.current.close();
-      pcRef.current = null;
-    }
-
-    setVideoStream(null);
-    setAudioStream(null);
+    setSessionExpiresAt(null);
+    setReconnectAttempt(0);
     setIsReady(false);
     setSessionState('idle');
     setConnectionState('disconnected');
-  }, [stopMic]);
+  }, [stopWsMic, releaseConnection, log]);
 
-  // Auto-connect if requested
+  // Auto-connect if requested (connect is stable, so this runs once per mount / autoConnect change)
   useEffect(() => {
     if (autoConnect) {
       connect();
@@ -845,49 +900,20 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
   // Auto-start microphone when session is ready
   useEffect(() => {
     if (isReady && autoStartMic && !isMicActive) {
-      console.log(`[${getTimestamp()}] Starting microphone...`);
+      log.debug('Starting microphone...');
       startMic().catch((err) => {
-        console.error(`[${getTimestamp()}] Microphone error:`, err);
+        log.error('Microphone error:', err);
       });
     }
-  }, [isReady, autoStartMic, isMicActive, startMic]);
+  }, [isReady, autoStartMic, isMicActive, startMic, log]);
 
-  // Send proactive greeting when session is ready
+  // Send the proactive greeting once per connect() (not again after a reconnect)
   useEffect(() => {
-    if (!isReady || !session?.greeting) return;
-
-    const { type, text } = session.greeting;
-    console.log(`[${getTimestamp()}] Sending proactive greeting (${type})...`);
-
-    if (type === 'llm') {
-      // LLM-generated greeting: add system message and trigger response
-      sendEvent({
-        type: 'conversation.item.create',
-        item: {
-          type: 'message',
-          role: 'system',
-          content: [{ type: 'input_text', text }],
-        },
-      });
-      sendEvent({
-        type: 'response.create',
-        event_id: `evt_llmgreeting_${Date.now()}`,
-      });
-    } else if (type === 'pregenerated') {
-      // Pre-generated greeting: use preGeneratedAssistantMessage
-      sendEvent({
-        type: 'response.create',
-        event_id: `evt_greeting_${Date.now()}`,
-        response: {
-          preGeneratedAssistantMessage: {
-            type: 'message',
-            role: 'assistant',
-            content: [{ type: 'output_text', text }],
-          },
-        },
-      });
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    if (!isReady || !session?.greeting || greetingSentRef.current) return;
+    greetingSentRef.current = true;
+    log.debug(`Sending proactive greeting (${session.greeting.type})...`);
+    buildGreetingEvents(session.greeting).forEach((event) => sendEvent(event));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isReady]);
 
   // Cleanup on unmount
@@ -899,23 +925,23 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
 
   /**
    * Get current audio playback time in milliseconds
-   * Used for synchronizing visemes with audio playback
+   * Used for synchronizing visemes with audio playback (WebSocket transport only)
    */
   const getAudioPlaybackTime = useCallback((): number | null => {
-    if (!audioContextRef.current || responseStartTimeRef.current === null) {
-      return null;
-    }
-    const elapsed = audioContextRef.current.currentTime - responseStartTimeRef.current;
-    return Math.max(0, elapsed * 1000); // Convert to milliseconds
+    if (transportKindRef.current === 'webrtc') return null;
+    return playerRef.current?.playbackTimeMs() ?? null;
   }, []);
 
   return {
     connectionState,
+    reconnectAttempt,
     sessionState,
+    transport,
     videoStream,
     audioStream,
-    audioContext: audioContextRef.current,
-    audioAnalyser: audioAnalyserRef.current,
+    audioContext: graphRef.current?.context ?? null,
+    audioAnalyser: graphRef.current?.analyser ?? null,
+    sessionExpiresAt,
     isReady,
     isMicActive,
     isMuted,
@@ -927,6 +953,12 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
     toggleMute,
     sendEvent,
     updateSession,
+    sendText,
+    sendToolResult,
+    cancelResponse,
+    clearInputAudio,
+    commitInputAudio,
+    approveMcpCall,
     getAudioPlaybackTime,
   };
 }

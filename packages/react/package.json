@@ -1,6 +1,6 @@
 {
   "name": "@iloveagents/foundry-voice-live-react",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "React library for Microsoft Foundry Voice Live API. Full TypeScript support with optimized presets and configuration helpers.",
   "keywords": [
     "microsoft",
@@ -62,15 +62,17 @@
     "lint:fix": "eslint . --ext .ts,.tsx --fix",
     "format": "prettier --write \"**/*.{ts,tsx,json,md}\"",
     "format:check": "prettier --check \"**/*.{ts,tsx,json,md}\"",
-    "prepublishOnly": "pnpm run build && pnpm run typecheck && pnpm run test"
+    "prepublishOnly": "pnpm run build && pnpm run typecheck && pnpm run test",
+    "smoke:live": "node scripts/live-smoke.mjs"
   },
   "peerDependencies": {
     "react": ">=16.8.0",
     "react-dom": ">=16.8.0"
   },
   "devDependencies": {
-    "@testing-library/react": "^14.0.0",
+    "@azure/ai-voicelive": "^1.1.0",
     "@testing-library/jest-dom": "^6.0.0",
+    "@testing-library/react": "^14.0.0",
     "@types/react": "^18.2.0",
     "@types/react-dom": "^18.2.0",
     "@typescript-eslint/eslint-plugin": "^6.0.0",
@@ -83,7 +85,8 @@
     "prettier": "^3.0.0",
     "tsup": "^8.0.0",
     "typescript": "^5.0.0",
-    "vitest": "^1.0.0"
+    "vitest": "^1.0.0",
+    "ws": "^8.18.0"
   },
   "sideEffects": false,
   "publishConfig": {

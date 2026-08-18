@@ -11,13 +11,25 @@
 
 /**
  * Base Voice Live API event structure
- * All events from the API follow this pattern
+ * All events from the API follow this pattern.
+ * See `types/events.ts` for the typed server/client event unions.
  */
 export interface VoiceLiveEvent {
   type: string;
   event_id?: string;
   [key: string]: unknown; // Additional event-specific properties
 }
+
+import type { VoiceLiveServerEvent, VoiceLiveClientEvent, VoiceLiveWarningDetails } from './events';
+
+// Re-export typed protocol events so consumers can import everything from one place
+export type {
+  VoiceLiveServerEvent,
+  VoiceLiveClientEvent,
+  ServerEventType,
+  ClientEventType,
+  ServerEventOf,
+} from './events';
 
 // ============================================================================
 // MODEL & CONNECTION
@@ -29,6 +41,7 @@ export interface VoiceLiveEvent {
 export type KnownVoiceLiveModel =
   // Pro tier - Best quality
   | 'gpt-realtime'        // Native audio, best quality
+  | 'azure-realtime'      // Azure native speech-to-speech (GA 2026-07-15); use with 'azure-realtime-native' voices
   | 'gpt-4o'              // Azure STT/TTS
   | 'gpt-4.1'             // Azure STT/TTS
   | 'gpt-5'               // Azure STT/TTS
@@ -50,64 +63,97 @@ export type KnownVoiceLiveModel =
 export type VoiceLiveModel = KnownVoiceLiveModel | (string & Record<string, never>);
 
 /**
+ * Transport used for the realtime session.
+ *
+ * - `'websocket'` (default): PCM16 audio is streamed as base64 events over the WebSocket.
+ * - `'webrtc'` (preview): audio flows over an RTCPeerConnection (RTP), non-audio events
+ *   arrive over the `voice-live-events` data channel, and a WebSocket control channel to
+ *   `/voice-live/realtime/calls` carries session control and tool-call events.
+ *   Voice-only — avatar is not supported over the WebRTC transport.
+ *
+ * @see {@link https://learn.microsoft.com/azure/ai-services/speech-service/voice-live-webrtc}
+ */
+export type VoiceLiveTransport = 'websocket' | 'webrtc';
+
+/**
  * Connection configuration for Voice Live API
  */
 export interface VoiceLiveConnectionConfig {
-  /** Azure AI Foundry resource name */
+  /** Microsoft Foundry resource name (the `<name>` in `<name>.services.ai.azure.com`) */
   resourceName?: string;
 
-  /** API key authentication (or use token for Microsoft Entra) */
+  /**
+   * API key authentication. Convenient for local development; never ship API keys in
+   * client code — use `proxyUrl` (or `token`) in production.
+   */
   apiKey?: string;
 
-  /** Microsoft Entra authentication token (recommended) */
+  /**
+   * Microsoft Entra ID access token (scope `https://ai.azure.com/.default`).
+   *
+   * Direct connections send it as the documented browser-friendly
+   * `Authorization=Bearer <token>` query parameter (works for standard mode and
+   * Foundry Agents). Prefer `proxyUrl` in production so tokens never appear in URLs.
+   */
   token?: string;
 
   /**
-   * Model to use
+   * Token provider called on every (re)connect — use it instead of `token` when tokens
+   * expire (e.g. MSAL `acquireTokenSilent`). Takes precedence over `token`.
+   */
+  getToken?: () => string | Promise<string>;
+
+  /**
+   * Model to use (standard mode)
    * @default 'gpt-realtime'
    */
   model?: VoiceLiveModel;
 
   /**
-   * API version
-   * @default '2025-10-01'
+   * Voice Live API version.
+   * @default '2026-07-15' (DEFAULT_API_VERSION); WebRTC transport defaults to
+   *   '2026-01-01-preview' (DEFAULT_WEBRTC_API_VERSION)
    */
   apiVersion?: string;
 
-  // ===== Agent Service Mode (mutually exclusive with model) =====
-
-  /** Agent ID for Azure AI Agent Service (classic v1) */
-  agentId?: string;
-
-  /** Project name for Azure AI Agent Service (recommended) */
-  projectName?: string;
-
-  /** Agent access token for Azure AI Agent Service (required for classic Agent mode v1) */
-  agentAccessToken?: string;
-
-  // ===== Foundry Agents (v2) =====
+  // ===== Foundry Agents (mutually exclusive with model) =====
 
   /**
-   * Agent name as configured in Azure AI Foundry portal.
-   * Uses Foundry Agents v2 API with Entra ID authentication.
-   * Requires proxy for browser apps (Authorization header not settable from browser WebSocket).
+   * Agent name as configured in the Microsoft Foundry portal.
+   * Requires Entra ID authentication (`token` for direct connections, or a proxy that
+   * uses DefaultAzureCredential / token passthrough). API keys are not supported for agents.
    *
    * @example 'VoiceLiveAgent'
    * @see {@link https://learn.microsoft.com/azure/ai-services/speech-service/voice-live-agents-quickstart}
    */
   agentName?: string;
 
+  /** Foundry project name that contains the agent (required with `agentName`) */
+  projectName?: string;
+
   /**
-   * Resume a previous conversation (Foundry Agents v2).
+   * Resume a previous conversation.
    * Pass the conversation ID from a previous session to continue where it left off.
    */
   conversationId?: string;
 
   /**
-   * Pin a specific agent version (Foundry Agents v2).
+   * Pin a specific agent version.
    * If not set, defaults to the latest version.
    */
   agentVersion?: string;
+
+  /**
+   * Run the agent on a different Foundry resource than the one serving audio
+   * (cross-resource agents). Sent as `foundry-resource-override`.
+   */
+  foundryResourceOverride?: string;
+
+  /**
+   * Client ID of the user-assigned managed identity used to authenticate the agent
+   * invocation. Sent as `agent-authentication-identity-client-id`.
+   */
+  agentAuthenticationIdentityClientId?: string;
 
   // ===== Proxy Mode =====
 
@@ -120,11 +166,13 @@ export interface VoiceLiveConnectionConfig {
    *
    * Standard mode:         'ws://localhost:8080/ws?model=gpt-realtime'
    * Standard with MSAL:    'ws://localhost:8080/ws?model=gpt-realtime&token=${msalToken}'
-   * Agent v1 (classic):    'ws://localhost:8080/ws?agentId=xxx&projectName=yyy&token=${msalToken}'
    * Foundry Agent:         'ws://localhost:8080/ws?agentName=MyAgent&projectName=myProject'
    * Foundry Agent (MSAL):  'ws://localhost:8080/ws?agentName=MyAgent&projectName=myProject&token=${msalToken}'
    *
-   * @see {@link https://github.com/iLoveAgents/foundry-voice-live-proxy}
+   * With `transport: 'webrtc'` the SDK appends `transport=webrtc` so the proxy relays the
+   * control channel to `/voice-live/realtime/calls`.
+   *
+   * @see {@link https://github.com/iLoveAgents/foundry-voice-live}
    */
   proxyUrl?: string;
 
@@ -132,15 +180,30 @@ export interface VoiceLiveConnectionConfig {
    * Explicitly enable agent mode for session configuration.
    *
    * When true, session.update omits fields not supported in agent mode
-   * (temperature, instructions, maxResponseOutputTokens).
+   * (temperature, instructions, tools, maxResponseOutputTokens).
    *
-   * Usually auto-detected from agentName/agentId in the URL or connection config.
+   * Usually auto-detected from agentName in the URL or connection config.
    * Set explicitly when the proxy handles agent config server-side and the
    * proxy URL doesn't contain agent params.
    *
    * @default auto-detected from URL params or connection config
    */
   agentMode?: boolean;
+
+  // ===== Transport =====
+
+  /**
+   * Realtime transport.
+   * @default 'websocket'
+   */
+  transport?: VoiceLiveTransport;
+
+  /**
+   * Optional RTCConfiguration for `transport: 'webrtc'` (e.g. TURN servers for
+   * UDP-restricted networks). By default no ICE servers are configured, matching
+   * the Microsoft sample.
+   */
+  rtcConfiguration?: RTCConfiguration;
 }
 
 // ============================================================================
@@ -167,6 +230,25 @@ export type InputAudioSamplingRate = 16000 | 24000;
  */
 export interface InputAudioEchoCancellation {
   type: 'server_echo_cancellation';
+
+  /**
+   * Echo reference source (Live-Reference AEC).
+   * - 'server' (default): the service uses its own TTS output as the echo reference.
+   * - 'client': the client streams interleaved stereo PCM16 (channel 0 = mic,
+   *   channel 1 = the audio actually played back) and the service uses channel 1
+   *   as the reference. Requires `channels: 2` and `inputAudioFormat: 'pcm16'`.
+   *
+   * Note: stereo reference capture is not yet implemented by `useAudioCapture`;
+   * this option is currently types/wire-format only.
+   * @default 'server'
+   */
+  referenceSource?: 'server' | 'client';
+
+  /**
+   * Input channel count. `2` = interleaved stereo for client-reference AEC.
+   * @default 1
+   */
+  channels?: 1 | 2;
 }
 
 /**
@@ -192,7 +274,8 @@ export type TranscriptionModel =
   | 'whisper-1'
   | 'gpt-4o-transcribe'
   | 'gpt-4o-mini-transcribe'
-  | 'gpt-4o-transcribe-diarize';
+  | 'gpt-4o-transcribe-diarize'
+  | 'mai-transcribe';          // Preview: works with all models and agents
 
 /**
  * Custom speech model configuration per locale (Voice Live)
@@ -214,8 +297,10 @@ export type CustomSpeechConfig = Record<string, string>;
  */
 export interface InputAudioTranscription {
   /**
-   * Transcription model
-   * Use 'azure-speech' for Voice Live or standard models for Azure OpenAI
+   * Transcription model.
+   * - `gpt-realtime` / `gpt-realtime-mini`: 'whisper-1', 'gpt-4o-transcribe',
+   *   'gpt-4o-mini-transcribe', 'gpt-4o-transcribe-diarize', 'mai-transcribe'
+   * - All other models and Foundry agents: 'azure-speech', 'mai-transcribe'
    */
   model?: 'azure-speech' | TranscriptionModel;
 
@@ -267,6 +352,7 @@ export type TurnDetectionType =
   | 'server_vad'                      // Volume-based (Azure OpenAI default)
   | 'semantic_vad'                    // Semantic (gpt-realtime/mini only)
   | 'azure_semantic_vad'              // Voice Live: Azure semantic (all models)
+  | 'azure_semantic_vad_en'           // Voice Live: English-optimized Azure semantic
   | 'azure_semantic_vad_multilingual'; // Voice Live: Multilingual semantic
 
 /**
@@ -279,8 +365,10 @@ export type Eagerness = 'low' | 'medium' | 'high' | 'auto';
  * End of utterance detection model (Voice Live)
  */
 export type EndOfUtteranceModel =
-  | 'semantic_detection_v1'              // English only
-  | 'semantic_detection_v1_multilingual'; // Multi-language support
+  | 'semantic_detection_v1'              // English only (text-based)
+  | 'semantic_detection_v1_en'           // English-optimized (text-based)
+  | 'semantic_detection_v1_multilingual' // Multi-language support (text-based)
+  | 'smart_end_of_turn_detection';       // Audio-based EOU (operates on the input audio stream)
 
 /**
  * End of utterance detection threshold level (Voice Live)
@@ -384,10 +472,20 @@ export interface TurnDetectionConfig {
   languages?: string[];
 
   /**
-   * Auto-truncate on interruption
+   * Auto-truncate on interruption: when the user barges in, the service trims the
+   * assistant turn in the conversation context to what was actually played
+   * (requires `interruptResponse: true`) and emits `conversation.item.truncated`.
    * @default false
    */
   autoTruncate?: boolean;
+
+  /**
+   * Text appended to the truncated assistant turn in the conversation context,
+   * e.g. " [The user interrupted me.]", so the model knows it was cut off.
+   * Requires `autoTruncate: true`; supported by 'azure_semantic_vad' and
+   * 'azure_semantic_vad_multilingual' only. Wire: `appended_text_after_truncation`.
+   */
+  appendedTextAfterTruncation?: string;
 
   // ===== End-of-Utterance Detection (Voice Live) =====
 
@@ -403,49 +501,120 @@ export interface TurnDetectionConfig {
 // ============================================================================
 
 /**
- * Azure OpenAI standard voices
+ * OpenAI voice names (gpt-realtime family). Single source of truth for the `StandardVoice` type.
  */
-export type StandardVoice =
-  | 'alloy' | 'ash' | 'ballad' | 'coral'
-  | 'echo' | 'sage' | 'shimmer' | 'verse';
+export const OPENAI_VOICES = [
+  'alloy', 'ash', 'ballad', 'coral', 'echo', 'sage', 'shimmer', 'verse', 'marin', 'cedar',
+] as const;
 
 /**
- * Voice type (Voice Live)
+ * OpenAI voices (gpt-realtime family)
  */
-export type VoiceType = 'azure-standard' | 'azure-custom';
+export type StandardVoice = (typeof OPENAI_VOICES)[number];
+
+/**
+ * Azure Realtime native voice names — only valid with model 'azure-realtime'.
+ * Single source of truth for the `AzureRealtimeNativeVoiceName` type (and voice pickers).
+ */
+export const AZURE_REALTIME_NATIVE_VOICES = [
+  'aarti', 'andrew', 'ava', 'denise', 'diya', 'elsa',
+  'florian', 'francisca', 'meera', 'ximena', 'xiaoxiao', 'yunxi',
+] as const;
+
+/**
+ * Azure Realtime native voices — only valid with model 'azure-realtime'
+ * (which in turn only accepts this voice type). Extensible to future names.
+ */
+export type AzureRealtimeNativeVoiceName =
+  | (typeof AZURE_REALTIME_NATIVE_VOICES)[number]
+  | (string & Record<string, never>);
+
+/**
+ * Underlying neural model for Azure personal voices
+ */
+export type PersonalVoiceModel =
+  | 'DragonLatestNeural'
+  | 'DragonHDOmniLatestNeural'
+  | 'MAI-Voice-1'
+  | (string & Record<string, never>);
+
+/**
+ * Voice type discriminator (Voice Live)
+ */
+export type VoiceType =
+  | 'openai'                // OpenAI voices (gpt-realtime family)
+  | 'azure-standard'        // Azure neural / HD voices, e.g. 'en-US-Ava:DragonHDLatestNeural'
+  | 'azure-custom'          // Custom neural voice (requires endpointId)
+  | 'azure-personal'        // Personal voice (requires model)
+  | 'azure-realtime-native'; // Azure Realtime native voices (model 'azure-realtime' only)
 
 /**
  * Voice configuration
- * Supports Azure OpenAI standard voices and Voice Live Azure voices
+ * Supports OpenAI voices, Azure standard/HD, custom, personal and Azure Realtime native voices
  */
 export interface VoiceConfig {
   /**
    * Voice name
-   * - Azure OpenAI: 'alloy', 'echo', etc.
-   * - Voice Live standard: 'en-US-AvaNeural'
-   * - Voice Live HD: 'en-US-Ava:DragonHDLatestNeural'
-   * - Voice Live custom: Your custom voice name
+   * - OpenAI: 'alloy', 'marin', etc.
+   * - Azure standard: 'en-US-AvaNeural'
+   * - Azure HD: 'en-US-Ava:DragonHDLatestNeural'
+   * - Azure custom / personal: your voice name
+   * - Azure Realtime native: 'ava', 'andrew', ... (model 'azure-realtime')
    */
-  name: string | StandardVoice;
+  name: string | StandardVoice | AzureRealtimeNativeVoiceName;
 
   /**
-   * Voice type (Voice Live only)
-   * Required when using Azure voices
+   * Voice type discriminator.
+   * Required for Azure voices; defaults to 'azure-standard' when omitted for
+   * non-OpenAI voice names.
    */
   type?: VoiceType;
 
   /**
-   * Temperature for HD voices (0.0-1.0)
+   * Temperature for HD/personal voices (0.0-1.0)
    * Higher values = more variability in intonation, prosody
    * @default 0.8
    */
   temperature?: number;
 
   /**
-   * Speaking rate ('0.5' to '1.5')
+   * Speaking rate as an SSML prosody value ('0.5' to '1.5', or e.g. '+10%')
    * @default '1.0'
    */
   rate?: string;
+
+  /** SSML prosody pitch, e.g. '+10%', 'high' (Azure voices) */
+  pitch?: string;
+
+  /** SSML prosody volume, e.g. 'loud', '+6dB' (Azure voices) */
+  volume?: string;
+
+  /** Speaking style, e.g. 'cheerful' (Azure standard/custom voices) */
+  style?: string;
+
+  /**
+   * Preferred locales (BCP-47) that adjust the accent per language for
+   * multilingual voices, e.g. ['en-GB', 'es-ES'] (Azure voices)
+   */
+  preferLocales?: string[];
+
+  /**
+   * Force a single output locale (BCP-47), e.g. 'en-US'. Text in other
+   * languages may be rendered as silence. (Azure voices)
+   */
+  locale?: string;
+
+  /** Custom lexicon URL (Azure voices) */
+  customLexiconUrl?: string;
+
+  /** Custom text normalization URL (Azure voices) */
+  customTextNormalizationUrl?: string;
+
+  /** Custom voice deployment endpoint ID (type 'azure-custom' only) */
+  endpointId?: string;
+
+  /** Underlying model for personal voices (type 'azure-personal' only) */
+  model?: PersonalVoiceModel;
 }
 
 /**
@@ -587,9 +756,90 @@ export interface FunctionTool {
 }
 
 /**
- * Tool definition (currently only functions supported)
+ * MCP tool approval policy.
+ * - 'always' (default): every call sends an `mcp_approval_request` item; the client must
+ *   respond with `approveMcpCall()` before the tool executes.
+ * - 'never': tools execute automatically.
+ * - Per-tool: `{ always: ['submit_feedback'], never: ['search_docs'] }` (unlisted → 'always').
  */
-export type Tool = FunctionTool;
+export type McpRequireApproval =
+  | 'always'
+  | 'never'
+  | { always?: string[]; never?: string[] };
+
+/**
+ * Remote MCP server that Voice Live connects to server-side (tools are auto-discovered
+ * and executed by the service).
+ *
+ * @see {@link https://learn.microsoft.com/azure/ai-services/speech-service/how-to-voice-live-mcp-server}
+ */
+export interface MCPTool {
+  type: 'mcp';
+
+  /** Display label; used in `server_label` of MCP events */
+  serverLabel: string;
+
+  /** URL of the remote MCP endpoint */
+  serverUrl: string;
+
+  /** Restrict callable tools; omit to allow all tools the server exposes */
+  allowedTools?: string[];
+
+  /** Extra HTTP headers the service sends to the MCP server */
+  headers?: Record<string, string>;
+
+  /** Authorization value the service sends to the MCP server */
+  authorization?: string;
+
+  /** @default 'always' */
+  requireApproval?: McpRequireApproval;
+}
+
+/**
+ * Context handling for a Foundry agent used as a tool
+ */
+export type FoundryAgentContextType = 'no_context' | 'agent_context';
+
+/**
+ * Foundry agent exposed as a tool (chat-supervisor pattern): the realtime model
+ * handles the conversation and delegates complex tasks to a Foundry agent.
+ */
+export interface FoundryAgentTool {
+  type: 'foundry_agent';
+
+  /** Name of the Foundry agent to call */
+  agentName: string;
+
+  /** Foundry project that contains the agent */
+  projectName: string;
+
+  /** Optional agent version to pin */
+  agentVersion?: string;
+
+  /** Client ID associated with the agent (managed identity) */
+  clientId?: string;
+
+  /** Overrides the agent's description from the Foundry portal */
+  description?: string;
+
+  /** Run the agent on a different Foundry resource */
+  foundryResourceOverride?: string;
+
+  /** @default 'agent_context' */
+  agentContextType?: FoundryAgentContextType;
+
+  /**
+   * Return the agent's answer directly as the spoken response.
+   * When false, the realtime model rephrases it.
+   * @default true
+   */
+  returnAgentResponseDirectly?: boolean;
+}
+
+/**
+ * Tool definition: client-side function, server-side MCP server, or Foundry agent
+ */
+export type Tool = FunctionTool | MCPTool | FoundryAgentTool;
 
 /**
  * Tool choice strategy
@@ -681,6 +931,25 @@ export interface VoiceLiveSessionConfig {
    */
   maxResponseOutputTokens?: number | 'inf';
 
+  /**
+   * Allow the model to issue multiple tool calls in parallel.
+   * Set to false to force sequential tool calls. Wire: `parallel_tool_calls`
+   * @default true
+   */
+  parallelToolCalls?: boolean;
+
+  /**
+   * Reasoning effort for reasoning-capable models (e.g. gpt-5 family).
+   * Lower effort = faster responses. Wire: `reasoning_effort`
+   */
+  reasoningEffort?: ReasoningEffort;
+
+  /**
+   * Up to 16 string key/value pairs attached to the session (keys ≤ 64 chars,
+   * values ≤ 512 chars). Included in Microsoft Foundry resource logs for tracing.
+   */
+  metadata?: Record<string, string>;
+
   // ===== Voice Live: Input Audio Additions =====
 
   /**
@@ -723,8 +992,15 @@ export interface VoiceLiveSessionConfig {
   animation?: AnimationConfig;
 
   /**
-   * Interim response configuration.
-   * Provides filler messages while tools execute or during high latency.
+   * Interim response configuration ("intermediate messages while thinking").
+   * The service speaks short bridging messages while a tool call runs or when the
+   * response latency exceeds a threshold.
+   *
+   * Supported in Foundry agent mode and with cascaded text models (gpt-4.1, gpt-5, ...)
+   * combined with Azure voices. Not supported by native audio models
+   * (gpt-realtime, gpt-realtime-mini, phi4-mm-realtime, azure-realtime).
+   *
+   * @see {@link https://learn.microsoft.com/azure/ai-services/speech-service/how-to-voice-live-interim-response}
    */
   interimResponse?: InterimResponseConfig;
 
@@ -739,6 +1015,11 @@ export interface VoiceLiveSessionConfig {
 }
 
 /**
+ * Reasoning effort for reasoning-capable models
+ */
+export type ReasoningEffort = 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
+
+/**
  * Interim response trigger type
  */
 export type InterimResponseTrigger = 'tool' | 'latency';
@@ -750,24 +1031,41 @@ export type InterimResponseTrigger = 'tool' | 'latency';
 export interface InterimResponseConfig {
   /**
    * Interim response type:
-   * - 'llm_interim_response': Model generates contextual filler messages
-   * - 'static_interim_response': Use pre-defined static texts
+   * - 'llm_interim_response': a lightweight LLM generates contextual filler messages
+   * - 'static_interim_response': randomly selects one of the pre-defined `texts`
    */
   type: 'llm_interim_response' | 'static_interim_response';
 
-  /** What triggers the interim response */
+  /**
+   * What triggers the interim response (OR logic)
+   * @default ['latency']
+   */
   triggers: InterimResponseTrigger[];
 
   /**
-   * Latency threshold in milliseconds before triggering interim response
-   * @default 100
+   * Latency threshold in milliseconds before the 'latency' trigger fires.
+   * Wire: `latency_threshold_ms`
+   * @default 2000
    */
   latencyThresholdInMs?: number;
 
-  /** Instructions for LLM interim response generation (for 'llm_interim_response' type) */
+  /**
+   * Model used to generate the filler text ('llm_interim_response' only)
+   * @default 'gpt-4.1-mini'
+   */
+  model?: string;
+
+  /** Instructions for LLM interim response generation ('llm_interim_response' only) */
   instructions?: string;
 
-  /** Static texts to use as filler messages (for 'static_interim_response' type) */
+  /**
+   * Maximum tokens for the generated filler ('llm_interim_response' only).
+   * Wire: `max_completion_tokens`
+   * @default 50
+   */
+  maxCompletionTokens?: number;
+
+  /** Static texts to choose from ('static_interim_response' only) */
   texts?: string[];
 }
 
@@ -790,76 +1088,50 @@ export interface GreetingConfig {
 }
 
 // ============================================================================
-// RESPONSE.CREATE OPTIONS
-// ============================================================================
-
-/**
- * Conversation control mode
- */
-export type ConversationMode = 'auto' | 'none';
-
-/**
- * Content part for conversation items
- */
-export interface ContentPart {
-  type: 'input_text' | 'input_audio' | 'item_reference';
-  text?: string;
-  audio?: string;      // Base64
-  transcript?: string;
-  id?: string;         // For item_reference
-}
-
-/**
- * Conversation item for response.create
- */
-export interface ConversationItem {
-  type: 'message' | 'function_call' | 'function_call_output';
-  id?: string;
-  role?: 'system' | 'user' | 'assistant';
-  content?: ContentPart[];
-  callId?: string;
-  name?: string;
-  arguments?: string;
-  output?: string;
-}
-
-/**
- * Options for response.create event
- * Can override session configuration per response
- */
-export interface ResponseCreateOptions {
-  // Override session settings
-  modalities?: Modality[];
-  instructions?: string;
-  voice?: string | StandardVoice | VoiceConfig;
-  outputAudioFormat?: AudioFormat;
-  tools?: Tool[];
-  toolChoice?: ToolChoice;
-  temperature?: number;
-  maxResponseOutputTokens?: number | 'inf';
-
-  // Response-specific settings
-  /**
-   * Conversation control
-   * @default 'auto'
-   */
-  conversation?: ConversationMode;
-
-  /**
-   * Metadata (max 16 key-value pairs, max 64 char keys, 512 char values)
-   */
-  metadata?: Record<string, string>;
-
-  /**
-   * Input items to create new context
-   * Without including default conversation
-   */
-  input?: ConversationItem[];
-}
-
-// ============================================================================
 // HOOK CONFIGURATION
 // ============================================================================
+
+/**
+ * Logging verbosity of the hook.
+ * 'warn' (default) only prints warnings and errors; use 'debug' during development.
+ */
+export type LogLevel = 'debug' | 'info' | 'warn' | 'error' | 'none';
+
+/**
+ * Value a tool executor can return. Objects are JSON-stringified before being sent
+ * as `function_call_output`.
+ */
+export type ToolResult = string | object;
+
+/**
+ * Tool executor for function calling.
+ *
+ * If it returns (or resolves to) a value other than `undefined`, the hook sends it as
+ * the `function_call_output` for `callId` and triggers a new response automatically.
+ * Return `undefined`/`void` to send the result yourself via `sendToolResult()`.
+ */
+export type ToolExecutor = (
+  name: string,
+  args: string,
+  callId: string
+) => void | ToolResult | Promise<void | ToolResult>;
+
+/**
+ * Non-fatal warning emitted by the service (`warning` event)
+ */
+export type VoiceLiveWarning = VoiceLiveWarningDetails;
+
+/**
+ * MCP tool call awaiting client approval (`mcp_approval_request` item).
+ * Respond with `approveMcpCall(approvalRequestId, approve)`.
+ */
+export interface McpApprovalRequest {
+  approvalRequestId: string;
+  serverLabel: string;
+  name: string;
+  /** JSON string of the tool arguments */
+  arguments: string;
+}
 
 /**
  * Complete configuration for useVoiceLive hook
@@ -925,13 +1197,36 @@ export interface UseVoiceLiveConfig {
   autoConnect?: boolean;
 
   /**
-   * Event handler for all Voice Live events
+   * Console verbosity. Defaults to 'warn' (quiet); set 'debug' to trace every event.
+   * @default 'warn'
    */
-  onEvent?: (event: VoiceLiveEvent) => void;
+  logLevel?: LogLevel;
+
+  /**
+   * Automatically reconnect after an unexpected control-channel close (network drop,
+   * `1006`, service restart, WebRTC negotiation timeout). `true` uses exponential backoff
+   * (500 ms → 8 s, 5 attempts); pass an object to tune it. Off by default.
+   *
+   * During attempts `connectionState` is `'reconnecting'`; the microphone (WebRTC) and
+   * capture (WebSocket) are re-attached automatically; the proactive greeting is **not**
+   * re-sent. Standard-mode sessions start fresh (the service keeps no history) — Foundry
+   * agents continue the conversation when `connection.conversationId` is set. Use
+   * `connection.getToken` so a fresh token is used for each attempt.
+   * @default false
+   */
+  reconnect?: boolean | Partial<ReconnectOptions>;
+
+  /**
+   * Event handler for all Voice Live server events (raw wire format).
+   * Fired before the hook's own handling, for every event — including events arriving
+   * over the WebRTC data channel when `transport: 'webrtc'`.
+   */
+  onEvent?: (event: VoiceLiveServerEvent) => void;
 
   /**
    * Transcript callback for receiving user and assistant transcripts.
    * Accumulates delta events automatically - delivers partial updates and final text.
+   * User partials require `inputAudioTranscription` to be enabled.
    *
    * @param role - 'user' or 'assistant'
    * @param text - Accumulated transcript text
@@ -940,9 +1235,32 @@ export interface UseVoiceLiveConfig {
   onTranscript?: (role: 'user' | 'assistant', text: string, isFinal: boolean) => void;
 
   /**
-   * Tool executor for function calling
+   * Tool executor for function calling.
+   * Return a value (or a Promise of one) to have the result sent automatically.
    */
-  toolExecutor?: (name: string, args: string, callId: string) => void;
+  toolExecutor?: ToolExecutor;
+
+  /**
+   * Called for non-fatal `warning` events from the service.
+   */
+  onWarning?: (warning: VoiceLiveWarning) => void;
+
+  /**
+   * Called when an MCP tool call requires approval (`requireApproval: 'always'` or per-tool).
+   * Respond with `approveMcpCall(request.approvalRequestId, true | false)`.
+   */
+  onMcpApprovalRequest?: (request: McpApprovalRequest) => void;
+
+  /**
+   * Called with the raw (snake_case) session object on every `session.updated`.
+   */
+  onSessionUpdated?: (session: Record<string, unknown>) => void;
+
+  /** Called before each reconnect attempt (1-based) with the delay that will be waited */
+  onReconnecting?: (attempt: number, delayMs: number) => void;
+
+  /** Called once a reconnect attempt produced a ready session */
+  onReconnected?: () => void;
 }
 
 /**
@@ -951,20 +1269,55 @@ export interface UseVoiceLiveConfig {
 export type SessionState = 'idle' | 'listening' | 'thinking' | 'speaking';
 
 /**
+ * Connection state of the control channel.
+ * `'reconnecting'` is only reached with the `reconnect` option.
+ */
+export type ConnectionState = 'disconnected' | 'connecting' | 'reconnecting' | 'connected' | 'error';
+
+/**
+ * Auto-reconnect policy (see `UseVoiceLiveConfig.reconnect`)
+ */
+export interface ReconnectOptions {
+  /** Maximum consecutive attempts before giving up @default 5 */
+  maxAttempts: number;
+  /** Delay before the first attempt in ms; doubles per attempt @default 500 */
+  initialDelayMs: number;
+  /** Upper bound for the delay in ms @default 8000 */
+  maxDelayMs: number;
+  /** Random jitter as a fraction of the delay (0–1) @default 0.2 */
+  jitter: number;
+}
+
+/**
  * Return type for useVoiceLive hook
  */
 export interface UseVoiceLiveReturn {
-  /** Current connection state */
-  connectionState: 'disconnected' | 'connecting' | 'connected' | 'error';
+  /** Current connection state (`'reconnecting'` only with the `reconnect` option) */
+  connectionState: ConnectionState;
+
+  /** Current reconnect attempt (1-based) while `connectionState === 'reconnecting'`, else 0 */
+  reconnectAttempt: number;
 
   /** Current session activity state (idle/listening/thinking/speaking) */
   sessionState: SessionState;
 
+  /** Active transport ('websocket' or 'webrtc') */
+  transport: VoiceLiveTransport;
+
   /** Video stream for avatar */
   videoStream: MediaStream | null;
 
-  /** Audio stream for avatar */
+  /**
+   * Assistant audio as a MediaStream. Attach it to an `<audio autoPlay>` element
+   * (or the `VoiceLiveAvatar` component). In WebRTC mode this is the remote RTP track.
+   */
   audioStream: MediaStream | null;
+
+  /**
+   * Session expiry as epoch milliseconds (from `session.created` / `session.updated`
+   * `expires_at`), or null when unknown.
+   */
+  sessionExpiresAt: number | null;
 
   /** Audio context for visualization and analysis */
   audioContext: AudioContext | null;
@@ -999,13 +1352,43 @@ export interface UseVoiceLiveReturn {
   /** Toggle microphone mute (instant, keeps capture running) */
   toggleMute: () => void;
 
-  /** Send an event to the API */
-  sendEvent: (event: VoiceLiveEvent) => void;
+  /** Send a raw event to the API (typed client events or any `{ type, ... }` object) */
+  sendEvent: (event: VoiceLiveClientEvent | VoiceLiveEvent) => void;
 
-  /** Update session configuration */
+  /** Update session configuration (agent-mode aware) */
   updateSession: (config: Partial<VoiceLiveSessionConfig>) => void;
 
-  /** Get current audio playback time in milliseconds (for viseme synchronization) */
+  /**
+   * Send a user text message (`conversation.item.create` with `input_text`) and,
+   * by default, trigger a response.
+   */
+  sendText: (text: string, options?: { triggerResponse?: boolean }) => void;
+
+  /**
+   * Send a function-call result (`function_call_output`) for `callId` and, by default,
+   * trigger a response. Objects are JSON-stringified.
+   */
+  sendToolResult: (callId: string, output: ToolResult, options?: { triggerResponse?: boolean }) => void;
+
+  /** Cancel the in-progress response (`response.cancel`) and flush local playback */
+  cancelResponse: () => void;
+
+  /** Clear the server-side input audio buffer (`input_audio_buffer.clear`) */
+  clearInputAudio: () => void;
+
+  /**
+   * Commit the input audio buffer as a user turn (`input_audio_buffer.commit`).
+   * Only needed with manual turn detection (`turnDetection: null`).
+   */
+  commitInputAudio: () => void;
+
+  /** Approve or deny a pending MCP tool call (`mcp_approval_response`) */
+  approveMcpCall: (approvalRequestId: string, approve: boolean) => void;
+
+  /**
+   * Get current audio playback time in milliseconds (for viseme synchronization).
+   * Returns null before playback starts and always null on the WebRTC transport.
+   */
   getAudioPlaybackTime: () => number | null;
 }
 

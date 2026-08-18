@@ -1,0 +1,90 @@
+/**
+ * WebSocket transport: audio and events share one socket (`/voice-live/realtime`).
+ */
+
+import type { Logger } from '../../utils/logger';
+import { parseServerEvent } from '../serverEvents';
+import type {
+  TransportCallbacks,
+  TransportState,
+  VoiceLiveTransport,
+} from './types';
+
+export interface WebSocketTransportOptions {
+  log?: Logger;
+  /** Factory for the socket (test seam) */
+  createWebSocket?: (url: string) => WebSocket;
+}
+
+export class WebSocketTransport implements VoiceLiveTransport {
+  readonly kind = 'websocket' as const;
+  private ws: WebSocket | null = null;
+  private currentState: TransportState = 'idle';
+
+  constructor(
+    private readonly callbacks: TransportCallbacks,
+    private readonly options: WebSocketTransportOptions = {}
+  ) {}
+
+  get state(): TransportState {
+    return this.currentState;
+  }
+
+  connect(url: string): void {
+    if (this.ws) {
+      throw new Error('WebSocketTransport.connect() called twice — create a new transport per connection');
+    }
+    const create = this.options.createWebSocket ?? ((u: string): WebSocket => new WebSocket(u));
+    const ws = create(url);
+    this.ws = ws;
+    this.currentState = 'connecting';
+
+    ws.onopen = (): void => {
+      this.currentState = 'open';
+      this.callbacks.onOpen();
+    };
+    ws.onmessage = (event: MessageEvent): void => {
+      const parsed = parseServerEvent(String(event.data));
+      if (!parsed) {
+        this.options.log?.warn('Ignoring non-JSON message from the service');
+        return;
+      }
+      this.callbacks.onEvent(parsed);
+    };
+    ws.onerror = (event): void => {
+      this.callbacks.onError('WebSocket connection error', event);
+    };
+    ws.onclose = (event: CloseEvent): void => {
+      this.currentState = 'closed';
+      this.callbacks.onClose({ code: event.code, reason: event.reason, wasClean: event.wasClean });
+    };
+  }
+
+  send(json: string): boolean {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return false;
+    this.ws.send(json);
+    return true;
+  }
+
+  close(): void {
+    const ws = this.ws;
+    this.ws = null;
+    this.currentState = 'closed';
+    if (!ws) return;
+    // Detach every handler first: a socket that is still CONNECTING must not report a spurious
+    // error/close after the caller already moved on
+    ws.onopen = null;
+    ws.onmessage = null;
+    ws.onerror = null;
+    ws.onclose = null;
+    try {
+      ws.close();
+    } catch {
+      // ignore
+    }
+  }
+
+  async setMicrophoneTrack(): Promise<void> {
+    // Microphone audio is sent as input_audio_buffer.append events by the caller
+  }
+}

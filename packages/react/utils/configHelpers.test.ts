@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/explicit-function-return-type */
 /**
  * Tests for all configuration helper functions
  * Verifies all README-documented helpers exist and work correctly
@@ -34,6 +35,18 @@ import {
   // Tools helpers
   withTools,
   withToolChoice,
+  withMcpServer,
+  withFoundryAgentTool,
+  withParallelToolCalls,
+  // Model behaviour helpers
+  withReasoningEffort,
+  withMetadata,
+  // Conversation helpers
+  withInterimResponse,
+  withGreeting,
+  // New voice helpers
+  withPersonalVoice,
+  withAzureRealtimeVoice,
   // Composition
   compose,
   sessionConfig,
@@ -311,7 +324,8 @@ describe('Tools Helpers', () => {
       },
     ]);
     expect(config.tools).toHaveLength(1);
-    expect(config.tools![0]!.name).toBe('get_weather');
+    const first = config.tools![0]!;
+    expect(first.type === 'function' && first.name).toBe('get_weather');
     expect(config.toolChoice).toBe('auto');
   });
 
@@ -530,6 +544,143 @@ describe('Session Builder', () => {
   });
 });
 
+describe('New voice helpers', () => {
+  it('withHDVoice accepts extended voice options', () => {
+    const config = withHDVoice('en-US-Ava:DragonHDLatestNeural', {
+      temperature: 0.7,
+      rate: '1.1',
+      preferLocales: ['en-GB'],
+      style: 'cheerful',
+    });
+    expect(config.voice).toEqual({
+      name: 'en-US-Ava:DragonHDLatestNeural',
+      type: 'azure-standard',
+      temperature: 0.7,
+      rate: '1.1',
+      preferLocales: ['en-GB'],
+      style: 'cheerful',
+    });
+  });
+
+  it('withPersonalVoice sets type azure-personal and model', () => {
+    const config = withPersonalVoice('my-voice', 'DragonHDOmniLatestNeural', { temperature: 0.6 });
+    expect(config.voice).toEqual({
+      name: 'my-voice',
+      type: 'azure-personal',
+      model: 'DragonHDOmniLatestNeural',
+      temperature: 0.6,
+    });
+  });
+
+  it('withAzureRealtimeVoice sets type azure-realtime-native', () => {
+    const config = withAzureRealtimeVoice('ava');
+    expect(config.voice).toEqual({ name: 'ava', type: 'azure-realtime-native' });
+  });
+});
+
+describe('Tools, MCP and Foundry agent helpers', () => {
+  const fnTool = { type: 'function' as const, name: 'get_time', description: 'Time', parameters: {} };
+
+  it('withMcpServer appends an mcp tool and defaults toolChoice to auto', () => {
+    const config = withMcpServer(
+      { serverLabel: 'mslearn', serverUrl: 'https://learn.microsoft.com/api/mcp', requireApproval: 'never' },
+      withTools([fnTool])
+    );
+    expect(config.tools).toHaveLength(2);
+    expect(config.tools?.[1]).toEqual({
+      type: 'mcp',
+      serverLabel: 'mslearn',
+      serverUrl: 'https://learn.microsoft.com/api/mcp',
+      requireApproval: 'never',
+    });
+    expect(config.toolChoice).toBe('auto');
+  });
+
+  it('withMcpServer can be called twice to add two servers', () => {
+    const config = withMcpServer(
+      { serverLabel: 'b', serverUrl: 'https://b' },
+      withMcpServer({ serverLabel: 'a', serverUrl: 'https://a' })
+    );
+    expect(config.tools?.map((t) => (t as { serverLabel?: string }).serverLabel)).toEqual(['a', 'b']);
+  });
+
+  it('withFoundryAgentTool appends a foundry_agent tool', () => {
+    const config = withFoundryAgentTool({ agentName: 'agent', projectName: 'proj', description: 'd' });
+    expect(config.tools).toEqual([{ type: 'foundry_agent', agentName: 'agent', projectName: 'proj', description: 'd' }]);
+  });
+
+  it('withParallelToolCalls sets parallelToolCalls', () => {
+    expect(withParallelToolCalls().parallelToolCalls).toBe(true);
+    expect(withParallelToolCalls(false).parallelToolCalls).toBe(false);
+  });
+});
+
+describe('Model behaviour helpers', () => {
+  it('withReasoningEffort sets reasoningEffort', () => {
+    expect(withReasoningEffort('low').reasoningEffort).toBe('low');
+  });
+
+  it('withMetadata merges metadata', () => {
+    const config = withMetadata({ b: '2' }, withMetadata({ a: '1' }));
+    expect(config.metadata).toEqual({ a: '1', b: '2' });
+  });
+});
+
+describe('Conversation helpers', () => {
+  it('withInterimResponse sets interimResponse', () => {
+    const config = withInterimResponse({ type: 'llm_interim_response', triggers: ['tool'], latencyThresholdInMs: 1500 });
+    expect(config.interimResponse).toEqual({ type: 'llm_interim_response', triggers: ['tool'], latencyThresholdInMs: 1500 });
+  });
+
+  it('withGreeting sets greeting', () => {
+    const config = withGreeting({ type: 'pregenerated', text: 'Hi' });
+    expect(config.greeting).toEqual({ type: 'pregenerated', text: 'Hi' });
+  });
+
+  it('withSemanticVAD accepts appendedTextAfterTruncation', () => {
+    const config = withSemanticVAD({ autoTruncate: true, appendedTextAfterTruncation: ' [cut]' });
+    expect(config.turnDetection?.autoTruncate).toBe(true);
+    expect(config.turnDetection?.appendedTextAfterTruncation).toBe(' [cut]');
+  });
+
+  it('withEchoCancellation accepts Live-Reference AEC options', () => {
+    expect(withEchoCancellation({}, { referenceSource: 'client', channels: 2 }).inputAudioEchoCancellation).toEqual({
+      type: 'server_echo_cancellation',
+      referenceSource: 'client',
+      channels: 2,
+    });
+    expect(withEchoCancellation().inputAudioEchoCancellation).toEqual({ type: 'server_echo_cancellation' });
+  });
+});
+
+describe('Builder: new methods', () => {
+  it('chains mcpServer, foundryAgentTool, parallelToolCalls, reasoningEffort, metadata, voices', () => {
+    const config = sessionConfig()
+      .mcpServer({ serverLabel: 'mslearn', serverUrl: 'https://learn.microsoft.com/api/mcp' })
+      .foundryAgentTool({ agentName: 'a', projectName: 'p' })
+      .parallelToolCalls(false)
+      .reasoningEffort('medium')
+      .metadata({ k: 'v' })
+      .azureRealtimeVoice('diya')
+      .echoCancellation({ referenceSource: 'server' })
+      .build();
+
+    expect(config.tools).toHaveLength(2);
+    expect(config.parallelToolCalls).toBe(false);
+    expect(config.reasoningEffort).toBe('medium');
+    expect(config.metadata).toEqual({ k: 'v' });
+    expect(config.voice).toEqual({ name: 'diya', type: 'azure-realtime-native' });
+    expect(config.inputAudioEchoCancellation).toEqual({ type: 'server_echo_cancellation', referenceSource: 'server' });
+  });
+
+  it('personalVoice and hdVoice options work in the builder', () => {
+    const config = sessionConfig().personalVoice('pv', 'MAI-Voice-1', { rate: '0.9' }).build();
+    expect(config.voice).toEqual({ name: 'pv', type: 'azure-personal', model: 'MAI-Voice-1', rate: '0.9' });
+    const hd = sessionConfig().hdVoice('en-US-Ava:DragonHDLatestNeural', { locale: 'en-US' }).build();
+    expect((hd.voice as { locale?: string }).locale).toBe('en-US');
+  });
+});
+
 describe('All README helpers are exported', () => {
   const readmeHelpers = [
     // Voice
@@ -557,6 +708,18 @@ describe('All README helpers are exported', () => {
     // Tools
     { name: 'withTools', fn: withTools },
     { name: 'withToolChoice', fn: withToolChoice },
+    { name: 'withMcpServer', fn: withMcpServer },
+    { name: 'withFoundryAgentTool', fn: withFoundryAgentTool },
+    { name: 'withParallelToolCalls', fn: withParallelToolCalls },
+    // Model behaviour
+    { name: 'withReasoningEffort', fn: withReasoningEffort },
+    { name: 'withMetadata', fn: withMetadata },
+    // Conversation
+    { name: 'withInterimResponse', fn: withInterimResponse },
+    { name: 'withGreeting', fn: withGreeting },
+    // Voices
+    { name: 'withPersonalVoice', fn: withPersonalVoice },
+    { name: 'withAzureRealtimeVoice', fn: withAzureRealtimeVoice },
   ];
 
   readmeHelpers.forEach(({ name, fn }) => {

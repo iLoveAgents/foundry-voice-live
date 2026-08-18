@@ -22,6 +22,7 @@
 
 import { useState, useRef, useCallback, useEffect } from 'react';
 import type { AudioCaptureConfig, AudioCaptureReturn } from '../types';
+import { buildMicConstraints } from '../utils/audioHelpers';
 
 /**
  * Inline AudioWorklet processor code
@@ -126,20 +127,10 @@ export function useAudioCapture({
     try {
       setError(null);
 
-      // Request microphone access with sensible defaults for voice applications
-      const defaultConstraints: MediaTrackConstraints = {
-        echoCancellation: true,
-        noiseSuppression: true,
-        autoGainControl: true,
-        sampleRate: sampleRate,
-        channelCount: 1,
-      };
-      const mergedConstraints = audioConstraints
-        ? { ...defaultConstraints, ...audioConstraints }
-        : defaultConstraints;
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: mergedConstraints,
-      });
+      // Request microphone access with the SDK's defaults for voice applications
+      const stream = await navigator.mediaDevices.getUserMedia(
+        buildMicConstraints(audioConstraints, sampleRate)
+      );
       streamRef.current = stream;
 
       // Create AudioContext with specified sample rate
