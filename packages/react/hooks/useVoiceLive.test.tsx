@@ -494,4 +494,26 @@ describe('useVoiceLive (websocket)', () => {
     expect(hook.result.current.connectionState).toBe('disconnected');
     hook.unmount();
   });
+
+  it('gives every response.create an id, including queued flushes', async () => {
+    const { hook, ws } = await connectAndOpen(baseConfig);
+    await deliver(ws, { type: 'session.created', session: {} });
+    await deliver(ws, { type: 'session.updated', session: {} });
+    await act(async () => {
+      hook.result.current.sendText('first');
+      hook.result.current.sendText('second'); // queued
+    });
+    await deliver(ws, { type: 'response.created', response: { id: 'r1' } });
+    await deliver(ws, { type: 'response.done', response: { id: 'r1' } });
+
+    const creates = ws.sent.filter((e) => e.type === 'response.create');
+    expect(creates).toHaveLength(2);
+    // both the direct request and the flushed one carry an id, so an error naming it can be
+    // correlated with the request it rejected
+    for (const create of creates) {
+      expect(create.event_id).toMatch(/^evt_\d+$/);
+    }
+    expect(creates[0].event_id).not.toBe(creates[1].event_id);
+    hook.unmount();
+  });
 });

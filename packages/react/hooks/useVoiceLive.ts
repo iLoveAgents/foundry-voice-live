@@ -262,6 +262,7 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
   const openConnectionRef = useRef<(connectionScope: Scope, mode: 'initial' | 'reconnect') => Promise<void>>();
   const handleUnexpectedCloseRef = useRef<(connectionScope: Scope, info: TransportCloseInfo) => void>();
   const requestResponseRef = useRef<typeof requestResponse>();
+  const sendGatedResponseCreateRef = useRef<(event?: VoiceLiveClientEvent) => void>();
   /** Monotonic id for client events we need to correlate errors with */
   const clientEventSeqRef = useRef<number>(0);
   const endConnectionRef = useRef<(options: { resetMute: boolean }) => void>();
@@ -347,6 +348,24 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
    * Ask the model for a response. If a response is still in progress the request is deferred
    * until `response.done` (Voice Live rejects overlapping responses).
    */
+  /**
+   * The single place a `response.create` reaches the wire. Everything else — user turns, the
+   * greeting, tool follow-ups, queued flushes — goes through here, so the gate can never be
+   * bypassed and every request carries an id the service can name in an `error`.
+   */
+  const sendGatedResponseCreate = useCallback(
+    (event: VoiceLiveClientEvent = { type: 'response.create' }): void => {
+      const gate = responseGateRef.current as ResponseGate;
+      const eventId = `evt_${++clientEventSeqRef.current}`;
+      gate.trackRequest(eventId);
+      if (!sendEvent({ ...event, event_id: eventId })) {
+        // Nothing reached the service (disconnected, or mid-reconnect): the gate must not stay busy
+        gate.onRequestNotSent();
+      }
+    },
+    [sendEvent]
+  );
+
   const requestResponse = useCallback(
     (options: { event?: VoiceLiveClientEvent; dropIfBusy?: boolean } = {}): void => {
       const gate = responseGateRef.current as ResponseGate;
@@ -356,20 +375,16 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
         log.debug('Response already in progress — dropping the proactive request');
         return;
       }
-      const eventId = `evt_${++clientEventSeqRef.current}`;
-      if (!gate.request(eventId)) {
+      if (!gate.request()) {
         log.debug(`Response ${gate.currentState} — queued one response.create for response.done`);
         return;
       }
-      const event = options.event ?? { type: 'response.create' };
-      if (!sendEvent({ ...event, event_id: eventId })) {
-        // Nothing reached the service (disconnected, or mid-reconnect): the gate must not stay busy
-        gate.onRequestNotSent();
-      }
+      sendGatedResponseCreate(options.event);
     },
-    [sendEvent, log]
+    [sendGatedResponseCreate, log]
   );
   requestResponseRef.current = requestResponse;
+  sendGatedResponseCreateRef.current = sendGatedResponseCreate;
 
   /**
    * Stop local audio playback immediately (barge-in / cancel; WebSocket transport)
@@ -677,7 +692,7 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
                 speculativeTimerRef.current = null;
                 if (gate.releaseSpeculative()) {
                   log.debug('No automatic response arrived — sending the queued response.create');
-                  if (!sendEvent({ type: 'response.create' })) gate.onRequestNotSent();
+                  sendGatedResponseCreateRef.current?.();
                 }
               }, SPECULATIVE_RESPONSE_TIMEOUT_MS);
             }
@@ -736,9 +751,7 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
           // Exactly one response.create for everything requested while this response ran
           if ((responseGateRef.current as ResponseGate).onResponseDone()) {
             log.debug('Sending queued response.create');
-            if (!sendEvent({ type: 'response.create' })) {
-              (responseGateRef.current as ResponseGate).onRequestNotSent();
-            }
+            sendGatedResponseCreate();
           }
           break;
         }
@@ -844,9 +857,7 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
           // will follow, so the gate falls back to idle and any queued turn is sent now
           if ((responseGateRef.current as ResponseGate).onError(data.event_id as string | undefined)) {
             log.debug('Sending queued response.create after an API error');
-            if (!sendEvent({ type: 'response.create' })) {
-              (responseGateRef.current as ResponseGate).onRequestNotSent();
-            }
+            sendGatedResponseCreate();
           }
           setError(errorMessage);
           break;
@@ -861,6 +872,7 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
       safeCall,
       sendEvent,
       sendToolResult,
+      sendGatedResponseCreate,
       finishToolBatchIfReady,
       buildSession,
       ensurePlayer,

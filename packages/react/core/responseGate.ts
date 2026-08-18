@@ -58,15 +58,27 @@ export class ResponseGate {
    * Ask for a response.
    * @returns true when the caller should send `response.create` now; false when it was queued.
    */
-  request(eventId?: string): boolean {
+  request(): boolean {
     if (this.isBusy) {
       this.queued = true;
       return false;
     }
     this.state = 'requested';
     this.speculative = false;
-    this.pendingEventId = eventId ?? null;
+    this.pendingEventId = null;
     return true;
+  }
+
+  /**
+   * Record the `event_id` the outstanding `response.create` was actually sent with, so an `error`
+   * naming it can be recognised as a rejection of *this* request. Called by the single place that
+   * puts a `response.create` on the wire — including the flush of a queued one.
+   */
+  trackRequest(eventId: string): void {
+    if (this.state === 'requested') {
+      this.pendingEventId = eventId;
+      this.speculative = false;
+    }
   }
 
   /**

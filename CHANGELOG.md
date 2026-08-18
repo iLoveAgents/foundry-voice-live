@@ -42,6 +42,7 @@ Targets Voice Live API **`2026-07-15` (GA)**. This release contains breaking cha
 - `ConnectionState` gains `'reconnecting'`; an unexpected close without `reconnect` now releases the audio graph (`audioStream`/`audioContext` become null until the next `connect()`).
 
 #### Fixed
+- All `response.create` sends funnel through one internal helper, so the gate cannot be bypassed and queued flushes carry a correlation id too. The transport interface now states that `onError` is advisory and a transport that cannot continue must also `onClose` — reconnect and teardown key off the close.
 - The proactive greeting goes through the response gate as well, carrying its own payload, and is **dropped** rather than queued when a turn is already running (a greeting after the user has spoken is not a greeting).
 - Errors are correlated with the request they belong to via `event_id`: an unrelated failure (say an invalid `session.update`) no longer releases the gate while our `response.create` may still be accepted. Errors without an `event_id` stay ambiguous and release it, because a stuck gate would block every later turn.
 - Server VAD starting a response is reserved in the gate, so a turn submitted between `speech_stopped` and `response.created` is queued instead of overlapping it. The reservation is speculative and self-heals after 5 s if the service does not answer.

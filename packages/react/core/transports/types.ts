@@ -27,7 +27,14 @@ export interface TransportCallbacks {
   onEvent: (event: VoiceLiveServerEvent) => void;
   /** Control channel closed. Never fired for `close()` initiated by the caller. */
   onClose: (info: TransportCloseInfo) => void;
-  /** Transport-level failure (socket error, negotiation timeout, media failure). A close may follow. */
+  /**
+   * Transport-level failure (socket error, negotiation timeout, media failure).
+   *
+   * This is **advisory**: it reports, it does not decide the lifecycle. A transport that cannot
+   * continue MUST also `close()` itself and call `onClose` — the caller keys reconnect and
+   * teardown (including releasing the microphone) off `onClose`, so an error alone would leave a
+   * session that can be neither continued nor restarted.
+   */
   onError: (message: string, cause?: unknown) => void;
   /** WebRTC: media connected and events channel open (or fallback) — the session can start */
   onReady?: (reason: string) => void;

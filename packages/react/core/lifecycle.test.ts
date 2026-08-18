@@ -152,7 +152,8 @@ describe('ResponseGate', () => {
 
   it('ignores errors caused by a different client event', () => {
     const gate = new ResponseGate();
-    gate.request('evt_7');
+    gate.request();
+    gate.trackRequest('evt_7');
     // an invalid session.update fails while our response.create is still unacknowledged
     expect(gate.onError('evt_3')).toBe(false);
     expect(gate.currentState).toBe('requested'); // our request may still be accepted
@@ -163,7 +164,8 @@ describe('ResponseGate', () => {
 
   it('treats an error without an event id as possibly ours (a stuck gate is worse)', () => {
     const gate = new ResponseGate();
-    gate.request('evt_1');
+    gate.request();
+    gate.trackRequest('evt_1');
     expect(gate.onError(null)).toBe(false);
     expect(gate.currentState).toBe('idle');
   });
@@ -174,7 +176,7 @@ describe('ResponseGate', () => {
     expect(gate.isBusy).toBe(true);
     expect(gate.isSpeculative).toBe(true);
     // a consumer turn in this window is queued instead of overlapping the automatic response
-    expect(gate.request('evt_1')).toBe(false);
+    expect(gate.request()).toBe(false);
     expect(gate.hasQueuedRequest).toBe(true);
 
     // the automatic response never arrives → release, and the queued turn goes out
@@ -196,7 +198,8 @@ describe('ResponseGate', () => {
 
   it('does not reserve automatically while a response is already busy', () => {
     const gate = new ResponseGate();
-    gate.request('evt_1');
+    gate.request();
+    gate.trackRequest('evt_1');
     gate.reserveAutomatic();
     expect(gate.isSpeculative).toBe(false);
     expect(gate.outstandingEventId).toBe('evt_1');

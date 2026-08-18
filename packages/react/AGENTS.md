@@ -92,6 +92,9 @@ Tests: `core/*.test.ts` (transports, audio, avatar, mic, reconnect), `hooks/useV
   The gate also reserves the slot when server VAD is about to create a response (speculative,
   self-healing after `SPECULATIVE_RESPONSE_TIMEOUT_MS`) and correlates `error` events by
   `event_id` so an unrelated failure does not release it.
+  `sendGatedResponseCreate()` is the **only** place a `response.create` reaches the wire (user
+  turns, greeting, tool follow-ups and queued flushes all route through it), which is what keeps
+  the gate un-bypassable and every request correlatable.
 - **Every consumer callback can end the session**: call it through `safeCall`, which returns
   whether the session survived, and stop applying the event when it returns false.
 - **Automatic tool results are batched per response** (`toolBatchesRef`, keyed by `response_id`
@@ -99,6 +102,9 @@ Tests: `core/*.test.ts` (transports, audio, avatar, mic, reconnect), `hooks/useV
   `response.create` waits for **both** `response.done` *and* the last executor, and goes through
   `ResponseGate` like every other turn. A late result belongs to the live conversation only if
   `sessionRef.current === session && session.scope.isActive`.
+- **`onError` is advisory, `onClose` decides the lifecycle** (stated in
+  `core/transports/types.ts`): a transport that cannot continue must close itself, because
+  reconnect *and* teardown — including releasing the microphone — key off `onClose`.
 - **Terminal failures must close the transport**, not just report `onError`: state `'open'` blocks
   both `connect()` and the reconnect policy. Close codes: `4001` reconnect setup, `4002` connect
   timeout, `4008` negotiation timeout, `4009` SDP answer, `4010` `rtc.call.error`, `4011` peer
