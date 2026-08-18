@@ -48,7 +48,10 @@ jobs:
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
         with:
-          context: ./packages/proxy-node
+          # Repository root: the Dockerfile installs with the pnpm workspace lockfile, which lives
+          # there (docker-compose.yml sets the same context)
+          context: .
+          file: ./packages/proxy-node/Dockerfile
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
