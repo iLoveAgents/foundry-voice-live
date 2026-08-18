@@ -91,6 +91,9 @@ const VERBOSE_SERVER_EVENTS = new Set<string>([
 
 const VERBOSE_CLIENT_EVENTS = new Set<string>(['input_audio_buffer.append']);
 
+/** Synthetic close code used when a reconnect attempt fails before the transport exists */
+const RECONNECT_SETUP_FAILED_CLOSE_CODE = 4001;
+
 /**
  * Hook for Microsoft Foundry Voice Live API integration
  * Supports all Voice Live parameters with best-practice defaults
@@ -148,6 +151,8 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
   const userTranscriptRef = useRef<string>('');
   const videoStreamRef = useRef<MediaStream | null>(null);
   const greetingSentRef = useRef<boolean>(false);
+  /** In-flight automatic tool executors per response id (parallel tool calls) */
+  const toolBatchesRef = useRef<Map<string, { pending: number; sentOutput: boolean }>>(new Map());
 
   // ===== Connection generation + reconnect bookkeeping =====
   // `connectIdRef` changes on every connect()/disconnect(); callbacks from an older generation
@@ -160,6 +165,7 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
   const sendEventRef = useRef<(event: VoiceLiveClientEvent | VoiceLiveEvent) => void>();
   const handleServerEventRef = useRef<(event: VoiceLiveServerEvent) => void>();
   const openConnectionRef = useRef<(connectId: number, mode: 'initial' | 'reconnect') => Promise<void>>();
+  const handleUnexpectedCloseRef = useRef<(connectId: number, info: TransportCloseInfo) => void>();
 
   /**
    * Handle audio data from microphone (WebSocket transport)
@@ -449,11 +455,21 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
 
         case 'session.avatar.connecting':
           if (data.server_sdp && avatarRef.current) {
+            // A disconnect()/reconnect while this is pending must not mark the new (or dead)
+            // session ready, nor overwrite its error state
+            const avatar = avatarRef.current;
+            const connectId = connectIdRef.current;
+            const isCurrent = (): boolean => avatarRef.current === avatar && connectIdRef.current === connectId;
             try {
-              await avatarRef.current.applyServerSdp(data.server_sdp);
+              await avatar.applyServerSdp(data.server_sdp);
+              if (!isCurrent()) {
+                log.debug('Avatar SDP applied after teardown — ignoring');
+                break;
+              }
               log.info('Avatar WebRTC established');
               announceReady();
             } catch (err) {
+              if (!isCurrent()) break;
               log.error('Failed to apply avatar SDP:', err);
               setError(err instanceof Error ? err.message : 'Failed to apply avatar SDP');
             }
@@ -566,15 +582,32 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
         case 'response.function_call_arguments.done':
           if (toolExecutor) {
             const { name, arguments: args, call_id: callId } = data;
+            // With parallel tool calls one response can contain several function calls whose
+            // executors settle at different times. Send every output first and request a single
+            // response once the last executor of this response has settled — otherwise the first
+            // result to arrive after `response.done` would start a response without the others.
+            const batchKey = data.response_id ?? currentResponseIdRef.current ?? '';
+            const batch = toolBatchesRef.current.get(batchKey) ?? { pending: 0, sentOutput: false };
+            batch.pending += 1;
+            toolBatchesRef.current.set(batchKey, batch);
             Promise.resolve()
               .then(() => toolExecutor(name, args, callId))
               .then((result) => {
                 if (result !== undefined) {
-                  sendToolResult(callId, result);
+                  sendToolResult(callId, result, { triggerResponse: false });
+                  batch.sentOutput = true;
                 }
               })
               .catch((err) => {
                 log.error(`toolExecutor failed for ${name}:`, err);
+              })
+              .finally(() => {
+                batch.pending -= 1;
+                if (batch.pending > 0) return;
+                toolBatchesRef.current.delete(batchKey);
+                if (batch.sentOutput) {
+                  requestResponse();
+                }
               });
           }
           break;
@@ -611,7 +644,17 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
           break;
       }
     },
-    [log, sendEvent, sendToolResult, buildSession, ensurePlayer, stopAudioPlayback, connectAvatar, announceReady]
+    [
+      log,
+      sendEvent,
+      sendToolResult,
+      requestResponse,
+      buildSession,
+      ensurePlayer,
+      stopAudioPlayback,
+      connectAvatar,
+      announceReady,
+    ]
   );
   handleServerEventRef.current = handleServerEvent;
 
@@ -619,7 +662,15 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
 
   const startRtcMic = useCallback(async (): Promise<void> => {
     const mic = micRef.current as WebRtcMicrophone;
+    // The permission prompt can outlive the session: disconnect() cannot stop a stream that
+    // does not exist yet, so discard the track if this generation is no longer current.
+    const connectId = connectIdRef.current;
     const track = await mic.start(configRef.current.audioConstraints);
+    if (connectIdRef.current !== connectId) {
+      log.debug('Microphone acquired after disconnect — releasing it');
+      mic.stop();
+      return;
+    }
     if (track && transportRef.current) {
       await transportRef.current.setMicrophoneTrack(track);
     }
@@ -717,6 +768,7 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
     },
     [log, releaseConnection]
   );
+  handleUnexpectedCloseRef.current = handleUnexpectedClose;
 
   /**
    * Create the transport for one connection attempt and wire its callbacks. Callbacks from a
@@ -830,6 +882,17 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
       } catch (err) {
         const errorMessage = err instanceof Error ? err.message : 'Failed to connect';
         log.error('Connection error:', err);
+        if (connectIdRef.current !== connectId) return; // superseded meanwhile
+        if (mode === 'reconnect') {
+          // A transient getToken()/setup failure must consume an attempt and continue the
+          // backoff policy instead of ending the session with no transport and no timer
+          handleUnexpectedCloseRef.current?.(connectId, {
+            code: RECONNECT_SETUP_FAILED_CLOSE_CODE,
+            reason: errorMessage,
+            wasClean: false,
+          });
+          return;
+        }
         setError(errorMessage);
         setConnectionState('error');
       }

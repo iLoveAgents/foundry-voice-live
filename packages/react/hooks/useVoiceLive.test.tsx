@@ -358,4 +358,75 @@ describe('useVoiceLive (websocket)', () => {
     expect(hook.result.current.sessionState).toBe('idle');
     hook.unmount();
   });
+
+  it('sends every parallel tool output before requesting a single response', async () => {
+    // Two function calls in one response whose executors settle after response.done:
+    // the first result must not start a response without the second output
+    let resolveA: (v: object) => void = () => undefined;
+    let resolveB: (v: object) => void = () => undefined;
+    const toolExecutor = vi.fn((name: string) =>
+      name === 'a'
+        ? new Promise<object>((r) => {
+            resolveA = r;
+          })
+        : new Promise<object>((r) => {
+            resolveB = r;
+          })
+    );
+    const { ws } = await connectAndOpen({ ...baseConfig, toolExecutor });
+    await deliver(ws, { type: 'session.created', session: { id: 's1' } });
+    await deliver(ws, { type: 'session.updated', session: { id: 's1' } });
+    await deliver(ws, { type: 'response.created', response: { id: 'resp-1' } });
+    await deliver(ws, {
+      type: 'response.function_call_arguments.done',
+      response_id: 'resp-1',
+      call_id: 'call-a',
+      name: 'a',
+      arguments: '{}',
+    });
+    await deliver(ws, {
+      type: 'response.function_call_arguments.done',
+      response_id: 'resp-1',
+      call_id: 'call-b',
+      name: 'b',
+      arguments: '{}',
+    });
+    // The response finishes while both tools are still running
+    await deliver(ws, { type: 'response.done', response: { id: 'resp-1' } });
+    expect(ws.sent.filter((e) => e.type === 'response.create')).toHaveLength(0);
+
+    await act(async () => {
+      resolveA({ ok: 'a' });
+    });
+    // First output is sent, but no response yet — the second output is still missing
+    const outputs = () => ws.sent.filter((e) => e.type === 'conversation.item.create');
+    expect(outputs()).toHaveLength(1);
+    expect(ws.sent.filter((e) => e.type === 'response.create')).toHaveLength(0);
+
+    await act(async () => {
+      resolveB({ ok: 'b' });
+    });
+    expect(outputs()).toHaveLength(2);
+    expect(outputs().map((e) => e.item.call_id)).toEqual(['call-a', 'call-b']);
+    // Exactly one response for the whole batch
+    expect(ws.sent.filter((e) => e.type === 'response.create')).toHaveLength(1);
+  });
+
+  it('does not request a response when no executor returned a result', async () => {
+    const toolExecutor = vi.fn(async () => undefined);
+    const { ws } = await connectAndOpen({ ...baseConfig, toolExecutor });
+    await deliver(ws, { type: 'session.created', session: { id: 's1' } });
+    await deliver(ws, { type: 'session.updated', session: { id: 's1' } });
+    await deliver(ws, {
+      type: 'response.function_call_arguments.done',
+      response_id: 'resp-1',
+      call_id: 'call-a',
+      name: 'a',
+      arguments: '{}',
+    });
+    await act(async () => undefined);
+    expect(toolExecutor).toHaveBeenCalled();
+    expect(ws.sent.filter((e) => e.type === 'conversation.item.create')).toHaveLength(0);
+    expect(ws.sent.filter((e) => e.type === 'response.create')).toHaveLength(0);
+  });
 });

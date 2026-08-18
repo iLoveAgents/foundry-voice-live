@@ -92,7 +92,13 @@ export function buildVoiceLiveUrl(connection: VoiceLiveConnectionConfig): Resolv
     // Explicit connection settings win over params already present in the proxy URL.
     // The proxy honours ?transport= and ?apiVersion= for both transports.
     const overrides: Record<string, string> = {};
-    if (transport === 'webrtc') overrides.transport = 'webrtc';
+    if (transport === 'webrtc') {
+      overrides.transport = 'webrtc';
+    } else if (parsed.searchParams.get('transport') === 'webrtc') {
+      // A reused proxy URL must not route this socket to the WebRTC control endpoint while the
+      // SDK speaks the WebSocket protocol on it
+      overrides.transport = 'websocket';
+    }
     if (connection.apiVersion) overrides.apiVersion = connection.apiVersion;
     for (const [key, value] of Object.entries(overrides)) {
       parsed.searchParams.set(key, value);

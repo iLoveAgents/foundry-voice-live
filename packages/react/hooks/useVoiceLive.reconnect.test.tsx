@@ -5,7 +5,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 import { useVoiceLive } from './useVoiceLive';
-import { FakeWebSocket, FakePeerConnection, installBrowserFakes } from './testFakes';
+import { FakeWebSocket, FakePeerConnection, installBrowserFakes, makeFakeMicStream } from './testFakes';
 import type { UseVoiceLiveConfig } from '../types/voiceLive';
 
 let restore: () => void;
@@ -260,5 +260,141 @@ describe('useVoiceLive (reconnect)', () => {
     expect(hook.result.current.connectionState).toBe('connected');
     expect(hook.result.current.isReady).toBe(true);
     expect(hook.result.current.isMicActive).toBe(true);
+  });
+
+  it('keeps retrying when a reconnect attempt fails during setup (transient getToken error)', async () => {
+    let calls = 0;
+    const getToken = vi.fn(async () => {
+      calls += 1;
+      if (calls === 2) throw new Error('token endpoint unavailable');
+      return `tok-${calls}`;
+    });
+    const onReconnecting = vi.fn();
+    const { hook, ws } = await connectAndReady({
+      ...baseConfig,
+      connection: { resourceName: 'my-res', getToken },
+      reconnect: { initialDelayMs: 10, jitter: 0, maxAttempts: 3 },
+      onReconnecting,
+    });
+
+    await act(async () => {
+      ws.drop(1006);
+    });
+    // Attempt 1 fails while acquiring the token — the policy must consume the attempt and continue
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10);
+    });
+    expect(getToken).toHaveBeenCalledTimes(2);
+    expect(hook.result.current.connectionState).toBe('reconnecting');
+    expect(hook.result.current.reconnectAttempt).toBe(2);
+    expect(FakeWebSocket.instances).toHaveLength(1); // no transport was created for the failed attempt
+
+    // Attempt 2 gets a token and connects
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(20);
+    });
+    const ws2 = FakeWebSocket.instances.at(-1)!;
+    expect(ws2).not.toBe(ws);
+    await act(async () => {
+      ws2.open();
+      ws2.receive({ type: 'session.created', session: { id: 's2' } });
+      ws2.receive({ type: 'session.updated', session: { id: 's2' } });
+    });
+    expect(hook.result.current.connectionState).toBe('connected');
+    expect(hook.result.current.reconnectAttempt).toBe(0);
+    expect(onReconnecting).toHaveBeenCalledTimes(2);
+  });
+
+  it('releases a microphone whose permission prompt resolves after disconnect', async () => {
+    const { stream, track } = makeFakeMicStream();
+    let release: (s: MediaStream) => void = () => undefined;
+    const restoreFakes = installBrowserFakes({
+      getUserMedia: () =>
+        new Promise<MediaStream>((resolve) => {
+          release = resolve;
+        }),
+    });
+    try {
+      const hook = renderHook(() =>
+        useVoiceLive({
+          ...baseConfig,
+          connection: { resourceName: 'my-res', apiKey: 'secret', transport: 'webrtc' },
+          autoStartMic: false,
+        })
+      );
+      await act(async () => {
+        await hook.result.current.connect();
+      });
+      const ws = FakeWebSocket.instances.at(-1)!;
+      await act(async () => {
+        ws.open();
+      });
+      await vi.waitFor(() => expect(ws.lastSent('rtc.call.sdp.create')).toBeTruthy());
+
+      // Mic request is still pending when the user disconnects
+      const micPromise = hook.result.current.startMic();
+      act(() => {
+        hook.result.current.disconnect();
+      });
+      await act(async () => {
+        release(stream as unknown as MediaStream);
+        await micPromise;
+      });
+
+      // The late track must be stopped, not left live and reported as active
+      expect(track.stop).toHaveBeenCalled();
+      expect(hook.result.current.isMicActive).toBe(false);
+    } finally {
+      restoreFakes();
+    }
+  });
+
+  it('ignores an avatar SDP that is applied after the session was torn down', async () => {
+    const hook = renderHook(() =>
+      useVoiceLive({
+        ...baseConfig,
+        session: { instructions: 'Be nice.', avatar: { character: 'lisa', style: 'casual-sitting' } },
+      })
+    );
+    await act(async () => {
+      await hook.result.current.connect();
+    });
+    const ws = FakeWebSocket.instances.at(-1)!;
+    await act(async () => {
+      ws.open();
+      ws.receive({ type: 'session.created', session: { id: 's1' } });
+    });
+    // Avatar mode: the service returns ICE servers, the SDK offers and waits for the answer
+    await act(async () => {
+      ws.receive({
+        type: 'session.updated',
+        session: { id: 's1', avatar: { ice_servers: [{ urls: 'turn:relay.example' }] } },
+      });
+    });
+    await vi.waitFor(() => expect(ws.lastSent('session.avatar.connect')).toBeTruthy());
+    expect(hook.result.current.isReady).toBe(false);
+
+    // Make applying the server SDP pend, then tear the session down while it is in flight
+    const pc = FakePeerConnection.instances.at(-1)!;
+    let applyAnswer: () => void = () => undefined;
+    pc.setRemoteDescription = (): Promise<void> =>
+      new Promise<void>((resolve) => {
+        applyAnswer = resolve;
+      });
+    const serverSdp = btoa(JSON.stringify({ type: 'answer', sdp: 'v=0 answer' }));
+    await act(async () => {
+      ws.receive({ type: 'session.avatar.connecting', server_sdp: serverSdp });
+    });
+    act(() => {
+      hook.result.current.disconnect();
+    });
+    await act(async () => {
+      applyAnswer();
+    });
+
+    // The dead negotiation must not mark the session ready
+    expect(hook.result.current.isReady).toBe(false);
+    expect(hook.result.current.connectionState).toBe('disconnected');
+    expect(hook.result.current.error).toBeNull();
   });
 });

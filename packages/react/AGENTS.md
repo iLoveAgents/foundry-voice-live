@@ -73,6 +73,13 @@ Tests: `core/*.test.ts` (transports, audio, avatar, mic, reconnect), `hooks/useV
   event names/shapes in `types/events.ts`. `utils/protocolContract.test.ts` verifies both against Microsoft's
   `@azure/ai-voicelive` (devDependency only; it declares `engines: node >=22`, hence Node 22 for dev/CI).
   Update the allow-list there when Microsoft's enums catch up.
+- **Async continuations must re-check the generation**: anything awaited inside the hook
+  (`getUserMedia`, avatar `applyServerSdp`, tool executors) can resolve after `disconnect()` or a
+  reconnect. Capture `connectIdRef.current` (and the object identity) before the await and bail out
+  afterwards — otherwise dead sessions mark themselves ready or leak live microphone tracks.
+- **Automatic tool results are batched per response** (`toolBatchesRef`): outputs are sent with
+  `triggerResponse: false` and one `response.create` follows once the last executor of that
+  `response_id` settles, which is what makes `parallel_tool_calls` correct.
 - `validateConfig()` returns warnings (never throws); the hook logs them before connecting.
 - Logging goes through `createLogger(logLevel)`; default `'warn'` — never `console.log` directly.
 - `sessionConfig()` builder output works in both standard and agent modes.

@@ -33,6 +33,9 @@ export const DEFAULT_DATA_CHANNEL_FALLBACK_MS = 2000;
 /** Close code reported when the SDP answer never arrives */
 export const RTC_NEGOTIATION_TIMEOUT_CLOSE_CODE = 4008;
 
+/** Close code reported when the SDP answer arrives but cannot be applied */
+export const RTC_SDP_ANSWER_FAILED_CLOSE_CODE = 4009;
+
 export interface WebRtcTransportOptions {
   rtcConfiguration?: RTCConfiguration;
   negotiationTimeoutMs?: number;
@@ -263,10 +266,20 @@ export class WebRtcTransport implements VoiceLiveTransport {
       }
       const handle = this.handle;
       if (!handle) return;
+      const generation = this.generation;
       applyRtcSdpAnswer(handle.pc, event.sdp_answer)
         .then(() => this.options.log?.debug('WebRTC SDP answer applied'))
         .catch((err: unknown) => {
+          if (generation !== this.generation) return;
           this.callbacks.onError('Failed to apply WebRTC SDP answer', err);
+          // Terminal for this call: without closing, `state` would stay 'open', so the caller
+          // could neither reconnect nor connect() again
+          this.close();
+          this.callbacks.onClose({
+            code: RTC_SDP_ANSWER_FAILED_CLOSE_CODE,
+            reason: 'Failed to apply WebRTC SDP answer',
+            wasClean: false,
+          });
         });
     } else if (event.type === 'rtc.call.error') {
       const message = formatRtcCallError(event as RtcCallErrorEvent);

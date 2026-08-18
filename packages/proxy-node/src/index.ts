@@ -40,6 +40,7 @@ import {
   ENTRA_SCOPE,
 } from "./url.js";
 import { readPackageInfo } from "./packageInfo.js";
+import { PendingMessageQueue } from "./pendingQueue.js";
 
 dotenv.config();
 
@@ -375,8 +376,7 @@ app.ws("/ws", async (ws, req) => {
   // Messages the browser sends before the upstream socket is open are queued and flushed
   // once Azure is connected. Clients such as the WebRTC transport send `rtc.call.sdp.create`
   // immediately on open — dropping it would leave the negotiation hanging.
-  const pendingMessages: string[] = [];
-  const MAX_PENDING_MESSAGES = 256;
+  const pendingMessages = new PendingMessageQueue();
 
   const forwardToAzure = (text: string): void => {
     const type = extractEventType(text);
@@ -397,9 +397,15 @@ app.ws("/ws", async (ws, req) => {
       forwardToAzure(text);
       return;
     }
-    if (pendingMessages.length < MAX_PENDING_MESSAGES) {
-      pendingMessages.push(text);
-    } else {
+    const queued = pendingMessages.push(text);
+    if (queued === "over-budget") {
+      logger.warn("[Proxy] Closing client: queued pre-connect payload exceeds the byte budget", {
+        pendingBytes: pendingMessages.byteLength,
+        frameLength: text.length,
+        maxPendingBytes: pendingMessages.maxBytes,
+      });
+      ws.close(1009, "Queued payload too large before upstream connect");
+    } else if (queued === "dropped") {
       logger.warn("[Proxy] Dropping browser message: upstream not connected and queue full");
     }
   });
@@ -427,9 +433,9 @@ app.ws("/ws", async (ws, req) => {
     });
 
     // Flush anything the browser sent while we were connecting upstream
-    if (pendingMessages.length > 0) {
-      logger.info(`[Proxy] Flushing ${pendingMessages.length} queued browser message(s)`);
-      for (const text of pendingMessages.splice(0)) {
+    if (pendingMessages.size > 0) {
+      logger.info(`[Proxy] Flushing ${pendingMessages.size} queued browser message(s)`);
+      for (const text of pendingMessages.drain()) {
         forwardToAzure(text);
       }
     }

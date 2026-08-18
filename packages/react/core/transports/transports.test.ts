@@ -1,7 +1,11 @@
 /* eslint-disable @typescript-eslint/explicit-function-return-type, @typescript-eslint/no-explicit-any */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { WebSocketTransport } from './websocketTransport';
-import { WebRtcTransport, RTC_NEGOTIATION_TIMEOUT_CLOSE_CODE } from './webrtcTransport';
+import {
+  WebRtcTransport,
+  RTC_NEGOTIATION_TIMEOUT_CLOSE_CODE,
+  RTC_SDP_ANSWER_FAILED_CLOSE_CODE,
+} from './webrtcTransport';
 import type { TransportCallbacks } from './types';
 import { FakeWebSocket, FakePeerConnection, installBrowserFakes } from '../../hooks/testFakes';
 
@@ -160,6 +164,26 @@ describe('WebRtcTransport', () => {
     // handlers are detached: a late answer does nothing
     ws.receive({ type: 'rtc.call.sdp.created', sdp_answer: 'late' });
     expect(pc.remoteDescription).toBeNull();
+  });
+
+  it('closes the transport when the SDP answer cannot be applied (so the caller can reconnect)', async () => {
+    const { t, ws, pc, cb } = await openNegotiated();
+    pc.setRemoteDescription = async () => {
+      throw new Error('incompatible SDP');
+    };
+    ws.receive({ type: 'rtc.call.sdp.created', event_id: 'e1', sdp_answer: 'v=0 broken' });
+
+    await vi.waitFor(() =>
+      expect(cb.onError).toHaveBeenCalledWith('Failed to apply WebRTC SDP answer', expect.anything())
+    );
+    // Without the close the state would stay 'open' → connect() refused and no reconnect
+    expect(cb.onClose).toHaveBeenCalledWith({
+      code: RTC_SDP_ANSWER_FAILED_CLOSE_CODE,
+      reason: 'Failed to apply WebRTC SDP answer',
+      wasClean: false,
+    });
+    expect(t.state).toBe('closed');
+    expect(pc.closed).toBe(true);
   });
 
   it('attaches the microphone track once the transceiver exists (before and after negotiation)', async () => {

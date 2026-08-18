@@ -39,6 +39,12 @@ Targets Voice Live API **`2026-07-15` (GA)**. This release contains breaking cha
 - `ConnectionState` gains `'reconnecting'`; an unexpected close without `reconnect` now releases the audio graph (`audioStream`/`audioContext` become null until the next `connect()`).
 
 #### Fixed
+- Parallel tool calls: all `function_call_output`s of a response are sent before a single `response.create`, so the model no longer answers with only the first result when tool executors outlive `response.done`.
+- WebRTC: a `rtc.call.sdp.created` answer that cannot be applied now closes the transport (previously it stayed `open`, blocking both `connect()` and auto-reconnect).
+- A microphone permission prompt that resolves after `disconnect()` releases its track instead of leaving it live and reporting `isMicActive`.
+- An avatar SDP answer applied after teardown no longer marks a disconnected (or replacement) session ready.
+- Reconnect: a transient `getToken()`/setup failure consumes an attempt and continues the backoff policy instead of ending in `'error'` with no transport and no timer.
+- Proxy URLs: an explicit `websocket` transport now overrides a stale `transport=webrtc` parameter in a reused `proxyUrl` (which would have routed the socket to the WebRTC control endpoint).
 - Interim response wire key `latency_threshold_ms` (was `latency_threshold_in_ms`).
 - Proactive greeting wire format: `response.pre_generated_assistant_message` with a `text` content part (was `preGeneratedAssistantMessage` / `output_text`).
 
@@ -50,6 +56,7 @@ Targets Voice Live API **`2026-07-15` (GA)**. This release contains breaking cha
 ### `@iloveagents/foundry-voice-live-proxy-node` 0.5.0
 
 #### Added
+- Pre-connect message queue is bounded by bytes as well as frame count (`PendingMessageQueue`, 1 MiB budget): an unauthenticated client can no longer make the proxy retain large payloads while the upstream connection is pending. Offenders are closed with `1009`.
 - `transport=webrtc` query parameter → relays the control channel to `/voice-live/realtime/calls` (default api-version `2026-01-01-preview` for WebRTC).
 - Browser messages received before the upstream socket is open are queued and flushed (the WebRTC client sends `rtc.call.sdp.create` immediately on open — previously such early messages were dropped).
 - Client disconnects during the upstream connect are handled (upstream socket closed, connection counter released); relay logging no longer `JSON.parse`s every frame.

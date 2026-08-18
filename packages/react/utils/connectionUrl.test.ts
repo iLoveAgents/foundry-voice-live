@@ -124,6 +124,19 @@ describe('buildVoiceLiveUrl — proxy mode', () => {
     ).toBe('ws://x/ws?apiVersion=2026-01-01-preview&transport=webrtc');
   });
 
+  it('overrides a stale transport=webrtc param when the caller selects the websocket transport', () => {
+    // Reusing a proxy URL from a WebRTC page must not route a WebSocket session to /calls
+    expect(buildVoiceLiveUrl({ proxyUrl: 'ws://x/ws?transport=webrtc', transport: 'websocket' }).url).toBe(
+      'ws://x/ws?transport=websocket'
+    );
+    // ...also when `transport` is omitted (defaults to websocket)
+    expect(buildVoiceLiveUrl({ proxyUrl: 'ws://x/ws?model=gpt-realtime&transport=webrtc' }).url).toBe(
+      'ws://x/ws?model=gpt-realtime&transport=websocket'
+    );
+    // no transport param + websocket → URL stays untouched
+    expect(buildVoiceLiveUrl({ proxyUrl: 'ws://x/ws?model=gpt-realtime' }).url).toBe('ws://x/ws?model=gpt-realtime');
+  });
+
   it('supports relative proxy URLs and origin-only URLs', () => {
     expect(buildVoiceLiveUrl({ proxyUrl: '/voice-live?model=gpt-realtime', transport: 'webrtc' }).url).toBe(
       '/voice-live?model=gpt-realtime&transport=webrtc'

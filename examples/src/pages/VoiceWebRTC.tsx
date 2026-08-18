@@ -51,6 +51,7 @@ export function VoiceWebRTC(): JSX.Element {
     audioStream,
     audioAnalyser,
     sessionExpiresAt,
+    isReady,
     isMuted,
     toggleMute,
     sendText,
@@ -211,7 +212,9 @@ export function VoiceWebRTC(): JSX.Element {
         )}
       </ControlGroup>
 
-      {isConnected && (
+      {/* `connected` only means the control socket is open — text turns need the call itself
+          (SDP answer, media, data channel), which is what `isReady` reports */}
+      {isReady && (
         <TextInput onSend={sendText} placeholder="Send a text message over the control channel…" />
       )}
 

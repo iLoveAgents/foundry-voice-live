@@ -25,6 +25,7 @@ just dev-proxy        # Start dev server (port 8080)
 ```text
 src/
   index.ts            # Express + WebSocket server, logging, telemetry, DefaultAzureCredential, relay
+  pendingQueue.ts     # PendingMessageQueue: pre-connect frames, bounded by count AND bytes
   url.ts              # Pure: buildAzureUrl, resolveMode/Transport/ApiVersion, redactUrl, defaults
   packageInfo.ts      # Reads name/version from package.json (GET / info endpoint, banner)
   types.ts            # TypeScript type definitions (QueryParams, ProxyConfig, ProxyMode, ...)
