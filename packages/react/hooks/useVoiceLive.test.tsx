@@ -610,4 +610,125 @@ describe('useVoiceLive (websocket)', () => {
     expect(ws.sent.filter((e) => e.type === 'response.create')).toHaveLength(1);
     hook.unmount();
   });
+
+  it('waits for every late parallel tool call before answering (WebRTC ordering)', async () => {
+    const settle: Array<(v: object) => void> = [];
+    const toolExecutor = vi.fn(
+      () =>
+        new Promise<object>((r) => {
+          settle.push(r);
+        })
+    );
+    const { hook, ws } = await connectAndOpen({ ...baseConfig, toolExecutor });
+    await deliver(ws, { type: 'session.created', session: {} });
+    await deliver(ws, { type: 'session.updated', session: {} });
+    await deliver(ws, { type: 'response.created', response: { id: 'resp-1' } });
+    // response.done arrives first and declares TWO function calls
+    await deliver(ws, {
+      type: 'response.done',
+      response: {
+        id: 'resp-1',
+        output: [
+          { type: 'function_call', call_id: 'call-a', name: 'a' },
+          { type: 'function_call', call_id: 'call-b', name: 'b' },
+        ],
+      },
+    });
+    // the first tool event arrives and its executor settles before the second event
+    await deliver(ws, {
+      type: 'response.function_call_arguments.done',
+      response_id: 'resp-1',
+      call_id: 'call-a',
+      name: 'a',
+      arguments: '{}',
+    });
+    await act(async () => {
+      settle[0]?.({ ok: 'a' });
+    });
+    // answering now would use only half the results
+    expect(ws.sent.filter((e) => e.type === 'response.create')).toHaveLength(0);
+
+    await deliver(ws, {
+      type: 'response.function_call_arguments.done',
+      response_id: 'resp-1',
+      call_id: 'call-b',
+      name: 'b',
+      arguments: '{}',
+    });
+    await act(async () => {
+      settle[1]?.({ ok: 'b' });
+    });
+    const outputs = ws.sent.filter((e) => e.type === 'conversation.item.create');
+    expect(outputs.map((e) => e.item.call_id)).toEqual(['call-a', 'call-b']);
+    expect(ws.sent.filter((e) => e.type === 'response.create')).toHaveLength(1);
+    hook.unmount();
+  });
+
+  it('holds a user turn behind a late-arriving tool batch', async () => {
+    let settle: (v: object) => void = () => undefined;
+    const toolExecutor = vi.fn(
+      () =>
+        new Promise<object>((r) => {
+          settle = r;
+        })
+    );
+    const { hook, ws } = await connectAndOpen({ ...baseConfig, toolExecutor });
+    await deliver(ws, { type: 'session.created', session: {} });
+    await deliver(ws, { type: 'session.updated', session: {} });
+    await deliver(ws, { type: 'response.created', response: { id: 'resp-1' } });
+    await deliver(ws, {
+      type: 'response.done',
+      response: { id: 'resp-1', output: [{ type: 'function_call', call_id: 'call-a', name: 'a' }] },
+    });
+    await deliver(ws, {
+      type: 'response.function_call_arguments.done',
+      response_id: 'resp-1',
+      call_id: 'call-a',
+      name: 'a',
+      arguments: '{}',
+    });
+    // the gate is idle here (the response finished), but the tool output is still missing
+    await act(async () => {
+      hook.result.current.sendText('meanwhile');
+    });
+    expect(ws.sent.filter((e) => e.type === 'response.create')).toHaveLength(0);
+
+    await act(async () => {
+      settle({ ok: true });
+    });
+    // one follow-up answers the tool result and the user's message
+    expect(ws.sent.filter((e) => e.type === 'response.create')).toHaveLength(1);
+    hook.unmount();
+  });
+
+  it('drops the whole LLM greeting when a turn is already running', async () => {
+    let api: ReturnType<typeof useVoiceLive> | null = null;
+    const hook = renderHook(() =>
+      useVoiceLive({
+        ...baseConfig,
+        session: {
+          instructions: 'Be nice.',
+          greeting: { type: 'llm' as const, text: 'Greet the user warmly' },
+        },
+        onSessionUpdated: () => api?.sendText('I speak first'),
+      })
+    );
+    api = hook.result.current;
+    await act(async () => {
+      await hook.result.current.connect();
+    });
+    const ws = FakeWebSocket.instances.at(-1)!;
+    await act(async () => {
+      ws.open();
+      ws.receive({ type: 'session.created', session: {} });
+      ws.receive({ type: 'session.updated', session: {} });
+    });
+    const items = ws.sent.filter((e) => e.type === 'conversation.item.create');
+    // only the user's message: the greeting's system instruction must not linger in the
+    // conversation after its response.create was dropped
+    expect(items).toHaveLength(1);
+    expect(items[0].item.role).toBe('user');
+    expect(ws.sent.filter((e) => e.type === 'response.create')).toHaveLength(1);
+    hook.unmount();
+  });
 });

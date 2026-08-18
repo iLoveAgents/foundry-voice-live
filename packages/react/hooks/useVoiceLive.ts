@@ -74,7 +74,7 @@ import { OutputAudioGraph, PcmPlayer } from '../core/audioOutput';
 import { AvatarConnection } from '../core/avatarConnection';
 import { WebRtcMicrophone } from '../core/microphone';
 import { resolveReconnectOptions, computeBackoffDelay, isReconnectableClose } from '../core/reconnect';
-import { SeenEventIds } from '../core/serverEvents';
+import { BoundedMap } from '../core/boundedMap';
 import { Scope } from '../core/lifecycle';
 import { ResponseGate } from '../core/responseGate';
 import { useAudioCapture } from './useAudioCapture';
@@ -136,6 +136,14 @@ interface ToolBatch {
    * happen even if every executor returned void, otherwise that turn would never be answered.
    */
   followUpOwed: boolean;
+  /** Tool calls seen for this response so far */
+  seenCalls: number;
+  /**
+   * Tool calls the response actually contains, taken from `response.done`'s output list. Over
+   * WebRTC the tool events can arrive *after* `response.done` and one at a time, so arrival order
+   * cannot tell us whether more are coming — the completed response can.
+   */
+  expectedCalls: number;
 }
 
 /**
@@ -239,8 +247,8 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
    * arrive *before* a tool call of that response — a batch created afterwards would otherwise wait
    * forever for a completion signal that already happened.
    */
-  const completedResponsesRef = useRef<SeenEventIds | null>(null);
-  if (!completedResponsesRef.current) completedResponsesRef.current = new SeenEventIds(64);
+  const completedResponsesRef = useRef<BoundedMap<string, number> | null>(null);
+  if (!completedResponsesRef.current) completedResponsesRef.current = new BoundedMap(64);
 
   // ===== Lifetimes (see `core/lifecycle.ts`) =====
   /**
@@ -345,7 +353,9 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
    */
   const finishToolBatchIfReady = useCallback(
     (key: string, batch: ToolBatch, session: LiveSession): void => {
-      if (batch.pending > 0 || !batch.responseDone) return;
+      // Not finished until: every executor settled, the response is known to be complete, and
+      // every tool call that response contains has actually arrived
+      if (batch.pending > 0 || !batch.responseDone || batch.seenCalls < batch.expectedCalls) return;
       // A stale executor must not evict the live session's batch stored under the same
       // (service-assigned, per-session) response id — delete only our own entry
       if (toolBatchesRef.current.get(key) === batch) {
@@ -383,9 +393,26 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
     [sendEvent]
   );
 
+  /** The tool batch of this session that still owes a follow-up, if any */
+  const pendingToolBatch = useCallback((): ToolBatch | null => {
+    for (const batch of toolBatchesRef.current.values()) {
+      if (batch.pending > 0 || batch.seenCalls < batch.expectedCalls) return batch;
+    }
+    return null;
+  }, []);
+
   const requestResponse = useCallback(
     (options: { event?: VoiceLiveClientEvent; dropIfBusy?: boolean } = {}): void => {
       const gate = responseGateRef.current as ResponseGate;
+      // A response is owed by a tool batch that has not put all its outputs on the wire yet.
+      // Answering now would make the model reply to a conversation with an unanswered tool call,
+      // so the turn is handed to that batch — its single follow-up covers both.
+      const batch = !options.event && pendingToolBatch();
+      if (batch) {
+        batch.followUpOwed = true;
+        log.debug('Tool outputs still pending — the follow-up will answer this turn too');
+        return;
+      }
       if (options.dropIfBusy && gate.isBusy) {
         // A proactive greeting only makes sense as the first turn: if the conversation already
         // started, dropping it is right — queueing would greet after the user has spoken
@@ -398,7 +425,7 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
       }
       sendGatedResponseCreate(options.event);
     },
-    [sendGatedResponseCreate, log]
+    [sendGatedResponseCreate, pendingToolBatch, log]
   );
   requestResponseRef.current = requestResponse;
   sendGatedResponseCreateRef.current = sendGatedResponseCreate;
@@ -768,10 +795,16 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
           // running, so the request is queued into the single flush below instead of racing it.
           const doneSession = sessionRef.current;
           const doneKey = `${data.response?.id ?? currentResponseIdRef.current ?? ''}`;
-          (completedResponsesRef.current as SeenEventIds).seenBefore(doneKey);
+          // The completed response lists its own tool calls: that is the only reliable way to know
+          // whether more are still on their way over the (independent) control channel
+          const toolCallCount = (data.response?.output ?? []).filter(
+            (item) => (item as { type?: string }).type === 'function_call'
+          ).length;
+          (completedResponsesRef.current as BoundedMap<string, number>).set(doneKey, toolCallCount);
           const doneBatch = toolBatchesRef.current.get(doneKey);
           if (doneBatch && doneSession) {
             doneBatch.responseDone = true;
+            doneBatch.expectedCalls = Math.max(doneBatch.expectedCalls, toolCallCount);
             if (doneBatch.pending > 0) {
               // Tool executors are still running: a queued user turn must NOT be sent now — the
               // service would answer before the required function_call_output exists. Hand it to
@@ -828,15 +861,20 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
             // reconnect replaces the conversation, and `session.scope` says so.
             const session = sessionRef.current;
             const batchKey = `${data.response_id ?? currentResponseIdRef.current ?? ''}`;
+            const completed = completedResponsesRef.current as BoundedMap<string, number>;
             const batch =
               toolBatchesRef.current.get(batchKey) ??
               ({
                 pending: 0,
                 sentOutput: false,
-                // The response may already be finished when its tool call reaches us (WebRTC)
-                responseDone: (completedResponsesRef.current as SeenEventIds).has(batchKey),
+                // The response may already be finished when its tool call reaches us (WebRTC), in
+                // which case we also know how many calls to expect
+                responseDone: completed.has(batchKey),
                 followUpOwed: false,
+                seenCalls: 0,
+                expectedCalls: completed.get(batchKey) ?? 0,
               } satisfies ToolBatch);
+            batch.seenCalls += 1;
             batch.pending += 1;
             toolBatchesRef.current.set(batchKey, batch);
             Promise.resolve()
@@ -1337,9 +1375,16 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
     if (!isReady || !session?.greeting || greetingSentRef.current) return;
     greetingSentRef.current = true;
     log.debug(`Sending proactive greeting (${session.greeting.type})...`);
+    // An LLM greeting is a *pair*: a system instruction item plus the response request. If the
+    // conversation already started, the whole pair is dropped — sending only the instruction would
+    // leave it in the conversation, silently steering the user's own turn.
+    const gate = responseGateRef.current as ResponseGate;
+    if (gate.isBusy || pendingToolBatch()) {
+      log.debug('Conversation already started — skipping the proactive greeting');
+      return;
+    }
     // The greeting's own `response.create` carries a payload (the pre-generated message), so it is
-    // sent through the gate rather than replaced by a bare one — otherwise a turn submitted in the
-    // same tick and the greeting would overlap and the service would reject one of them.
+    // sent through the gate rather than replaced by a bare one.
     buildGreetingEvents(session.greeting).forEach((event) => {
       if (event.type === 'response.create') {
         requestResponse({ event, dropIfBusy: true });

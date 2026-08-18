@@ -10,6 +10,7 @@ import {
   DEFAULT_RECONNECT_OPTIONS,
 } from './reconnect';
 import { parseServerEvent, SeenEventIds } from './serverEvents';
+import { BoundedMap } from './boundedMap';
 import {
   FakeAudioContext,
   FakeAudioWorkletNode,
@@ -276,6 +277,28 @@ describe('WebRtcMicrophone (stop during a pending start)', () => {
     expect(track.stop).toHaveBeenCalled();
     expect(mic.isActive).toBe(false);
     expect(mic.track).toBeNull();
+  });
+});
+
+describe('BoundedMap', () => {
+  it('stores, reads and evicts the oldest half when full', () => {
+    const map = new BoundedMap<string, number>(4);
+    map.set('a', 1);
+    map.set('b', 2);
+    expect(map.get('a')).toBe(1);
+    expect(map.has('b')).toBe(true);
+    expect(map.size).toBe(2);
+
+    ['c', 'd', 'e'].forEach((k, i) => map.set(k, i));
+    expect(map.size).toBeLessThanOrEqual(4);
+    // the oldest entries are the ones dropped
+    expect(map.has('a')).toBe(false);
+    expect(map.has('e')).toBe(true);
+
+    map.delete('e');
+    expect(map.has('e')).toBe(false);
+    map.clear();
+    expect(map.size).toBe(0);
   });
 });
 

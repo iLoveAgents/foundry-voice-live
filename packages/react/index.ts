@@ -155,6 +155,7 @@ export {
   DEFAULT_RECONNECT_OPTIONS,
 } from './core/reconnect';
 export { parseServerEvent, SeenEventIds } from './core/serverEvents';
+export { BoundedMap } from './core/boundedMap';
 export { Scope } from './core/lifecycle';
 export { ResponseGate, type ResponseGateState } from './core/responseGate';
 

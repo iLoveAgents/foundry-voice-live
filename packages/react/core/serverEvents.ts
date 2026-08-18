@@ -3,6 +3,7 @@
  */
 
 import type { VoiceLiveServerEvent } from '../types/events';
+import { BoundedMap } from './boundedMap';
 
 /**
  * Parse a raw control-channel / data-channel message. Returns null for non-JSON payloads
@@ -25,9 +26,11 @@ export function parseServerEvent(raw: string): VoiceLiveServerEvent | null {
  * control channel and the data channel.
  */
 export class SeenEventIds {
-  private readonly ids = new Set<string>();
+  private readonly ids: BoundedMap<string, true>;
 
-  constructor(private readonly maxSize: number = 500) {}
+  constructor(maxSize = 500) {
+    this.ids = new BoundedMap(maxSize);
+  }
 
   /** Whether `id` is currently remembered, without recording it */
   has(id: string): boolean {
@@ -37,16 +40,7 @@ export class SeenEventIds {
   /** Returns true when `id` was already seen (and records it otherwise) */
   seenBefore(id: string): boolean {
     if (this.ids.has(id)) return true;
-    this.ids.add(id);
-    if (this.ids.size > this.maxSize) {
-      // Drop the oldest half (Set iterates in insertion order)
-      const iterator = this.ids.values();
-      for (let i = 0; i < this.maxSize / 2; i++) {
-        const next = iterator.next();
-        if (next.done) break;
-        this.ids.delete(next.value);
-      }
-    }
+    this.ids.set(id, true);
     return false;
   }
 
