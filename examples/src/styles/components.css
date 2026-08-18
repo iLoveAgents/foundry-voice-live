@@ -116,13 +116,15 @@
   background: var(--status-neutral-text);
 }
 
-.status-badge--connecting {
+.status-badge--connecting,
+.status-badge--reconnecting {
   background: var(--status-warning-bg);
   color: var(--status-warning-text);
   border-color: var(--status-warning-border);
 }
 
-.status-badge--connecting .status-badge__dot {
+.status-badge--connecting .status-badge__dot,
+.status-badge--reconnecting .status-badge__dot {
   background: var(--status-warning-text);
   animation: pulse 1.5s infinite;
 }

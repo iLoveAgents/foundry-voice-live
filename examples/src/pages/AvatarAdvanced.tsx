@@ -12,15 +12,14 @@ import {
   ErrorPanel,
   AvatarContainer,
 } from '../components';
+import { directOrProxyConnection } from '../lib/connection';
 
 export function AvatarAdvanced(): JSX.Element {
   const [error, setError] = useState<string | null>(null);
 
   const { connect, disconnect, connectionState, videoStream, audioStream } = useVoiceLive({
-    connection: {
-      resourceName: import.meta.env.VITE_FOUNDRY_RESOURCE_NAME,
-      apiKey: import.meta.env.VITE_FOUNDRY_API_KEY,
-    },
+    // Direct with the dev API key when configured, otherwise through the proxy (keyless)
+    connection: directOrProxyConnection(),
     session: sessionConfig()
       .instructions('You are a helpful assistant.')
       .hdVoice('en-US-Ava:DragonHDLatestNeural', { temperature: 0.9, rate: '0.95' })
@@ -38,6 +37,7 @@ export function AvatarAdvanced(): JSX.Element {
       .echoCancellation()
       .noiseReduction()
       .build(),
+    logLevel: 'debug',
   });
 
   const handleStart = async (): Promise<void> => {

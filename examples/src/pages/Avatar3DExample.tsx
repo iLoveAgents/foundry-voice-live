@@ -8,10 +8,12 @@
 
 import { useState, useRef, useEffect, useCallback, Suspense } from 'react';
 import { useVoiceLive, createVoiceLiveConfig, withViseme } from '@iloveagents/foundry-voice-live-react';
+import type { VoiceLiveServerEvent } from '@iloveagents/foundry-voice-live-react';
 import { SampleLayout, StatusBadge, Section, ControlGroup, ErrorPanel } from '../components';
 import { Canvas, useFrame } from '@react-three/fiber';
 import { useGLTF, OrbitControls, Environment } from '@react-three/drei';
 import * as THREE from 'three';
+import { directOrProxyConnection } from '../lib/connection';
 
 // ============================================================================
 // Configuration
@@ -74,7 +76,7 @@ interface VisemeMesh {
   indexMap: Map<string, number>;
 }
 
-function Avatar({ visemeRef }: AvatarProps) {
+function Avatar({ visemeRef }: AvatarProps): JSX.Element {
   const { scene } = useGLTF(AVATAR_URL);
   const visemeMeshesRef = useRef<VisemeMesh[]>([]);
   const currentInfluences = useRef<Record<string, number>>({});
@@ -167,7 +169,7 @@ function Avatar({ visemeRef }: AvatarProps) {
 // Loading Fallback
 // ============================================================================
 
-function LoadingFallback() {
+function LoadingFallback(): JSX.Element {
   return (
     <mesh>
       <sphereGeometry args={[0.5, 32, 32]} />
@@ -195,10 +197,8 @@ export function Avatar3DExample(): JSX.Element {
   // Microsoft Foundry Voice Live Configuration
   // ---------------------------------------------------------------------------
   const config = createVoiceLiveConfig({
-    connection: {
-      resourceName: import.meta.env.VITE_FOUNDRY_RESOURCE_NAME,
-      apiKey: import.meta.env.VITE_FOUNDRY_API_KEY,
-    },
+    // Direct with the dev API key when configured, otherwise through the proxy (keyless)
+    connection: directOrProxyConnection(),
     session: withViseme({
       instructions: 'You are a friendly 3D avatar assistant. Respond naturally and briefly!',
       voice: {
@@ -210,12 +210,10 @@ export function Avatar3DExample(): JSX.Element {
 
   const { connect, disconnect, connectionState, getAudioPlaybackTime, audioStream } = useVoiceLive({
     ...config,
-    onEvent: useCallback((event: { type: string; viseme_id?: number; audio_offset_ms?: number }) => {
-      if (
-        event.type === 'response.animation_viseme.delta' &&
-        event.viseme_id !== undefined &&
-        event.audio_offset_ms !== undefined
-      ) {
+    logLevel: 'debug',
+    onEvent: useCallback((event: VoiceLiveServerEvent) => {
+      // `event.type` narrows the typed union to the viseme delta shape
+      if (event.type === 'response.animation_viseme.delta') {
         visemeBufferRef.current.push({
           viseme_id: event.viseme_id,
           audio_offset_ms: event.audio_offset_ms,

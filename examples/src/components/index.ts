@@ -6,3 +6,5 @@ export { Section } from './Section';
 export { ControlGroup } from './ControlGroup';
 export { AlertBox } from './AlertBox';
 export { AvatarContainer } from './AvatarContainer';
+export { TextInput } from './TextInput';
+export { TranscriptPanel } from './TranscriptPanel';

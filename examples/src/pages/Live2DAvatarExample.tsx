@@ -16,9 +16,11 @@
 
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { useVoiceLive, createVoiceLiveConfig, withViseme } from '@iloveagents/foundry-voice-live-react';
+import type { VoiceLiveServerEvent } from '@iloveagents/foundry-voice-live-react';
 import { SampleLayout, StatusBadge, Section, ControlGroup, ErrorPanel } from '../components';
 import * as PIXI from 'pixi.js';
 import { Live2DModel } from 'pixi-live2d-display/cubism4';
+import { directOrProxyConnection } from '../lib/connection';
 
 // ============================================================================
 // Configuration Constants
@@ -149,10 +151,8 @@ export function Live2DAvatarExample(): JSX.Element {
   // Microsoft Foundry Voice Live Configuration
   // ---------------------------------------------------------------------------
   const config = createVoiceLiveConfig({
-    connection: {
-      resourceName: import.meta.env.VITE_FOUNDRY_RESOURCE_NAME,
-      apiKey: import.meta.env.VITE_FOUNDRY_API_KEY,
-    },
+    // Direct with the dev API key when configured, otherwise through the proxy (keyless)
+    connection: directOrProxyConnection(),
     session: withViseme({
       instructions: 'You are a helpful assistant. Always respond in English. Keep responses brief.',
       voice: {
@@ -164,13 +164,11 @@ export function Live2DAvatarExample(): JSX.Element {
 
   const { connect, disconnect, connectionState, getAudioPlaybackTime, audioStream } = useVoiceLive({
     ...config,
-    onEvent: useCallback((event: { type: string; viseme_id?: number; audio_offset_ms?: number }) => {
+    logLevel: 'debug',
+    onEvent: useCallback((event: VoiceLiveServerEvent) => {
       // Buffer incoming viseme events for synchronization with audio playback
-      if (
-        event.type === 'response.animation_viseme.delta' &&
-        event.viseme_id !== undefined &&
-        event.audio_offset_ms !== undefined
-      ) {
+      // (`event.type` narrows the typed union to the viseme delta shape)
+      if (event.type === 'response.animation_viseme.delta') {
         visemeBufferRef.current.push({
           viseme_id: event.viseme_id,
           audio_offset_ms: event.audio_offset_ms,

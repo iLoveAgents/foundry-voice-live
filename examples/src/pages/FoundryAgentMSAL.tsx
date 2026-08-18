@@ -14,6 +14,7 @@ import {
   ErrorPanel,
   AlertBox,
 } from '../components';
+import { proxyWsUrl } from '../lib/connection';
 
 /**
  * Foundry Agent example with MSAL browser-side authentication.
@@ -25,8 +26,7 @@ import {
  * 1. Azure AD app registration with API permission for Azure AI
  * 2. Set VITE_AZURE_CLIENT_ID and VITE_AZURE_TENANT_ID in examples .env
  * 3. Set VITE_FOUNDRY_AGENT_NAME and VITE_FOUNDRY_PROJECT_NAME in examples .env
- * 4. Set FOUNDRY_RESOURCE_NAME in proxy .env
- * 5. Set API_VERSION=2026-01-01-preview in proxy .env
+ * 4. Set FOUNDRY_RESOURCE_NAME in proxy .env (the GA API version is the default)
  */
 export default function FoundryAgentMSAL(): JSX.Element {
   const audioRef = useRef<HTMLAudioElement>(null);
@@ -34,9 +34,6 @@ export default function FoundryAgentMSAL(): JSX.Element {
   const [accessToken, setAccessToken] = useState<string | null>(null);
   const [authError, setAuthError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-
-  const backendProxyUrl =
-    import.meta.env.VITE_BACKEND_PROXY_URL || 'ws://localhost:8080';
 
   const msalConfigured =
     import.meta.env.VITE_AZURE_CLIENT_ID &&
@@ -103,10 +100,11 @@ export default function FoundryAgentMSAL(): JSX.Element {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [accounts]);
 
-  // Build proxy URL with MSAL token
+  // Build proxy URL with MSAL token (proxy base from VITE_BACKEND_PROXY_URL,
+  // default ws://localhost:8080)
   const proxyUrl =
     accessToken && agentName && projectName
-      ? `${backendProxyUrl}/ws?agentName=${encodeURIComponent(agentName)}&projectName=${encodeURIComponent(projectName)}&token=${encodeURIComponent(accessToken)}`
+      ? proxyWsUrl({ agentName, projectName, token: accessToken })
       : null;
 
   const config = proxyUrl
@@ -119,7 +117,8 @@ export default function FoundryAgentMSAL(): JSX.Element {
           .semanticVAD({ interruptResponse: true })
           .echoCancellation()
           .noiseReduction()
-          .transcription()
+          // Azure speech transcription is the model compatible with Foundry agent sessions
+          .transcription({ model: 'azure-speech' })
           .build(),
         onEvent: (event) => {
           if (
@@ -138,11 +137,12 @@ export default function FoundryAgentMSAL(): JSX.Element {
             );
           }
         },
+        logLevel: 'debug',
       })
     : null;
 
   const { connect, disconnect, connectionState, audioStream } = useVoiceLive(
-    config || { connection: { proxyUrl: '' } }
+    config || { connection: { proxyUrl: '' }, logLevel: 'debug' }
   );
 
   useEffect(() => {

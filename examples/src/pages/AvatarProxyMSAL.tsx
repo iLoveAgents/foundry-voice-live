@@ -1,4 +1,6 @@
 import { useEffect, useState } from 'react';
+import { useMsal } from '@azure/msal-react';
+import { InteractionRequiredAuthError } from '@azure/msal-browser';
 import {
   useVoiceLive,
   VoiceLiveAvatar,
@@ -12,8 +14,7 @@ import {
   ErrorPanel,
   AvatarContainer,
 } from '../components';
-import { useMsal } from '@azure/msal-react';
-import { InteractionRequiredAuthError } from '@azure/msal-browser';
+import { proxyWsUrl } from '../lib/connection';
 
 export function AvatarProxyMSAL(): JSX.Element {
   const [wsUrl, setWsUrl] = useState<string | null>(null);
@@ -45,9 +46,8 @@ export function AvatarProxyMSAL(): JSX.Element {
         account: accounts[0],
       });
       setAccessToken(response.accessToken);
-      setWsUrl(
-        `ws://localhost:8080/ws?model=gpt-realtime&token=${encodeURIComponent(response.accessToken)}`
-      );
+      // Proxy base from VITE_BACKEND_PROXY_URL (default ws://localhost:8080)
+      setWsUrl(proxyWsUrl({ model: 'gpt-realtime', token: response.accessToken }));
       console.log('Access token acquired successfully');
     } catch (err) {
       if (err instanceof InteractionRequiredAuthError) {
@@ -57,9 +57,7 @@ export function AvatarProxyMSAL(): JSX.Element {
             account: accounts[0],
           });
           setAccessToken(response.accessToken);
-          setWsUrl(
-            `ws://localhost:8080/ws?model=gpt-realtime&token=${encodeURIComponent(response.accessToken)}`
-          );
+          setWsUrl(proxyWsUrl({ model: 'gpt-realtime', token: response.accessToken }));
           console.log('Access token acquired via popup');
         } catch (popupError) {
           console.error('Token acquisition failed:', popupError);
@@ -98,6 +96,7 @@ export function AvatarProxyMSAL(): JSX.Element {
       },
       instructions: 'You are a helpful assistant. Keep responses brief.',
     },
+    logLevel: 'debug',
   });
 
   const { connect, disconnect, connectionState, videoStream, audioStream } =

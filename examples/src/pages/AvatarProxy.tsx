@@ -12,15 +12,16 @@ import {
   ErrorPanel,
   AvatarContainer,
 } from '../components';
+import { proxyWsUrl } from '../lib/connection';
 
 export function AvatarProxy(): JSX.Element {
   const [error, setError] = useState<string | null>(null);
 
   const config = createVoiceLiveConfig({
     connection: {
-      // Proxy mode: API key secured in backend
-      // Mode is auto-detected (standard mode - no agentId/projectName)
-      proxyUrl: 'ws://localhost:8080/ws?model=gpt-realtime',
+      // Proxy mode: API key secured in backend (VITE_BACKEND_PROXY_URL, default ws://localhost:8080)
+      // Mode is auto-detected (standard mode - no agentName/projectName)
+      proxyUrl: proxyWsUrl({ model: 'gpt-realtime' }),
     },
     session: {
       voice: {
@@ -32,6 +33,7 @@ export function AvatarProxy(): JSX.Element {
         style: import.meta.env.VITE_AVATAR_STYLE || 'casual-sitting',
       },
     },
+    logLevel: 'debug',
   });
 
   const { connect, disconnect, connectionState, videoStream, audioStream } =
