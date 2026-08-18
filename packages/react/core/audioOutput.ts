@@ -56,18 +56,26 @@ export class OutputAudioGraph {
     const create =
       this.options.createAudioContext ?? ((): AudioContext => new AudioContext({ latencyHint: 'interactive' }));
     const ctx = create();
-    this.ctx = ctx;
-    this.options.log?.debug(`AudioContext created (${ctx.sampleRate} Hz)`);
+    try {
+      const gain = ctx.createGain();
+      gain.gain.value = 1.0;
 
-    const gain = ctx.createGain();
-    gain.gain.value = 1.0;
-    this.gainNode = gain;
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 256;
+      analyser.smoothingTimeConstant = 0.8;
 
-    const analyser = ctx.createAnalyser();
-    analyser.fftSize = 256;
-    analyser.smoothingTimeConstant = 0.8;
-    this.analyserNode = analyser;
-    return true;
+      // Publish only once every node exists: a half-built graph would satisfy the guard above
+      // forever, and playback connected to a gain node with no destination is silent for the
+      // whole session — a failure nobody can see.
+      this.ctx = ctx;
+      this.gainNode = gain;
+      this.analyserNode = analyser;
+      this.options.log?.debug(`AudioContext created (${ctx.sampleRate} Hz)`);
+      return true;
+    } catch (err) {
+      ctx.close().catch(() => undefined);
+      throw err;
+    }
   }
 
   /**

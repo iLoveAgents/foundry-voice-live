@@ -100,9 +100,11 @@ export function buildVoiceLiveUrl(connection: VoiceLiveConnectionConfig): Resolv
     }
     if (transport === 'webrtc') {
       overrides.transport = 'webrtc';
-    } else if (parsed.searchParams.get('transport') === 'webrtc') {
+    } else if (parsed.searchParams.has('transport')) {
       // A reused proxy URL must not route this socket to the WebRTC control endpoint while the
-      // SDK speaks the WebSocket protocol on it
+      // SDK speaks the WebSocket protocol on it. Any value present is replaced rather than
+      // compared: the proxy normalizes case and whitespace, so `?transport=WebRTC` would slip
+      // through an exact match.
       overrides.transport = 'websocket';
     }
     if (connection.apiVersion) overrides.apiVersion = connection.apiVersion;

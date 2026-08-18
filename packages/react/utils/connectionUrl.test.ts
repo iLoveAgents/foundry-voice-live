@@ -152,6 +152,20 @@ describe('buildVoiceLiveUrl — proxy mode', () => {
     );
   });
 
+  it('replaces any transport value in a reused proxy URL, whatever its casing', () => {
+    // the proxy lowercases and trims, so an exact comparison would let these through and the
+    // socket would be routed to the WebRTC control endpoint while the SDK speaks WebSocket
+    for (const value of ['WebRTC', 'WEBRTC', 'webrtc', 'nonsense']) {
+      expect(buildVoiceLiveUrl({ proxyUrl: `ws://x/ws?transport=${value}` }).url).toBe(
+        'ws://x/ws?transport=websocket'
+      );
+    }
+    // and the WebRTC direction still wins over anything present
+    expect(buildVoiceLiveUrl({ proxyUrl: 'ws://x/ws?transport=WEBSOCKET', transport: 'webrtc' }).url).toBe(
+      'ws://x/ws?transport=webrtc'
+    );
+  });
+
   it('supports relative proxy URLs and origin-only URLs', () => {
     expect(buildVoiceLiveUrl({ proxyUrl: '/voice-live?model=gpt-realtime', transport: 'webrtc' }).url).toBe(
       '/voice-live?model=gpt-realtime&transport=webrtc'

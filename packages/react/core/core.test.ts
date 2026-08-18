@@ -39,6 +39,27 @@ describe('OutputAudioGraph', () => {
     expect((graph.analyser as any).fftSize).toBe(256);
   });
 
+  it('leaves nothing behind when a node cannot be created', () => {
+    const graph = new OutputAudioGraph();
+    const original = FakeAudioContext.prototype.createAnalyser;
+    FakeAudioContext.prototype.createAnalyser = (): never => {
+      throw new Error('createAnalyser unsupported');
+    };
+    try {
+      expect(() => graph.ensure()).toThrow('createAnalyser unsupported');
+      // a half-built graph would satisfy the "already created" guard forever, and playback wired
+      // to a gain node with no destination is silent for the entire session
+      expect(graph.context).toBeNull();
+      expect(graph.gain).toBeNull();
+      expect(FakeAudioContext.instances.at(-1)!.closed).toBe(true);
+    } finally {
+      FakeAudioContext.prototype.createAnalyser = original;
+    }
+    // ...and a later attempt can still build it
+    expect(graph.ensure()).toBe(true);
+    expect(graph.analyser).toBeTruthy();
+  });
+
   it('routes gain → destination + analyser once and exposes the stream', () => {
     const graph = new OutputAudioGraph();
     expect(graph.ensureDestination()).toBeNull(); // no context yet
