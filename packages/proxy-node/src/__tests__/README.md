@@ -57,3 +57,10 @@ Add to your CI pipeline:
 - run: pnpm test
 - run: pnpm run test:coverage
 ```
+
+## Connection-slot accounting
+
+`activeConnections` is released only when the client socket is closed **and** the upstream attempt
+has settled (see `releaseSlot()` in `index.ts`). Releasing on the client close alone would let
+repeated connect-and-abort cycles start unlimited concurrent token acquisitions and handshakes
+outside `MAX_CONNECTIONS`; an abandoned attempt is also terminated rather than completed.

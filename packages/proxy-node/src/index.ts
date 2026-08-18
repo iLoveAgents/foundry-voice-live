@@ -257,7 +257,11 @@ interface AzureConnection {
  * URL/mode/auth resolution lives in `url.ts` (pure, unit-tested); this function only
  * adds logging and opens the upstream WebSocket.
  */
-async function connectToAzure(query: QueryParams): Promise<AzureConnection> {
+async function connectToAzure(
+  query: QueryParams,
+  /** Called with the pending socket so the caller can abort an attempt the client no longer wants */
+  onAttemptStarted?: (abort: () => void) => void
+): Promise<AzureConnection> {
   const { url, headers, mode, authMethod, transport } = await buildAzureUrl(query, config, {
     getEntraToken,
   });
@@ -282,11 +286,21 @@ async function connectToAzure(query: QueryParams): Promise<AzureConnection> {
   const azureWs = new WebSocket(url, { headers, handshakeTimeout: UPSTREAM_HANDSHAKE_TIMEOUT_MS });
 
   return new Promise((resolve, reject) => {
+    let aborted = false;
+    onAttemptStarted?.(() => {
+      // The browser went away mid-handshake: stop the attempt instead of completing it and
+      // closing it a moment later
+      aborted = true;
+      azureWs.terminate();
+      reject(new Error("Client disconnected during the upstream handshake"));
+    });
     azureWs.once("open", () => {
+      if (aborted) return;
       logger.info("[Proxy] Azure WebSocket opened successfully");
       resolve({ azureWs, mode, transport, agentName, model });
     });
     azureWs.once("error", (error) => {
+      if (aborted) return;
       logger.error("[Proxy] Azure WebSocket error during connection", error);
       reject(error);
     });
@@ -369,11 +383,15 @@ app.ws("/ws", async (ws, req) => {
   let azureWs: WebSocket | undefined;
   let clientClosed = false;
 
-  // Connection cleanup — guarded so close + error on the same socket only count once
-  let cleanedUp = false;
-  const cleanup = (): void => {
-    if (cleanedUp) return;
-    cleanedUp = true;
+  // The connection slot is held until the client is gone *and* the upstream attempt has settled:
+  // releasing it earlier would let repeated connect-and-abort cycles start unlimited concurrent
+  // token acquisitions and handshakes outside the connection limit.
+  let released = false;
+  let upstreamSettled = false;
+  let abortUpstreamAttempt: (() => void) | null = null;
+  const releaseSlot = (): void => {
+    if (released || !clientClosed || !upstreamSettled) return;
+    released = true;
     activeConnections--;
     logger.info(
       `[Proxy] Client disconnected (${activeConnections}/${securityConfig.maxConnections})`,
@@ -381,17 +399,22 @@ app.ws("/ws", async (ws, req) => {
     );
     logger.trackMetric("activeConnections", activeConnections);
   };
+  const cleanup = (): void => {
+    clientClosed = true;
+    // Stop an upstream attempt the client will never use
+    abortUpstreamAttempt?.();
+    abortUpstreamAttempt = null;
+    releaseSlot();
+  };
 
   // Register client lifecycle handlers immediately: the browser may disconnect while the
   // upstream connect (token acquisition + WebSocket handshake) is still in flight.
   ws.on("close", () => {
-    clientClosed = true;
     cleanup();
     azureWs?.close();
   });
   ws.on("error", (error) => {
     logger.error("[Proxy] Client WebSocket error:", error, { source: "client" });
-    clientClosed = true;
     cleanup();
     azureWs?.close();
   });
@@ -437,13 +460,19 @@ app.ws("/ws", async (ws, req) => {
     const parsed = parse(req.url || "", true);
     const query: QueryParams = parsed.query as QueryParams;
 
-    const connection = await connectToAzure(query);
+    const connection = await connectToAzure(query, (abort) => {
+      abortUpstreamAttempt = abort;
+      if (clientClosed) abort(); // the client left before the attempt even started
+    });
+    upstreamSettled = true;
+    abortUpstreamAttempt = null;
     azureWs = connection.azureWs;
 
     if (clientClosed) {
       // Browser went away while we were connecting upstream
       logger.info("[Proxy] Client disconnected during upstream connect — closing Azure socket");
       azureWs.close();
+      releaseSlot();
       return;
     }
     logger.info("[Proxy] Connected to Azure");
@@ -506,6 +535,9 @@ app.ws("/ws", async (ws, req) => {
       }
     });
   } catch (error) {
+    upstreamSettled = true;
+    abortUpstreamAttempt = null;
+    releaseSlot();
     const errorMessage = error instanceof Error ? error.message : "Unknown error";
     logger.error("[Proxy] Error:", error instanceof Error ? error : undefined, { errorMessage });
     logger.trackEvent("WebSocketError", { errorMessage });

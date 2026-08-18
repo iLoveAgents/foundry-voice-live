@@ -163,6 +163,12 @@ export class WebRtcTransport implements VoiceLiveTransport {
       try {
         offer = await offerPromise;
       } catch (err) {
+        if (generation !== this.generation) {
+          // The control channel already closed and reported it: this rejection is a consequence,
+          // not a new failure (createWebRtcOffer released its own peer connection)
+          log?.debug('Offer rejected after the control channel closed — ignoring');
+          return;
+        }
         this.callbacks.onError(
           err instanceof Error ? `Failed to create WebRTC offer: ${err.message}` : 'Failed to create WebRTC offer',
           err

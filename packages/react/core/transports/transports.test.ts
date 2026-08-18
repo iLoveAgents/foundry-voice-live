@@ -297,6 +297,34 @@ describe('WebRtcTransport', () => {
     expect(cb.onError).not.toHaveBeenCalledWith('Timed out waiting for the WebRTC SDP answer');
   });
 
+  it('stays silent when a pending offer rejects after the control socket closed', async () => {
+    const cb = makeCallbacks();
+    let failOffer: (err: Error) => void = () => undefined;
+    const t = new WebRtcTransport(cb, {
+      createPeerConnection: () => {
+        const pc = new FakePeerConnection();
+        pc.createOffer = () =>
+          new Promise((_resolve, reject) => {
+            failOffer = reject;
+          }) as never;
+        return pc as unknown as RTCPeerConnection;
+      },
+    });
+    t.connect('wss://x/calls', {});
+    const ws = FakeWebSocket.instances.at(-1)!;
+    ws.open();
+    ws.drop(1006); // the control channel dies first and reports it
+    expect(cb.onClose).toHaveBeenCalledTimes(1);
+
+    failOffer(new Error('peer connection closed'));
+    await vi.waitFor(() => expect(cb.onClose).toHaveBeenCalledTimes(1));
+    // the rejection is a consequence of that close, not a second failure
+    expect(cb.onError).not.toHaveBeenCalledWith(
+      expect.stringMatching(/Failed to create WebRTC offer/),
+      expect.anything()
+    );
+  });
+
   it('reports offer failures as errors and closes the control channel', async () => {
     const cb = makeCallbacks();
     const t = new WebRtcTransport(cb, {
