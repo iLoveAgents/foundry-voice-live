@@ -119,16 +119,23 @@ export async function createWebRtcOffer(options: CreateWebRtcOfferOptions): Prom
     ? pc.addTransceiver(options.localTrack, { direction: 'sendrecv' })
     : pc.addTransceiver('audio', { direction: 'sendrecv' });
 
-  const offer = await pc.createOffer();
-  await pc.setLocalDescription(offer);
-  await waitForIceGathering(pc, options.iceGatheringTimeoutMs);
+  // From here on the caller has no handle yet, so any failure must clean up after itself —
+  // otherwise every failed attempt leaks a peer connection and a data channel
+  try {
+    const offer = await pc.createOffer();
+    await pc.setLocalDescription(offer);
+    await waitForIceGathering(pc, options.iceGatheringTimeoutMs);
 
-  const sdpOffer = pc.localDescription?.sdp ?? offer.sdp;
-  if (!sdpOffer) {
-    throw new Error('Failed to create WebRTC SDP offer.');
+    const sdpOffer = pc.localDescription?.sdp ?? offer.sdp;
+    if (!sdpOffer) {
+      throw new Error('Failed to create WebRTC SDP offer.');
+    }
+
+    return { handle: { pc, dataChannel, audioTransceiver }, sdpOffer };
+  } catch (err) {
+    closeWebRtc({ pc, dataChannel, audioTransceiver }, null);
+    throw err;
   }
-
-  return { handle: { pc, dataChannel, audioTransceiver }, sdpOffer };
 }
 
 /**

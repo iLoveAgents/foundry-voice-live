@@ -205,6 +205,14 @@ export class WebRtcTransport implements VoiceLiveTransport {
     ws.onclose = (event: CloseEvent): void => {
       log?.info(`Control channel closed - Code: ${event.code}, Reason: ${event.reason || 'none'}, Clean: ${event.wasClean}`);
       this.currentState = 'closed';
+      // Invalidate any negotiation still in flight: an offer that resolves after this must not
+      // send SDP on the dead socket or arm a negotiation timer that fires 30 s later
+      this.generation += 1;
+      if (this.ws === ws) this.ws = null;
+      if (this.negotiationTimer) {
+        clearTimeout(this.negotiationTimer);
+        this.negotiationTimer = null;
+      }
       this.teardownMedia();
       this.callbacks.onClose({ code: event.code, reason: event.reason, wasClean: event.wasClean });
     };

@@ -1390,6 +1390,12 @@ export interface UseVoiceLiveReturn {
    */
   commitInputAudio: () => void;
 
+  /**
+   * Ask the model to respond now (manual turn control, or after a tool result you sent yourself).
+   * Serialized with every other turn, so it can never overlap a running response.
+   */
+  createResponse: () => void;
+
   /** Approve or deny a pending MCP tool call (`mcp_approval_response`) */
   approveMcpCall: (approvalRequestId: string, approve: boolean) => void;
 

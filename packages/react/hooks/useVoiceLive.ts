@@ -234,6 +234,7 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
   const openConnectionRef = useRef<(connectionScope: Scope, mode: 'initial' | 'reconnect') => Promise<void>>();
   const handleUnexpectedCloseRef = useRef<(connectionScope: Scope, info: TransportCloseInfo) => void>();
   const requestResponseRef = useRef<() => void>();
+  const endConnectionRef = useRef<(options: { resetMute: boolean }) => void>();
 
   /**
    * Handle audio data from microphone (WebSocket transport)
@@ -392,6 +393,14 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
   const commitInputAudio = useCallback((): void => {
     sendEvent({ type: 'input_audio_buffer.commit' });
   }, [sendEvent]);
+
+  /**
+   * Ask the model to respond now (manual turn control, or continuing after a server-side tool).
+   * Goes through the same gate as `sendText()`, so it can never overlap another response.
+   */
+  const createResponse = useCallback((): void => {
+    requestResponse();
+  }, [requestResponse]);
 
   /** Approve or deny a pending MCP tool call */
   const approveMcpCall = useCallback(
@@ -920,17 +929,20 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
         safeCall('onReconnecting', configRef.current.onReconnecting, attempt, delayMs);
         return;
       }
-      if (policy && reconnectAttemptRef.current > 0) {
-        const message = `Connection lost — giving up after ${reconnectAttemptRef.current} reconnect attempt(s)`;
+      const gaveUp = policy !== null && reconnectAttemptRef.current > 0;
+      const message = gaveUp
+        ? `Connection lost — giving up after ${reconnectAttemptRef.current} reconnect attempt(s)`
+        : null;
+      // Nothing will follow this close, so end the whole connection (microphone included).
+      // The mute preference is kept: it belongs to the user, not to the connection.
+      endConnectionRef.current?.({ resetMute: false });
+      if (message) {
         log.error(message);
         setError(message);
         setConnectionState('error');
       } else {
         setConnectionState((state) => (state === 'error' ? state : 'disconnected'));
       }
-      reconnectAttemptRef.current = 0;
-      setReconnectAttempt(0);
-      releaseConnection({ keepAudio: false });
     },
     [log, releaseConnection, safeCall]
   );
@@ -1137,32 +1149,47 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
   /**
    * Disconnect from Voice Live API
    */
+  /**
+   * End the connection lifetime: no reconnect will follow, so the microphone (which is
+   * deliberately kept *across* reconnect attempts) must be released too. Used by `disconnect()`
+   * and by every terminal close — leaving the microphone live after the session ended would keep
+   * the browser's recording indicator on.
+   */
+  const endConnection = useCallback(
+    (options: { resetMute: boolean }): void => {
+      connectionScopeRef.current?.abort();
+      connectionScopeRef.current = null;
+      if (reconnectTimerRef.current) {
+        clearTimeout(reconnectTimerRef.current);
+        reconnectTimerRef.current = null;
+      }
+      reconnectAttemptRef.current = 0;
+      greetingSentRef.current = false;
+
+      // Stop microphone capture (both transports)
+      stopWsMic();
+      micRef.current?.stop();
+      if (options.resetMute) micRef.current?.setMuted(false);
+      setRtcMicActive(false);
+      if (options.resetMute) setRtcMuted(false);
+
+      releaseConnection({ keepAudio: false });
+
+      setReconnectAttempt(0);
+      setIsReady(false);
+      setSessionState('idle');
+    },
+    [stopWsMic, releaseConnection]
+  );
+
+  endConnectionRef.current = endConnection;
+
   const disconnect = useCallback((): void => {
     log.info('Disconnecting...');
-    connectionScopeRef.current?.abort();
-    connectionScopeRef.current = null;
-    if (reconnectTimerRef.current) {
-      clearTimeout(reconnectTimerRef.current);
-      reconnectTimerRef.current = null;
-    }
-    reconnectAttemptRef.current = 0;
-    greetingSentRef.current = false;
-
-    // Stop microphone capture (both transports)
-    stopWsMic();
-    micRef.current?.stop();
-    micRef.current?.setMuted(false);
-    setRtcMicActive(false);
-    setRtcMuted(false);
-
-    releaseConnection({ keepAudio: false });
-
+    endConnection({ resetMute: true });
     setSessionExpiresAt(null);
-    setReconnectAttempt(0);
-    setIsReady(false);
-    setSessionState('idle');
     setConnectionState('disconnected');
-  }, [stopWsMic, releaseConnection, log]);
+  }, [endConnection, log]);
 
   // Auto-connect if requested (connect is stable, so this runs once per mount / autoConnect change)
   useEffect(() => {
@@ -1232,6 +1259,7 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
     cancelResponse,
     clearInputAudio,
     commitInputAudio,
+    createResponse,
     approveMcpCall,
     getAudioPlaybackTime,
   };

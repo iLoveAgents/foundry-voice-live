@@ -42,6 +42,10 @@ Targets Voice Live API **`2026-07-15` (GA)**. This release contains breaking cha
 - `ConnectionState` gains `'reconnecting'`; an unexpected close without `reconnect` now releases the audio graph (`audioStream`/`audioContext` become null until the next `connect()`).
 
 #### Fixed
+- **`createResponse()`** (new hook API): asks the model to respond now — for manual turn control or after a server-side tool — through the same serialization as every other turn. Previously the only way was sending a raw `response.create`, which bypassed the gate and could overlap a user turn (the MCP example did exactly that).
+- A terminal close (reconnect disabled, or attempts exhausted) now ends the whole connection, **including the microphone**. It is deliberately kept across reconnect *attempts*, but leaving it live after the session ended kept the browser's recording indicator on. The user's mute preference survives.
+- `createWebRtcOffer()` closes the peer connection and data channel when offer creation fails — the caller never receives a handle for a failed offer, so each failed attempt leaked one of each.
+- A control-channel close during ICE gathering invalidates the pending negotiation, instead of letting the resolved offer send SDP on a dead socket and arm a 30 s timer that fired a spurious error afterwards.
 - The response gate only advances when a request actually reached the service: `sendText()` during a reconnect (or while disconnected) no longer leaves it busy, which would have queued every later turn behind a response that never starts. A rejected request also releases the turn queued behind it instead of dropping it and emitting a phantom `response.create` later.
 - `startMic()` before `connect()` keeps its track again (the connection-scope refactor briefly released it), so the documented "pre-arm the microphone from a user gesture" pattern works.
 - A tool batch from a superseded session can no longer delete the live session's batch stored under the same (per-session) response id, which would have left the new tool outputs without their follow-up response.

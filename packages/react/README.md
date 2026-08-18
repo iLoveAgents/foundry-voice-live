@@ -506,6 +506,7 @@ Returns:
   cancelResponse: () => void;
   clearInputAudio: () => void;
   commitInputAudio: () => void;
+  createResponse: () => void;      // ask for a response now (serialized with every other turn)
   approveMcpCall: (approvalRequestId: string, approve: boolean) => void;
   getAudioPlaybackTime: () => number | null; // viseme sync (websocket transport)
 }

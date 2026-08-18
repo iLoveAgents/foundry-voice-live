@@ -241,6 +241,62 @@ describe('WebRtcTransport', () => {
     expect(second.cb.onClose).toHaveBeenCalledWith({ code: 1006, reason: 'gone', wasClean: false });
   });
 
+  it('does not leave a peer connection behind when offer creation fails', async () => {
+    const cb = makeCallbacks();
+    let created: FakePeerConnection | null = null;
+    const t = new WebRtcTransport(cb, {
+      createPeerConnection: () => {
+        created = new FakePeerConnection();
+        created.createOffer = async () => {
+          throw new Error('createOffer failed');
+        };
+        return created as unknown as RTCPeerConnection;
+      },
+    });
+    t.connect('wss://x/calls', {});
+    const ws = FakeWebSocket.instances.at(-1)!;
+    ws.open();
+    await vi.waitFor(() => expect(cb.onError).toHaveBeenCalled());
+    // the caller never receives a handle for a failed offer, so createWebRtcOffer must clean up
+    expect(created!.closed).toBe(true);
+    expect(created!.dataChannels[0]!.closed).toBe(true);
+  });
+
+  it('invalidates an in-flight negotiation when the control socket closes first', async () => {
+    vi.useFakeTimers();
+    const cb = makeCallbacks();
+    let releaseGathering: () => void = () => undefined;
+    const t = new WebRtcTransport(cb, {
+      negotiationTimeoutMs: 50,
+      createPeerConnection: () => {
+        const pc = new FakePeerConnection();
+        pc.iceGatheringState = 'gathering';
+        // hold ICE gathering open so the offer is still pending when the socket closes
+        pc.addEventListener = ((type: string, listener: () => void) => {
+          if (type === 'icegatheringstatechange') {
+            releaseGathering = () => {
+              pc.iceGatheringState = 'complete';
+              listener();
+            };
+          }
+        }) as never;
+        return pc as unknown as RTCPeerConnection;
+      },
+    });
+    t.connect('wss://x/calls', {});
+    const ws = FakeWebSocket.instances.at(-1)!;
+    ws.open();
+    ws.drop(1006); // control channel dies while the offer is still gathering
+    expect(cb.onClose).toHaveBeenCalledTimes(1);
+
+    releaseGathering();
+    await vi.advanceTimersByTimeAsync(200);
+    // the stale continuation must not send SDP on the dead socket, nor arm a negotiation timer
+    expect(ws.lastSent('rtc.call.sdp.create')).toBeUndefined();
+    expect(cb.onClose).toHaveBeenCalledTimes(1);
+    expect(cb.onError).not.toHaveBeenCalledWith('Timed out waiting for the WebRTC SDP answer');
+  });
+
   it('reports offer failures as errors and closes the control channel', async () => {
     const cb = makeCallbacks();
     const t = new WebRtcTransport(cb, {

@@ -928,4 +928,107 @@ describe('useVoiceLive (reconnect)', () => {
     expect(ws2.sent.filter((e) => e.type === 'response.create')).toHaveLength(1);
     expect(hook.result.current.isReady).toBe(true);
   });
+
+  it('stops the microphone when a close settles terminally (no reconnect)', async () => {
+    const { stream, track } = makeFakeMicStream();
+    const restoreFakes = installBrowserFakes({ getUserMedia: async () => stream as unknown as MediaStream });
+    try {
+      const hook = renderHook(() =>
+        useVoiceLive({
+          ...baseConfig,
+          connection: { resourceName: 'my-res', apiKey: 'secret', transport: 'webrtc' },
+          autoStartMic: true,
+        })
+      );
+      await act(async () => {
+        await hook.result.current.connect();
+      });
+      const ws = FakeWebSocket.instances.at(-1)!;
+      await act(async () => {
+        ws.open();
+      });
+      await vi.waitFor(() => expect(ws.lastSent('rtc.call.sdp.create')).toBeTruthy());
+      const pc = FakePeerConnection.instances.at(-1)!;
+      await act(async () => {
+        pc.setConnectionState('connected');
+        pc.dataChannels[0]!.open();
+      });
+      await vi.waitFor(() => expect(hook.result.current.isMicActive).toBe(true));
+
+      // reconnect is disabled, so this close is the end of the connection
+      await act(async () => {
+        ws.drop(1006);
+      });
+      expect(hook.result.current.connectionState).toBe('disconnected');
+      // leaving the track live would keep the browser's recording indicator on
+      expect(track.stop).toHaveBeenCalled();
+      expect(hook.result.current.isMicActive).toBe(false);
+    } finally {
+      restoreFakes();
+    }
+  });
+
+  it('keeps the microphone across reconnect attempts but releases it when they are exhausted', async () => {
+    const { stream, track } = makeFakeMicStream();
+    const restoreFakes = installBrowserFakes({ getUserMedia: async () => stream as unknown as MediaStream });
+    try {
+      const hook = renderHook(() =>
+        useVoiceLive({
+          ...baseConfig,
+          connection: { resourceName: 'my-res', apiKey: 'secret', transport: 'webrtc' },
+          autoStartMic: true,
+          reconnect: { initialDelayMs: 10, jitter: 0, maxAttempts: 1 },
+        })
+      );
+      await act(async () => {
+        await hook.result.current.connect();
+      });
+      const ws = FakeWebSocket.instances.at(-1)!;
+      await act(async () => {
+        ws.open();
+      });
+      await vi.waitFor(() => expect(ws.lastSent('rtc.call.sdp.create')).toBeTruthy());
+      const pc = FakePeerConnection.instances.at(-1)!;
+      await act(async () => {
+        pc.setConnectionState('connected');
+        pc.dataChannels[0]!.open();
+      });
+      await vi.waitFor(() => expect(hook.result.current.isMicActive).toBe(true));
+
+      await act(async () => {
+        ws.drop(1006);
+      });
+      // during backoff the microphone is deliberately kept (it belongs to the connection)
+      expect(hook.result.current.connectionState).toBe('reconnecting');
+      expect(track.stop).not.toHaveBeenCalled();
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(10);
+      });
+      const ws2 = FakeWebSocket.instances.at(-1)!;
+      await act(async () => {
+        ws2.open();
+        ws2.drop(1006); // the only allowed attempt fails
+      });
+      expect(hook.result.current.connectionState).toBe('error');
+      expect(track.stop).toHaveBeenCalled();
+      expect(hook.result.current.isMicActive).toBe(false);
+    } finally {
+      restoreFakes();
+    }
+  });
+
+  it('createResponse() is serialized like every other turn', async () => {
+    const { hook, ws } = await connectAndReady(baseConfig);
+    await act(async () => {
+      hook.result.current.createResponse();
+      hook.result.current.createResponse(); // a second one must be queued, not sent
+    });
+    expect(ws.sent.filter((e) => e.type === 'response.create')).toHaveLength(1);
+    await act(async () => {
+      ws.receive({ type: 'response.created', response: { id: 'r1' } });
+      ws.receive({ type: 'response.done', response: { id: 'r1' } });
+    });
+    expect(ws.sent.filter((e) => e.type === 'response.create')).toHaveLength(2);
+  });
 });

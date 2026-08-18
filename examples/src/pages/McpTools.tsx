@@ -45,7 +45,13 @@ export function McpTools(): JSX.Element {
   const { transcripts, onTranscript, clear: clearTranscripts } = useTranscripts();
 
   // Response bookkeeping so we can nudge the model after a server-side tool call
-  const sendEventRef = useRef<UseVoiceLiveReturn['sendEvent']>(() => {});
+  const sendEventRef = useRef<UseVoiceLiveReturn['sendEvent']>(() => false);
+  /**
+   * `createResponse()` instead of a raw `response.create`: the hook serializes turns
+   * (`ResponseGate`), so a follow-up here can never overlap a turn the user submitted meanwhile —
+   * the service rejects overlapping responses.
+   */
+  const createResponseRef = useRef<UseVoiceLiveReturn['createResponse']>(() => {});
   const responseActiveRef = useRef(false);
   const mcpCallsInProgressRef = useRef(0);
   const followUpNeededRef = useRef(false);
@@ -80,7 +86,7 @@ export function McpTools(): JSX.Element {
             const spoke = (event.response.output ?? []).some((item) => item.type === 'message');
             if (!spoke) {
               addLog('Tool result received - requesting the spoken answer');
-              sendEventRef.current({ type: 'response.create' });
+              createResponseRef.current();
             }
           }
           break;
@@ -145,7 +151,7 @@ export function McpTools(): JSX.Element {
             if (responseActiveRef.current) {
               followUpNeededRef.current = true; // decided at response.done
             } else {
-              sendEventRef.current({ type: 'response.create' });
+              createResponseRef.current();
             }
           }
           break;
@@ -165,6 +171,7 @@ export function McpTools(): JSX.Element {
     sessionState,
     audioStream,
     sendEvent,
+    createResponse,
     approveMcpCall,
     isMuted,
     toggleMute,
@@ -193,7 +200,8 @@ export function McpTools(): JSX.Element {
 
   useEffect(() => {
     sendEventRef.current = sendEvent;
-  }, [sendEvent]);
+    createResponseRef.current = createResponse;
+  }, [sendEvent, createResponse]);
 
   useEffect(() => {
     if (audioRef.current && audioStream) {
