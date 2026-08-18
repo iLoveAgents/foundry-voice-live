@@ -1,0 +1,15 @@
+# The proxy image is built from the repository root (it needs the workspace lockfile),
+# so everything that is not an input to that build is excluded here.
+.git
+.github
+.claude
+**/node_modules
+**/dist
+**/.turbo
+**/coverage
+examples
+**/.env
+**/.env.*
+!**/.env.example
+*.log
+.DS_Store

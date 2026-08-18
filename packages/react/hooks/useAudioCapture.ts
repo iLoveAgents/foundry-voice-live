@@ -94,6 +94,8 @@ export function useAudioCapture({
    * the resuming continuation, leaving `isCapturing` true with no stream (silently dead capture).
    */
   const startGenerationRef = useRef<number>(0);
+  /** The start attempt in flight, so concurrent callers share it instead of racing */
+  const pendingStartRef = useRef<Promise<void> | null>(null);
 
   // Buffer size: 2400 samples = 4800 bytes = 100ms at 24kHz mono PCM16
   // Reduces WebSocket message frequency by batching small worklet outputs
@@ -129,7 +131,7 @@ export function useAudioCapture({
   /**
    * Start capturing audio from the microphone
    */
-  const startCapture = useCallback(async () => {
+  const runCapture = useCallback(async () => {
     try {
       setError(null);
 
@@ -211,11 +213,31 @@ export function useAudioCapture({
   }, [sampleRate, workletPath, audioConstraints, onAudioData, flushAudioBuffer]);
 
   /**
+   * Start capturing, coalescing concurrent calls.
+   *
+   * `getUserMedia` and the worklet module both take a while, and `isCapturing` only flips at the
+   * end — so two calls in that window (a re-rendered auto-start effect, a consumer calling
+   * `startMic()` twice) would each acquire a stream and the second would overwrite the refs of
+   * the first, leaving a microphone recording that nothing can stop. Callers share one attempt.
+   */
+  const startCapture = useCallback(async (): Promise<void> => {
+    if (pendingStartRef.current) return pendingStartRef.current;
+    if (streamRef.current) return; // already capturing
+    const attempt = runCapture().finally(() => {
+      if (pendingStartRef.current === attempt) pendingStartRef.current = null;
+    });
+    pendingStartRef.current = attempt;
+    return attempt;
+  }, [runCapture]);
+
+  /**
    * Stop capturing audio and release resources
    */
   const stopCapture = useCallback(() => {
-    // Cancel any acquisition still in flight (see startGenerationRef)
+    // Cancel any acquisition still in flight (see startGenerationRef). The attempt cleans up what
+    // it created; dropping the shared promise means a later startCapture() begins a fresh one.
     startGenerationRef.current += 1;
+    pendingStartRef.current = null;
     // Disconnect and cleanup audio nodes
     if (sourceRef.current) {
       sourceRef.current.disconnect();

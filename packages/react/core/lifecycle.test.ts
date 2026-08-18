@@ -218,10 +218,36 @@ describe('ResponseGate', () => {
     expect(gate.currentState).toBe('idle');
   });
 
+  it('keeps a speculative reservation when an unrelated error arrives', () => {
+    const gate = new ResponseGate();
+    gate.reserveAutomatic();
+    // an error provoked by some other client event (an empty commit, an invalid session.update)
+    // arrives without an event id — it cannot be the rejection of a request never sent
+    expect(gate.onError()).toBe(false);
+    expect(gate.isSpeculative).toBe(true);
+    expect(gate.request()).toBe(false); // a user turn is still held back from overlapping
+  });
+
+  it('takes an automatic reservation announced while a response was running', () => {
+    const gate = new ResponseGate();
+    gate.request();
+    gate.onResponseCreated();
+    gate.reserveAutomatic(); // server VAD committed the next turn mid-response
+    expect(gate.request()).toBe(false); // a user turn queues
+    // the queued turn must NOT be sent now: the service is about to start its own response
+    expect(gate.onResponseDone()).toBe(false);
+    expect(gate.isSpeculative).toBe(true);
+    expect(gate.hasQueuedRequest).toBe(true);
+    // ...and when no automatic response shows up, the queued turn still goes out
+    expect(gate.releaseSpeculative()).toBe(true);
+    expect(gate.currentState).toBe('requested');
+  });
+
   it('reset() forgets state for a new session', () => {
     const gate = new ResponseGate();
     gate.request();
     gate.request(); // queue one
+    gate.reserveAutomatic(); // and a deferred automatic reservation
     gate.reset();
     expect(gate.currentState).toBe('idle');
     expect(gate.hasQueuedRequest).toBe(false);

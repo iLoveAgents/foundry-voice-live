@@ -53,9 +53,16 @@ export function resolveConnectionMode(connection: VoiceLiveConnectionConfig): Co
  */
 function parseProxyUrl(url: string): { parsed: URL; serialize: (u: URL) => string } {
   const isAbsolute = /^[a-z][a-z0-9+.-]*:/i.test(url);
+  // `//proxy.example/ws` is protocol-relative: browsers accept it and resolve the scheme from the
+  // page. It carries a host, so serializing it as a path would silently redirect the session
+  // (with the user's token) to the page's own origin.
+  const isProtocolRelative = !isAbsolute && url.startsWith('//');
   const parsed = new URL(url, isAbsolute ? undefined : 'ws://relative.invalid');
-  const serialize = (u: URL): string =>
-    isAbsolute ? u.toString() : `${u.pathname}${u.search}${u.hash}`;
+  const serialize = (u: URL): string => {
+    if (isAbsolute) return u.toString();
+    if (isProtocolRelative) return `//${u.host}${u.pathname}${u.search}${u.hash}`;
+    return `${u.pathname}${u.search}${u.hash}`;
+  };
   return { parsed, serialize };
 }
 
@@ -210,9 +217,39 @@ export function validateTransport(
   }
 }
 
+/** Query parameters that carry a credential and must never reach a log */
+const SECRET_PARAMS = new Set(['token', 'api-key', 'apikey', 'authorization']);
+
 /**
  * Mask secrets (api-key, Authorization, token) in a URL for logging.
+ *
+ * Parameter *names* are decoded and lower-cased before matching, because that is how a server
+ * reads them: `?to%6Ben=…` and `?TOKEN=…` authenticate exactly like `?token=…`, so a raw-string
+ * match on a hand-written spelling would print the credential in the clear.
  */
 export function redactUrl(url: string): string {
-  return url.replace(/([?&])(api-key|Authorization|authorization|token)=[^&]*/g, '$1$2=***');
+  const isAbsolute = /^[a-z][a-z0-9+.-]*:/i.test(url);
+  try {
+    const parsed = new URL(url, isAbsolute ? undefined : 'ws://redact.invalid');
+    let redacted = false;
+    for (const key of [...parsed.searchParams.keys()]) {
+      if (SECRET_PARAMS.has(key.trim().toLowerCase())) {
+        parsed.searchParams.set(key, '***');
+        redacted = true;
+      }
+    }
+    if (!redacted) return url;
+    return isAbsolute ? parsed.toString() : `${parsed.pathname}${parsed.search}${parsed.hash}`;
+  } catch {
+    // Unparseable: fall back to a conservative textual mask rather than logging it raw
+    return url.replace(/([?&])([^=&]*)=[^&]*/g, (match, sep: string, key: string) => {
+      let name = key;
+      try {
+        name = decodeURIComponent(key);
+      } catch {
+        // keep the raw name
+      }
+      return SECRET_PARAMS.has(name.trim().toLowerCase()) ? `${sep}${key}=***` : match;
+    });
+  }
 }

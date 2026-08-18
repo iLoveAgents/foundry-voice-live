@@ -353,6 +353,14 @@ describe('WebRtcTransport', () => {
     await expect(attach).rejects.toThrow('device gone');
   });
 
+  it('rejects a microphone attachment requested after the transport closed', async () => {
+    const t = new WebRtcTransport(makeCallbacks());
+    t.connect('wss://x/calls', {});
+    t.close();
+    // nothing would ever settle a pending attachment here — the caller must learn it failed
+    await expect(t.setMicrophoneTrack({ kind: 'audio' } as never)).rejects.toThrow(/closed/);
+  });
+
   it('settles a pending microphone attachment when the socket closes remotely', async () => {
     const cb = makeCallbacks();
     const t = new WebRtcTransport(cb);

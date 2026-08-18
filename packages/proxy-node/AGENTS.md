@@ -31,7 +31,7 @@ src/
   url.ts              # Pure: buildAzureUrl, resolveMode/Transport/ApiVersion, redactUrl, defaults
   packageInfo.ts      # Reads name/version from package.json (GET / info endpoint, banner)
   types.ts            # TypeScript type definitions (QueryParams, ProxyConfig, ProxyMode, ...)
-  __tests__/          # Unit tests (url.test.ts, packageInfo.test.ts)
+  __tests__/          # Unit tests (url, security, closeFrame, pendingQueue, packageInfo)
 Dockerfile
 docker-compose.yml
 ```

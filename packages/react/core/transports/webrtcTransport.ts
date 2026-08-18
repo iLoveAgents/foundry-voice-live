@@ -334,6 +334,11 @@ export class WebRtcTransport implements VoiceLiveTransport {
   }
 
   async setMicrophoneTrack(track: MediaStreamTrack | null): Promise<void> {
+    if (this.currentState === 'closed') {
+      // Nothing will ever settle a pending attachment on a dead transport: the socket is gone with
+      // its handlers detached, so the caller would wait forever instead of learning it failed
+      throw new Error('Transport is closed — the microphone cannot be attached');
+    }
     if (this.handle) {
       await this.handle.audioTransceiver.sender.replaceTrack(track);
       return;

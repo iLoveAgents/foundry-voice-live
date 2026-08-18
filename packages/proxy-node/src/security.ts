@@ -35,3 +35,25 @@ export function isOriginAllowed(origin: string | undefined, allowed: string[]): 
   const candidate = normalizeOrigin(origin);
   return allowed.some((entry) => normalizeOrigin(entry) === candidate);
 }
+
+/**
+ * Read a positive-integer setting from the environment.
+ *
+ * `parseInt("unlimited")` is `NaN`, and `NaN` silently *removes* a limit rather than enforcing it:
+ * `active >= NaN` is always false, and `ws` turns `maxPayload: NaN` into "no cap". A bad value
+ * must therefore fall back to the default, loudly, instead of disabling the protection it configures.
+ */
+export function readPositiveInt(
+  raw: string | undefined,
+  fallback: number,
+  name: string,
+  warn: (message: string) => void = (): void => undefined
+): number {
+  if (raw === undefined || raw.trim() === "") return fallback;
+  const value = Number(raw);
+  if (!Number.isFinite(value) || !Number.isInteger(value) || value <= 0) {
+    warn(`[Config] ${name}="${raw}" is not a positive integer — using ${fallback}`);
+    return fallback;
+  }
+  return value;
+}

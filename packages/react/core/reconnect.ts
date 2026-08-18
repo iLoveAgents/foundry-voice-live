@@ -53,10 +53,23 @@ export function computeBackoffDelay(
 const NORMAL_CLOSE_CODES = new Set([1000]);
 
 /**
+ * Close codes that say *this request* is unacceptable, so reconnecting with the same URL and
+ * credentials would fail identically. Retrying them only delays the error the caller must see.
+ *
+ * - `1003` unsupported data
+ * - `1008` policy violation — the proxy closes with this when the connection parameters are
+ *   invalid, and services use it for authorization failures
+ * - `1010` a required extension was refused
+ */
+const FATAL_CLOSE_CODES = new Set([1003, 1008, 1010]);
+
+/**
  * Whether a control-channel close should trigger a reconnect attempt: anything that was not
- * a clean, normal closure (network drops, 1006 abnormal closure, server restarts, timeouts).
+ * a clean, normal closure (network drops, 1006 abnormal closure, server restarts, timeouts) and
+ * not a rejection of the request itself.
  */
 export function isReconnectableClose(info: TransportCloseInfo): boolean {
   if (info.wasClean && NORMAL_CLOSE_CODES.has(info.code)) return false;
+  if (FATAL_CLOSE_CODES.has(info.code)) return false;
   return true;
 }

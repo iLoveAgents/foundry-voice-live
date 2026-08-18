@@ -51,6 +51,14 @@ Targets Voice Live API **`2026-07-15` (GA)**. This release contains breaking cha
 - A `sendToolResult()` you call yourself counts towards the response's tool batch, so it shares the single follow-up instead of racing a second one; the `toolExecutor` contract (returning `undefined` means no automatic output for that call) is now spelled out in the README.
 - A microphone attachment requested before the WebRTC transceiver exists no longer resolves optimistically: the promise settles with the real outcome, so `isMicActive` cannot claim a live microphone that never attached.
 - A microphone attachment still waiting for the transceiver is now also settled when the control channel closes remotely or the offer fails, not only on an explicit `close()` — `startMic()` used to hang forever if the session died during negotiation.
+- `setMicrophoneTrack()` on a closed transport rejects instead of returning a promise nothing can ever settle.
+- A speculative response reservation survives errors caused by *other* client events: they arrive without an `event_id` and used to release the reservation that exists to keep the next turn from overlapping the service's own response. An automatic response announced *during* another one is now remembered and reserved when that one finishes, instead of being forgotten (a queued turn could be sent straight into the window the service was about to use).
+- A tool call arriving after its response was already answered (late control-channel delivery) sends its output but no longer triggers a **second** `response.create` for the same turn — the assistant used to answer twice.
+- A tool batch created before `response.done` now has a watchdog too: if that `response.done` never arrives, the batch completes instead of silently swallowing the user turn handed to it.
+- `useAudioCapture` coalesces concurrent `startCapture()` calls. `isCapturing` only flips after `getUserMedia` and the worklet load, so two calls in that window each acquired a stream and the second overwrote the first's refs — leaving a microphone recording that `stopCapture()` could not release.
+- Reconnect no longer retries closes that reject the request itself (`1003`, `1008`, `1010`) — the same URL and credentials would be rejected identically.
+- A protocol-relative `proxyUrl` (`//proxy.example/ws`) keeps its host when parameters are added; it used to collapse to a path, pointing the session (with the user's token) at the page's own origin.
+- `redactUrl()` decodes and lower-cases parameter names before matching, so `?to%6Ben=` / `?API-KEY=` are redacted like their plain spellings.
 - The microphone controls (`startMic` / `stopMic` / `toggleMute` / `isMicActive` / `isMuted`) act on the transport of the **live** session rather than the current `connection.transport` prop: changing the prop mid-session only takes effect on the next connect, and until then the controls kept operating on the wrong capture path.
 - Foundry agent sessions reserve the response slot on `speech_stopped` like every other session — they use server VAD too, so a turn submitted before `response.created` could overlap the response the agent was already starting.
 - Avatar tracks delivered without an associated stream (some browsers) are wrapped instead of dropped, which used to leave a blank avatar and no audio on a session that reported itself ready.
@@ -129,6 +137,11 @@ Targets Voice Live API **`2026-07-15` (GA)**. This release contains breaking cha
 - Keyless standard mode: falls back to `DefaultAzureCredential` when neither `token` nor `FOUNDRY_API_KEY` is configured.
 - Pure `src/url.ts` module with real unit tests.
 - Log/telemetry redaction decodes parameter names before matching, so a percent-encoded secret parameter (`?to%6Ben=…`, which the server still accepts) is redacted instead of printed verbatim.
+- **The shared API key is sent as an `api-key` header instead of a query parameter.** The upstream handshake is an ordinary HTTPS request, so Application Insights dependency collection exported the full URL — key included — to telemetry. Microsoft documents the header for non-browser clients.
+- A disallowed origin is rejected during the WebSocket handshake (HTTP `403`). The CORS middleware runs *after* `express-ws` has completed the upgrade, so its rejection reached the browser as a close without a status code (`1005`), indistinguishable from a network drop.
+- A connection that fails before the relay starts closes with an explicit code — `1008` for invalid connection parameters, `1011` for a proxy/upstream failure — instead of `1005`, so a reconnecting client can tell "your request is wrong" from "try again".
+- Invalid `MAX_CONNECTIONS` / `MAX_FRAME_BYTES` / `RATE_LIMIT_*` / `PORT` values fall back to the default with a warning. `parseInt("unlimited")` is `NaN`, and `NaN` *removed* the limit: `active >= NaN` is always false and `ws` reads `maxPayload: NaN` as unlimited.
+- New `TRUST_PROXY` setting: behind an ingress every request carries the balancer's IP, collapsing the per-IP rate limit into one global bucket that a single client can exhaust for everyone.
 
 #### Changed
 - Default `API_VERSION` is `2026-07-15` (was `2025-10-01`); no `API_VERSION` override needed for Foundry agents anymore.

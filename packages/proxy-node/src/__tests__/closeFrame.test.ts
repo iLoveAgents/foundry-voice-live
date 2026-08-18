@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { toClientCloseFrame } from "../closeFrame.js";
+import { connectFailureCloseFrame, toClientCloseFrame } from "../closeFrame.js";
 
 describe("toClientCloseFrame", () => {
   it("passes a normal upstream close through unchanged", () => {
@@ -45,5 +45,30 @@ describe("toClientCloseFrame", () => {
     const emojiFrame = toClientCloseFrame(1011, emoji);
     expect(Buffer.byteLength(emojiFrame.reason, "utf8")).toBeLessThanOrEqual(123);
     expect(emojiFrame.reason).not.toContain("�");
+  });
+});
+
+describe("connectFailureCloseFrame", () => {
+  it("tells the client its own request was wrong (1008) — retrying it unchanged cannot help", () => {
+    expect(connectFailureCloseFrame(true)).toEqual({
+      code: 1008,
+      reason: "Invalid connection request",
+    });
+  });
+
+  it("reports a proxy/upstream failure as 1011, which a client may retry", () => {
+    expect(connectFailureCloseFrame(false)).toEqual({
+      code: 1011,
+      reason: "Upstream connection failed",
+    });
+  });
+
+  it("never closes without a code (1005 is indistinguishable from a dropped connection)", () => {
+    for (const isClientError of [true, false]) {
+      const frame = connectFailureCloseFrame(isClientError);
+      expect(frame.code).toBeGreaterThanOrEqual(1000);
+      expect(frame.code).not.toBe(1005);
+      expect(frame.reason.length).toBeGreaterThan(0);
+    }
   });
 });

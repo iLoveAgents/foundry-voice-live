@@ -41,3 +41,17 @@ export function toClientCloseFrame(upstreamCode: number, upstreamReason = ""): C
   }
   return { code, reason };
 }
+
+/**
+ * Close code for a connection that failed before the relay was established.
+ *
+ * The distinction matters to the browser: `1008` says "your request was wrong, retrying it
+ * unchanged will fail again", while `1011` says "the proxy or upstream failed, a retry may
+ * work". Closing without a code at all would arrive as `1005 "no status"`, which an SDK client
+ * with reconnect enabled cannot tell apart from a network drop.
+ */
+export function connectFailureCloseFrame(isClientRequestError: boolean): ClientCloseFrame {
+  return isClientRequestError
+    ? { code: 1008, reason: "Invalid connection request" }
+    : { code: 1011, reason: "Upstream connection failed" };
+}

@@ -390,6 +390,12 @@ describe('reconnect policy', () => {
     expect(isReconnectableClose({ code: 1006, reason: '', wasClean: false })).toBe(true);
     expect(isReconnectableClose({ code: 1011, reason: 'server error', wasClean: true })).toBe(true);
     expect(isReconnectableClose({ code: 4008, reason: 'timeout', wasClean: false })).toBe(true);
+    // rejections of the request itself: the same URL and credentials would be rejected again
+    expect(isReconnectableClose({ code: 1008, reason: 'Invalid connection request', wasClean: true })).toBe(
+      false
+    );
+    expect(isReconnectableClose({ code: 1003, reason: 'unsupported data', wasClean: true })).toBe(false);
+    expect(isReconnectableClose({ code: 1010, reason: 'extension required', wasClean: false })).toBe(false);
   });
 });
 

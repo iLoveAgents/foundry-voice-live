@@ -242,3 +242,36 @@ describe('redactUrl', () => {
     expect(redacted).toContain('api-version=2026-07-15');
   });
 });
+
+describe('proxy URLs that carry a host without a scheme', () => {
+  it('keeps the host of a protocol-relative proxy URL when parameters are added', () => {
+    const { url } = buildVoiceLiveUrl({
+      proxyUrl: '//proxy.example.com/ws',
+      token: 'user-token',
+    });
+    // dropping the host would point the session (with the token) at the page's own origin
+    expect(url.startsWith('//proxy.example.com/ws')).toBe(true);
+    expect(url).toContain('token=user-token');
+  });
+
+  it('still serializes a path-only proxy URL as a path', () => {
+    const { url } = buildVoiceLiveUrl({ proxyUrl: '/ws', token: 'user-token' });
+    expect(url.startsWith('/ws?')).toBe(true);
+  });
+});
+
+describe('redactUrl (encoded and differently-cased parameter names)', () => {
+  it('masks a percent-encoded parameter name that a server still reads as a secret', () => {
+    expect(redactUrl('wss://host/ws?to%6Ben=SECRET&model=gpt-realtime')).not.toContain('SECRET');
+  });
+
+  it('masks regardless of case', () => {
+    expect(redactUrl('wss://host/ws?API-KEY=SECRET')).not.toContain('SECRET');
+    expect(redactUrl('wss://host/ws?Authorization=Bearer%20SECRET')).not.toContain('SECRET');
+  });
+
+  it('leaves a URL without secrets byte-for-byte unchanged', () => {
+    const url = 'wss://host/voice-live/realtime?api-version=2026-07-15&model=gpt-realtime';
+    expect(redactUrl(url)).toBe(url);
+  });
+});

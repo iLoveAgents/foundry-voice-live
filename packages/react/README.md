@@ -267,7 +267,7 @@ const { videoStream, audioStream } = useVoiceLive({
 | `.semanticVAD(options?)` | Turn detection (`multilingual`, `interruptResponse`, `autoTruncate`, `appendedTextAfterTruncation`, …) |
 | `.endOfUtterance(options?)` | End-of-utterance detection (`semantic_detection_v1*` or `smart_end_of_turn_detection`) |
 | `.noTurnDetection()` | Manual turn mode (use `commitInputAudio()`) |
-| `.echoCancellation(options?)` | Server echo cancellation (Live-Reference AEC options are types-only for now) |
+| `.echoCancellation(options?)` | Server echo cancellation (`referenceSource: 'client'` is sent on the wire, but stereo reference capture is not implemented yet) |
 | `.noiseReduction(type?)` | Noise reduction (`'deep'` or `'nearField'`) |
 | `.sampleRate(rate)` | Input sample rate (16000 / 24000) |
 | `.transcription(options?)` | Input transcription (`azure-speech`, `whisper-1`, `gpt-4o-transcribe`, `mai-transcribe`, …) |
@@ -434,7 +434,7 @@ const { connectionState, reconnectAttempt } = useVoiceLive({
 // connectionState: 'reconnecting' while attempts run; reconnectAttempt = 1, 2, …
 ```
 
-Triggered by any unclean close, plus a clean `1001 Going Away` (which only the *service* sends to us): a network drop (`1006`), a service restart, a connect that times out (`connectTimeoutMs`, default 15 s), and every terminal WebRTC failure — SDP answer rejected (`4009`), `rtc.call.error` (`4010`) and a peer connection that goes `failed`, e.g. switching from Wi‑Fi to cellular mid-call (`4011`). Never after `disconnect()` or a clean `1000`/`1001` close.
+Triggered by any unclean close, plus a clean `1001 Going Away` (which only the *service* sends to us): a network drop (`1006`), a service restart, a connect that times out (`connectTimeoutMs`, default 15 s), and every terminal WebRTC failure — SDP answer rejected (`4009`), `rtc.call.error` (`4010`) and a peer connection that goes `failed`, e.g. switching from Wi‑Fi to cellular mid-call (`4011`). Never after `disconnect()`, after a clean `1000`, or after a close that rejects the request itself (`1003`, `1008`, `1010`) — the proxy closes with `1008` for invalid connection parameters, and reconnecting would be rejected identically.
 
 While reconnecting, microphone audio is dropped rather than queued — speech during the gap is lost by design instead of being replayed into a session that has not been configured yet.
 
@@ -476,7 +476,7 @@ The hook is quiet by default (warnings and errors only). Set `logLevel: 'debug'`
 
 ### `useVoiceLive(config)`
 
-Config (all optional except `connection`): `session`, `autoConnect`, `autoStartMic` (default `true`), `audioSampleRate` (24000), `audioConstraints`, `logLevel` (`'warn'`), `reconnect` (`false`), `onEvent`, `onTranscript`, `toolExecutor`, `onWarning`, `onMcpApprovalRequest`, `onSessionUpdated`, `onReconnecting`, `onReconnected`. `connection` accepts `resourceName`/`apiKey`/`token`/`getToken`/`model`/`apiVersion`/`transport`/`rtcConfiguration`, or `proxyUrl` (+ `agentMode`), or `agentName`/`projectName`/`conversationId`/`agentVersion`/`agentAuthenticationIdentityClientId`/`foundryResourceOverride`.
+Config (all optional except `connection`): `session`, `autoConnect`, `autoStartMic` (default `true`), `audioSampleRate` (24000), `audioConstraints`, `logLevel` (`'warn'`), `reconnect` (`false`), `connectTimeoutMs` (15000), `onEvent`, `onTranscript`, `toolExecutor`, `onWarning`, `onMcpApprovalRequest`, `onSessionUpdated`, `onReconnecting`, `onReconnected`. `connection` accepts `resourceName`/`apiKey`/`token`/`getToken`/`model`/`apiVersion`/`transport`/`rtcConfiguration`, or `proxyUrl` (+ `agentMode`), or `agentName`/`projectName`/`conversationId`/`agentVersion`/`agentAuthenticationIdentityClientId`/`foundryResourceOverride`.
 
 Returns:
 
@@ -525,13 +525,17 @@ Returns:
 />
 ```
 
+### Other exports
+
+`useAudioCapture()` (microphone capture on its own, used by the WebSocket transport), `createVoiceLiveConfig()` (preset + overrides), `createChromaKeyProcessor()` / `DEFAULT_GREEN_SCREEN` (avatar background removal), and the pure protocol helpers `buildSessionConfig()`, `convertToSessionUpdate()`, `validateConfig()`, `buildGreetingEvents()`, `buildMicConstraints()`, `arrayBufferToBase64()`, `createAudioDataCallback()`, `createLogger()`.
+
 ### Constants
 
-`DEFAULT_API_VERSION` (`2026-07-15`), `DEFAULT_WEBRTC_API_VERSION` (`2026-01-01-preview`), `MIN_WEBRTC_API_VERSION`, `DEFAULT_MODEL` (`gpt-realtime`), `VOICE_LIVE_DATA_CHANNEL`, `OPENAI_VOICES`, `AZURE_REALTIME_NATIVE_VOICES`, `AGENT_OWNED_FIELDS`, `SERVER_EVENT_TYPES` / `CLIENT_EVENT_TYPES`, `DEFAULT_SESSION_CONFIG`.
+`DEFAULT_API_VERSION` (`2026-07-15`), `DEFAULT_WEBRTC_API_VERSION` (`2026-01-01-preview`), `MIN_WEBRTC_API_VERSION`, `DEFAULT_MODEL` (`gpt-realtime`), `VOICE_LIVE_DATA_CHANNEL`, `OPENAI_VOICES`, `AZURE_REALTIME_NATIVE_VOICES`, `AGENT_OWNED_FIELDS`, `SERVER_EVENT_TYPES` / `CLIENT_EVENT_TYPES` (and the `TYPED_SERVER_EVENT_TYPES` / `OTHER_SERVER_EVENT_TYPES` they are built from), `DEFAULT_SESSION_CONFIG`, `DEFAULT_CONNECT_TIMEOUT_MS`, `DEFAULT_RECONNECT_OPTIONS`, and the close codes `RECONNECT_SETUP_FAILED_CLOSE_CODE` (4001), `CONNECT_TIMEOUT_CLOSE_CODE` (4002), `RTC_SDP_ANSWER_FAILED_CLOSE_CODE` (4009), `RTC_CALL_ERROR_CLOSE_CODE` (4010), `RTC_MEDIA_FAILED_CLOSE_CODE` (4011), `CONTROL_CHANNEL_SETUP_FAILED_CLOSE_CODE` (4012).
 
 ### Core building blocks (advanced)
 
-The hook is a thin React binding over framework-agnostic classes that are exported for custom integrations: `WebSocketTransport` / `WebRtcTransport` (control channel, SDP negotiation, readiness gating, duplicate-event filter — one `VoiceLiveTransportInstance` interface), `OutputAudioGraph` + `PcmPlayer` (AudioContext/analyser and AudioWorklet PCM playback), `AvatarConnection` (avatar SDP exchange), `WebRtcMicrophone`, the reconnect policy (`resolveReconnectOptions`, `computeBackoffDelay`, `isReconnectableClose`) and `parseServerEvent`. They have no React dependency and are unit-tested with fake browser APIs; the hook remains the supported entry point.
+The hook is a thin React binding over framework-agnostic classes that are exported for custom integrations: `WebSocketTransport` / `WebRtcTransport` (control channel, SDP negotiation, readiness gating, duplicate-event filter — one `VoiceLiveTransportInstance` interface), `OutputAudioGraph` + `PcmPlayer` (AudioContext/analyser and AudioWorklet PCM playback), `AvatarConnection` (avatar SDP exchange), `WebRtcMicrophone`, the reconnect policy (`resolveReconnectOptions`, `computeBackoffDelay`, `isReconnectableClose`), `parseServerEvent`, and the lifecycle primitives `Scope`, `ResponseGate`, `BoundedMap` / `SeenEventIds`. They have no React dependency and are unit-tested with fake browser APIs; the hook remains the supported entry point.
 
 ## Why not the official SDK?
 

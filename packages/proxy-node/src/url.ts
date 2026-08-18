@@ -240,8 +240,11 @@ export async function buildAzureUrl(
     return result("msal-token", bearer(query.token));
   }
   if (cfg.foundryApiKey) {
-    params.push(["api-key", cfg.foundryApiKey]);
-    return result("api-key", {});
+    // Header, not a query parameter: the upstream handshake is an ordinary HTTPS request, so any
+    // dependency/tracing instrumentation (Application Insights collects `url.full`) would export
+    // the URL — key included — to a telemetry sink. Headers are not captured, and Microsoft
+    // documents the `api-key` header for non-browser clients.
+    return result("api-key", { "api-key": cfg.foundryApiKey });
   }
   return result("entra-credential", bearer(await deps.getEntraToken()));
 }

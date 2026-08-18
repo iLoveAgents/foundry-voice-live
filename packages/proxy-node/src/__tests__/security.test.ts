@@ -1,5 +1,5 @@
-import { describe, it, expect } from "vitest";
-import { isOriginAllowed } from "../security.js";
+import { describe, it, expect, vi } from "vitest";
+import { isOriginAllowed, readPositiveInt } from "../security.js";
 
 const ALLOWED = ["http://localhost:3001", "https://app.example.com"];
 
@@ -43,5 +43,27 @@ describe("isOriginAllowed", () => {
   it("does not crash on malformed origins", () => {
     expect(isOriginAllowed("not a url", ALLOWED)).toBe(false);
     expect(isOriginAllowed("null", ALLOWED)).toBe(false); // sandboxed iframes send "null"
+  });
+});
+
+describe("readPositiveInt", () => {
+  it("uses the value when it is a positive integer", () => {
+    expect(readPositiveInt("2048", 1024, "MAX_FRAME_BYTES")).toBe(2048);
+  });
+
+  it("falls back (and warns) for values that would disable the limit", () => {
+    const warn = vi.fn();
+    // NaN does not enforce anything: `active >= NaN` is false and ws reads maxPayload NaN as 0
+    for (const raw of ["unlimited", "0", "-1", "1e3.5", "12.5"]) {
+      expect(readPositiveInt(raw, 1000, "MAX_CONNECTIONS", warn)).toBe(1000);
+    }
+    expect(warn).toHaveBeenCalledTimes(5);
+  });
+
+  it("treats an unset or blank value as 'use the default', without warning", () => {
+    const warn = vi.fn();
+    expect(readPositiveInt(undefined, 8080, "PORT", warn)).toBe(8080);
+    expect(readPositiveInt("   ", 8080, "PORT", warn)).toBe(8080);
+    expect(warn).not.toHaveBeenCalled();
   });
 });

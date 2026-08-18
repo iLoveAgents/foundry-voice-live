@@ -159,24 +159,27 @@ describe("buildAzureUrl - standard mode", () => {
     expect(pathname).toBe(REALTIME_PATH);
     expect(params.get("api-version")).toBe(DEFAULT_API_VERSION);
     expect(params.get("model")).toBe("gpt-realtime");
-    expect(params.get("api-key")).toBe(API_KEY);
+    // the key travels as a header: a URL is exported by dependency tracing, headers are not
+    expect(params.has("api-key")).toBe(false);
+    expect(result.url).not.toContain(API_KEY);
+    expect(result.headers).toEqual({ "api-key": API_KEY });
     expect(params.has("agent-name")).toBe(false);
-    expect(result.headers).toEqual({});
     expect(result.mode).toBe("standard");
     expect(result.authMethod).toBe("api-key");
     expect(result.transport).toBe("websocket");
     expect(d.getEntraToken).not.toHaveBeenCalled();
   });
 
-  it("URL-encodes the API key and model", async () => {
+  it("URL-encodes the model and keeps the API key out of the URL entirely", async () => {
     const result = await buildAzureUrl(
       { model: "gpt-4o realtime/preview" },
       cfg({ foundryApiKey: "key with/special&chars=" }),
       deps()
     );
-    expect(result.url).toContain("api-key=key%20with%2Fspecial%26chars%3D");
     expect(result.url).toContain("model=gpt-4o%20realtime%2Fpreview");
-    expect(parseUrl(result.url).params.get("api-key")).toBe("key with/special&chars=");
+    expect(result.url).not.toContain("api-key");
+    expect(result.url).not.toContain("key with/special");
+    expect(result.headers).toEqual({ "api-key": "key with/special&chars=" });
   });
 
   it("defaults the model to gpt-realtime", async () => {
@@ -401,7 +404,8 @@ describe("buildAzureUrl - WebRTC transport", () => {
     expect(pathname).toBe(REALTIME_CALLS_PATH);
     expect(params.get("api-version")).toBe(DEFAULT_WEBRTC_API_VERSION);
     expect(params.get("model")).toBe("gpt-realtime");
-    expect(params.get("api-key")).toBe(API_KEY);
+    expect(params.has("api-key")).toBe(false);
+    expect(result.headers).toEqual({ "api-key": API_KEY });
     expect(params.has("transport")).toBe(false); // proxy-only param, not forwarded
     expect(result.transport).toBe("webrtc");
     expect(result.mode).toBe("standard");

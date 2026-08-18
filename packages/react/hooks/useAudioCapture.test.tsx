@@ -26,6 +26,27 @@ function emit(node: FakeAudioWorkletNode, samples: number, value = 1) {
 }
 
 describe('useAudioCapture', () => {
+  it('coalesces concurrent starts so a second stream cannot leak', async () => {
+    const getUserMedia = vi.fn(async () => mic.stream);
+    restore();
+    restore = installBrowserFakes({ getUserMedia });
+    const { result } = renderHook(() => useAudioCapture({ onAudioData: vi.fn() }));
+
+    // two callers in the window before `isCapturing` flips (a re-rendered auto-start effect and a
+    // consumer calling startMic()): the second must join the first, not acquire its own stream
+    await act(async () => {
+      await Promise.all([result.current.startCapture(), result.current.startCapture()]);
+    });
+
+    expect(getUserMedia).toHaveBeenCalledTimes(1);
+    expect(result.current.isCapturing).toBe(true);
+
+    act(() => {
+      result.current.stopCapture();
+    });
+    expect(mic.track.stop).toHaveBeenCalledTimes(1);
+  });
+
   it('starts capture with the SDK mic defaults, wires the worklet graph and stops cleanly', async () => {
     const onAudioData = vi.fn();
     const { result } = renderHook(() => useAudioCapture({ sampleRate: 16000, onAudioData }));

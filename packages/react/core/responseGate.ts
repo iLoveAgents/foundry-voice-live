@@ -28,6 +28,13 @@ export class ResponseGate {
    * itself (server VAD with `create_response: true`), but has not acknowledged one yet.
    */
   private speculative = false;
+  /**
+   * The service announced an automatic response (server VAD committed a turn) while another one
+   * was still running. The reservation cannot be taken yet, so it is remembered and applied when
+   * the running response finishes — otherwise a queued turn would be sent straight into the
+   * window where the service is starting its own response, and the two would overlap.
+   */
+  private automaticPending = false;
 
   /** Current lifecycle state (for logging/tests) */
   get currentState(): ResponseGateState {
@@ -90,7 +97,10 @@ export class ResponseGate {
    * follows, so a service that decides not to answer cannot block later turns.
    */
   reserveAutomatic(): void {
-    if (this.isBusy) return;
+    if (this.isBusy) {
+      this.automaticPending = true;
+      return;
+    }
     this.state = 'requested';
     this.speculative = true;
     this.pendingEventId = null;
@@ -124,6 +134,16 @@ export class ResponseGate {
    * @returns true when a queued request should be sent now (the gate moves back to `requested`).
    */
   onResponseDone(): boolean {
+    if (this.automaticPending) {
+      // The service is about to start the response it announced while this one was running. Hold
+      // the slot for it (speculatively, so a timeout still frees it) and keep any queued turn
+      // queued: it is answered after that response, not alongside it.
+      this.automaticPending = false;
+      this.state = 'requested';
+      this.speculative = true;
+      this.pendingEventId = null;
+      return false;
+    }
     if (this.queued) {
       this.queued = false;
       this.state = 'requested';
@@ -146,6 +166,12 @@ export class ResponseGate {
    */
   onError(errorEventId?: string | null): boolean {
     if (this.state !== 'requested') return false; // an error during a running response is not ours
+    // A speculative reservation put nothing on the wire, so no error can be its rejection. Errors
+    // provoked by other client events (an empty input_audio_buffer.commit, an invalid
+    // session.update) arrive without an `event_id` and would otherwise release the reservation
+    // that exists precisely to keep the next turn from overlapping the service's own response.
+    // `releaseSpeculative()` (driven by a timeout) remains the way out if none arrives.
+    if (this.speculative) return false;
     // Correlate when we can: an error caused by a *different* client event (say an invalid
     // session.update) says nothing about the response.create we are waiting for. Errors without an
     // `event_id` stay ambiguous and are treated as ours, because a stuck gate would block every
@@ -192,6 +218,7 @@ export class ResponseGate {
     this.state = 'idle';
     this.queued = false;
     this.speculative = false;
+    this.automaticPending = false;
     this.pendingEventId = null;
   }
 }

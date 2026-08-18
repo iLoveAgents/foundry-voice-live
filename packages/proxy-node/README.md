@@ -104,7 +104,11 @@ For every connection the proxy resolves credentials in this order (both modes):
 | 2        | `FOUNDRY_API_KEY` env (shared key)               | ✅            | –              |
 | 3        | `DefaultAzureCredential` (server-side, keyless)  | ✅            | ✅             |
 
-Tokens are always sent upstream as an `Authorization: Bearer` header — they never appear in the upstream URL, and `token` / `api-key` / `Authorization` values are redacted from logs. Errors sent back to the browser are limited to problems with its own request; token-acquisition, DNS and upstream-handshake details stay in the server log.
+Credentials are always sent upstream as headers — `Authorization: Bearer` for tokens, `api-key` for a shared key — so they never appear in the upstream URL, where dependency tracing (Application Insights collects the full URL of every outbound request) would export them. `token` / `api-key` / `Authorization` values are also redacted from logs, matching parameter names the way a server reads them (percent-decoded, case-insensitive). Errors sent back to the browser are limited to problems with its own request; token-acquisition, DNS and upstream-handshake details stay in the server log.
+
+> **Behind a load balancer.** Without `TRUST_PROXY`, every request appears to come from the ingress, so the per-IP rate limit becomes one global bucket that a single client can exhaust for everyone. Set `TRUST_PROXY=1` (or the number of proxies in front of the service) only when something actually rewrites `X-Forwarded-For` — otherwise a client can spoof its own address.
+>
+> **Invalid limits fail closed.** A non-numeric `MAX_CONNECTIONS` / `MAX_FRAME_BYTES` / `RATE_LIMIT_*` value falls back to the default with a warning instead of silently removing the limit.
 
 > **Origin enforcement.** Browser connections are checked against `ALLOWED_ORIGINS` on the HTTP request *and* on the WebSocket upgrade (matching is exact — a prefix check would let `http://localhost:3001.attacker.com` through). Requests **without** an `Origin` header (curl, native apps, server-to-server) are allowed by design, so the origin check alone does not authenticate anyone: pair it with network rules or your own auth.
 
@@ -297,6 +301,7 @@ Upstream parameter names: `agentName` → `agent-name`, `projectName` → `agent
 | `RATE_LIMIT_WINDOW_MS`                  | No       | `60000`                 | Rate limit window (ms)                                                      |
 | `MAX_FRAME_BYTES`                       | No       | `1048576`               | Largest accepted browser frame (1 MiB); offenders are closed with `1009`     |
 | `MAX_CONNECTIONS`                       | No       | `1000`                  | Max concurrent connections                                                  |
+| `TRUST_PROXY`                           | No       | _(off)_                 | Express `trust proxy` (hop count, `true`, or IP list) — set it behind an ingress so the per-IP rate limit sees real client IPs |
 | `APPLICATIONINSIGHTS_CONNECTION_STRING` | No       | -                       | Enable Application Insights telemetry                                       |
 
 ### Health Check Response

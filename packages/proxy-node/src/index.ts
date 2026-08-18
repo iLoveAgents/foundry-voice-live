@@ -42,8 +42,8 @@ import {
 } from "./url.js";
 import { readPackageInfo } from "./packageInfo.js";
 import { PendingMessageQueue } from "./pendingQueue.js";
-import { isOriginAllowed } from "./security.js";
-import { toClientCloseFrame } from "./closeFrame.js";
+import { isOriginAllowed, readPositiveInt } from "./security.js";
+import { connectFailureCloseFrame, toClientCloseFrame } from "./closeFrame.js";
 
 dotenv.config();
 
@@ -109,16 +109,41 @@ const logger: Logger = {
  * hostile client from making the proxy buffer ~100 MB per frame (the `ws` default) before any of
  * our own limits can apply. `ws` closes offenders with 1009.
  */
-const MAX_CLIENT_FRAME_BYTES = parseInt(process.env.MAX_FRAME_BYTES || "1048576", 10);
+const MAX_CLIENT_FRAME_BYTES = readPositiveInt(
+  process.env.MAX_FRAME_BYTES,
+  1048576,
+  "MAX_FRAME_BYTES",
+  (m) => console.warn(m)
+);
 
 // Initialize Express with WebSocket support
 const { app } = expressWs(express(), undefined, {
-  wsOptions: { maxPayload: MAX_CLIENT_FRAME_BYTES },
+  wsOptions: {
+    maxPayload: MAX_CLIENT_FRAME_BYTES,
+    /**
+     * Reject a disallowed origin during the handshake, so the browser gets an HTTP `403` on the
+     * upgrade. The CORS middleware cannot do this: with `express-ws` the upgrade has already
+     * completed by the time it runs, so its rejection reached the client as a close without a
+     * status code (`1005`) — indistinguishable from a network drop. The route handler keeps its
+     * own check as defence in depth.
+     */
+    verifyClient: ({ origin, req }, done): void => {
+      if (isOriginAllowed(origin, securityConfig.allowedOrigins)) {
+        done(true);
+        return;
+      }
+      logger.warn(`[Security] Blocked WebSocket upgrade from origin: ${origin}`, {
+        origin,
+        path: req.url,
+      });
+      done(false, 403, "Origin not allowed");
+    },
+  },
 });
 
 // Configuration - API key secured in backend (not exposed to browser)
 const config: ProxyConfig = {
-  port: parseInt(process.env.PORT || "8080", 10),
+  port: readPositiveInt(process.env.PORT, 8080, "PORT", (m) => console.warn(m)),
   // undefined = built-in default per transport (see url.ts); can be overridden per connection via ?apiVersion=
   apiVersion: process.env.API_VERSION || undefined,
   azureResourceName: process.env.FOUNDRY_RESOURCE_NAME || "",
@@ -131,9 +156,9 @@ const securityConfig: SecurityConfig = {
   allowedOrigins: process.env.ALLOWED_ORIGINS?.split(",").map((o) => o.trim()) || [
     "http://localhost:3000",
   ],
-  rateLimitWindowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS || "60000", 10),
-  rateLimitMax: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS || "100", 10),
-  maxConnections: parseInt(process.env.MAX_CONNECTIONS || "1000", 10),
+  rateLimitWindowMs: readPositiveInt(process.env.RATE_LIMIT_WINDOW_MS, 60000, "RATE_LIMIT_WINDOW_MS", (m) => console.warn(m)),
+  rateLimitMax: readPositiveInt(process.env.RATE_LIMIT_MAX_REQUESTS, 100, "RATE_LIMIT_MAX_REQUESTS", (m) => console.warn(m)),
+  maxConnections: readPositiveInt(process.env.MAX_CONNECTIONS, 1000, "MAX_CONNECTIONS", (m) => console.warn(m)),
 };
 
 if (!config.azureResourceName) {
@@ -179,6 +204,19 @@ async function getEntraToken(): Promise<string> {
  */
 
 // Helmet for security headers
+/**
+ * Behind an ingress/load balancer every request carries the proxy's IP, so the per-IP rate limit
+ * collapses into a single global bucket — one noisy client can then lock everyone out.
+ * `TRUST_PROXY` mirrors Express's `trust proxy` setting: a hop count (`1`), `true`, or a list of
+ * IPs/subnets. Off by default: trusting `X-Forwarded-For` when nothing rewrites it would let a
+ * client spoof its own address and bypass the limit entirely.
+ */
+if (process.env.TRUST_PROXY) {
+  const raw = process.env.TRUST_PROXY.trim();
+  const hops = Number(raw);
+  app.set("trust proxy", Number.isInteger(hops) && hops >= 0 ? hops : raw);
+}
+
 app.use(helmet());
 
 // CORS configuration
@@ -548,7 +586,10 @@ app.ws("/ws", async (ws, req) => {
         error instanceof ProxyRequestError ? error.message : "Upstream connection failed";
       ws.send(JSON.stringify({ type: "error", error: { message: clientMessage } }));
     }
-    ws.close();
+    // An explicit code: closing bare would arrive as 1005 "no status", which a reconnecting
+    // client cannot tell apart from a dropped network connection
+    const failure = connectFailureCloseFrame(error instanceof ProxyRequestError);
+    ws.close(failure.code, failure.reason);
     azureWs?.close();
     // `ws.close()` fires the close handler → cleanup(); cover sockets that never opened
     cleanup();
