@@ -27,6 +27,8 @@ just watch-react      # Watch mode
 
 ```text
 core/           # Framework-agnostic (no React import):
+  lifecycle.ts  #   Scope: the ONE staleness/teardown primitive (connection + session lifetimes)
+  responseGate.ts#  ResponseGate: response.create serialization state machine
   transports/   #   types.ts (VoiceLiveTransport interface), websocketTransport.ts, webrtcTransport.ts
   audioOutput.ts#   OutputAudioGraph (context/gain/analyser) + PcmPlayer (AudioWorklet playback)
   playbackWorklet.ts, avatarConnection.ts, microphone.ts (WebRtcMicrophone), reconnect.ts, serverEvents.ts
@@ -73,16 +75,24 @@ Tests: `core/*.test.ts` (transports, audio, avatar, mic, reconnect), `hooks/useV
   event names/shapes in `types/events.ts`. `utils/protocolContract.test.ts` verifies both against Microsoft's
   `@azure/ai-voicelive` (devDependency only; it declares `engines: node >=22`, hence Node 22 for dev/CI).
   Update the allow-list there when Microsoft's enums catch up.
-- **Async continuations must re-check the generation**: anything awaited inside the hook
-  (`getUserMedia`, avatar `applyServerSdp`, tool executors) can resolve after `disconnect()` or a
-  reconnect. Capture `connectIdRef.current` (and the object identity) before the await and bail out
-  afterwards — otherwise dead sessions mark themselves ready or leak live microphone tracks.
-- **Automatic tool results are batched per response** (`toolBatchesRef`, keyed
-  `<sessionSeq>:<response_id>`): outputs are sent with `triggerResponse: false`; the single
-  `response.create` waits for **both** `response.done` *and* the last executor, and is requested
-  through `requestResponse()` so it shares the deferral gate with `sendText()` (never two
-  overlapping `response.create`s). `sessionSeqRef` — not `connectIdRef`, which survives reconnects
-  — decides whether a late result still belongs to the live conversation.
+- **Two lifetimes, one mechanism — `Scope` (`core/lifecycle.ts`).** Anything awaited
+  (`getUserMedia`, avatar SDP, tool executors, worklet loading) can resolve after the work it
+  belonged to has ended. Capture the scope *before* the await and check `scope.isActive` after —
+  do **not** add another counter or boolean flag for this; that sprawl was the bug.
+  - `connectionScopeRef` — `connect()` → `disconnect()`, survives reconnects (microphone, audio graph)
+  - `sessionRef.current.scope` — one control channel / one server-side conversation, replaced per
+    (re)connect attempt (response + tool-call ids, readiness). It is a child of the connection
+    scope, so `disconnect()` ends both; use `scope.onAbort()` for cleanup instead of manual clears.
+  Identity checks go against the record (`sessionRef.current !== session`), not against numbers.
+- **`response.create` is serialized by `ResponseGate` (`core/responseGate.ts`)**, a three-state
+  machine (`idle → requested → active`): the service rejects overlapping responses and
+  `response.created` alone cannot tell you a request is in flight. Never send `response.create`
+  outside the gate.
+- **Automatic tool results are batched per response** (`toolBatchesRef`, keyed by `response_id`
+  and scoped to the session record): outputs are sent with `triggerResponse: false`; the single
+  `response.create` waits for **both** `response.done` *and* the last executor, and goes through
+  `ResponseGate` like every other turn. A late result belongs to the live conversation only if
+  `sessionRef.current === session && session.scope.isActive`.
 - **Terminal failures must close the transport**, not just report `onError`: state `'open'` blocks
   both `connect()` and the reconnect policy. Close codes: `4001` reconnect setup, `4002` connect
   timeout, `4008` negotiation timeout, `4009` SDP answer, `4010` `rtc.call.error`, `4011` peer
