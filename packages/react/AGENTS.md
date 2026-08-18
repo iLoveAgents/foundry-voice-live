@@ -105,7 +105,10 @@ Tests: `core/*.test.ts` (transports, audio, avatar, mic, reconnect), `hooks/useV
   `completedResponsesRef` for services that omit the list). `batchOwesOutputs()` is the single
   definition of "still owes outputs", used by the finish check *and* by `pendingToolBatch()`.
   A declared call that never arrives is abandoned after `LATE_TOOL_CALL_TIMEOUT_MS`: holding every
-  later turn forever is the worse failure.
+  later turn forever is the worse failure. Once a response's batch has been answered its expected
+  count is zeroed, so a call arriving afterwards cannot resurrect a batch waiting for work that was
+  already accounted for. The reservation only exists when the hook runs the tools itself
+  (`toolExecutor`); consumers handling calls manually sequence their own follow-ups.
 - **Automatic tool results are batched per response** (`toolBatchesRef`, keyed by `response_id`
   and scoped to the session record): outputs are sent with `triggerResponse: false`; the single
   `response.create` waits for **both** `response.done` *and* the last executor, and goes through

@@ -380,6 +380,10 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
         clearTimeout(batch.lateCallTimer);
         batch.lateCallTimer = undefined;
       }
+      // This response has been answered: a call arriving afterwards (a very late control-channel
+      // event, or one abandoned by the timeout) must not resurrect a batch that waits for calls
+      // this one already accounted for — that would hold every later turn forever.
+      completedResponsesRef.current?.set(key, 0);
       // A stale executor must not evict the live session's batch stored under the same
       // (service-assigned, per-session) response id — delete only our own entry
       if (toolBatchesRef.current.get(key) === batch) {
@@ -847,7 +851,10 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
           ).length;
           (completedResponsesRef.current as BoundedMap<string, number>).set(doneKey, toolCallCount);
           let doneBatch = toolBatchesRef.current.get(doneKey);
-          if (!doneBatch && toolCallCount > 0 && doneSession) {
+          // Only reserve when *we* run the tools: a consumer handling function calls manually
+          // through onEvent/sendToolResult never advances a batch, so reserving one would hold
+          // their follow-up until the late-call timeout on every tool turn.
+          if (!doneBatch && toolCallCount > 0 && doneSession && configRef.current.toolExecutor) {
             // The response declares tool calls whose events have not arrived yet (WebRTC delivers
             // them on the other channel). Reserve the batch now, so turns submitted meanwhile are
             // held instead of being answered without the outputs.

@@ -816,4 +816,114 @@ describe('useVoiceLive (websocket)', () => {
       vi.useRealTimers();
     }
   });
+
+  it('does not block later turns when an abandoned tool call finally arrives', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const settle: Array<(v: object) => void> = [];
+      const toolExecutor = vi.fn(
+        () =>
+          new Promise<object>((r) => {
+            settle.push(r);
+          })
+      );
+      const { hook, ws } = await connectAndOpen({ ...baseConfig, toolExecutor });
+      await deliver(ws, { type: 'session.created', session: {} });
+      await deliver(ws, { type: 'session.updated', session: {} });
+      await deliver(ws, { type: 'response.created', response: { id: 'resp-1' } });
+      // two calls declared; only the first arrives
+      await deliver(ws, {
+        type: 'response.done',
+        response: {
+          id: 'resp-1',
+          output: [
+            { type: 'function_call', call_id: 'call-a', name: 'a' },
+            { type: 'function_call', call_id: 'call-b', name: 'b' },
+          ],
+        },
+      });
+      await deliver(ws, {
+        type: 'response.function_call_arguments.done',
+        response_id: 'resp-1',
+        call_id: 'call-a',
+        name: 'a',
+        arguments: '{}',
+      });
+      await act(async () => {
+        settle[0]?.({ ok: 'a' });
+      });
+      // the second never arrives → the batch is abandoned and answers with what it has
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(5000);
+      });
+      expect(ws.sent.filter((e) => e.type === 'response.create')).toHaveLength(1);
+      // the service answers that follow-up
+      await deliver(ws, { type: 'response.created', response: { id: 'resp-2' } });
+      await deliver(ws, { type: 'response.done', response: { id: 'resp-2', output: [] } });
+
+      // ...and if the abandoned call shows up afterwards, it must not resurrect a batch that waits
+      // for a call already accounted for, blocking every later turn
+      await deliver(ws, {
+        type: 'response.function_call_arguments.done',
+        response_id: 'resp-1',
+        call_id: 'call-b',
+        name: 'b',
+        arguments: '{}',
+      });
+      await act(async () => {
+        settle[1]?.({ ok: 'b' });
+      });
+      await act(async () => {
+        hook.result.current.sendText('later turn');
+      });
+      // the late output plus the new turn are answered instead of being held forever
+      expect(ws.sent.filter((e) => e.type === 'response.create').length).toBeGreaterThanOrEqual(2);
+      hook.unmount();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('does not hold manual tool handling behind an automatic batch', async () => {
+    // No toolExecutor: the consumer runs the call itself and sends the output
+    let api: ReturnType<typeof useVoiceLive> | null = null;
+    const hook = renderHook(() =>
+      useVoiceLive({
+        ...baseConfig,
+        onEvent: (event) => {
+          if (event.type === 'response.function_call_arguments.done') {
+            api?.sendToolResult((event as { call_id: string }).call_id, { ok: true });
+          }
+        },
+      })
+    );
+    api = hook.result.current;
+    await act(async () => {
+      await hook.result.current.connect();
+    });
+    const ws = FakeWebSocket.instances.at(-1)!;
+    await act(async () => {
+      ws.open();
+      ws.receive({ type: 'session.created', session: {} });
+      ws.receive({ type: 'session.updated', session: {} });
+      ws.receive({ type: 'response.created', response: { id: 'resp-1' } });
+      ws.receive({
+        type: 'response.done',
+        response: { id: 'resp-1', output: [{ type: 'function_call', call_id: 'call-a', name: 'a' }] },
+      });
+      ws.receive({
+        type: 'response.function_call_arguments.done',
+        response_id: 'resp-1',
+        call_id: 'call-a',
+        name: 'a',
+        arguments: '{}',
+      });
+    });
+    // the manual output and its follow-up go out immediately, not after a 5 s timeout
+    const items = ws.sent.filter((e) => e.type === 'conversation.item.create');
+    expect(items).toHaveLength(1);
+    expect(items[0].item.type).toBe('function_call_output');
+    expect(ws.sent.filter((e) => e.type === 'response.create')).toHaveLength(1);
+    hook.unmount();
+  });
 });
