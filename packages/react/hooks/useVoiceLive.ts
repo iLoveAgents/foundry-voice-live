@@ -665,12 +665,12 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
         case 'response.function_call_arguments.done':
           if (toolExecutor) {
             const { name, arguments: args, call_id: callId } = data;
-            // With parallel tool calls one response can contain several function calls whose
-            // executors settle at different times. Send every output first and request a single
-            // response once the last executor of this response has settled — otherwise the first
-            // result to arrive after `response.done` would start a response without the others.
-            // Scope the batch to this session: a reconnect replaces the conversation, so results
-            // that settle afterwards must not be injected into the new one
+            // One response can contain several function calls (parallel tool calls) whose
+            // executors settle at different times. Every output is sent immediately, but the
+            // follow-up response waits for `response.done` *and* the last executor — only then is
+            // it certain that no further tool call belongs to this response, so the model can
+            // never answer from a partial result set. The batch is scoped to this session because
+            // a reconnect replaces the conversation (see `sessionSeqRef`).
             const sessionSeq = sessionSeqRef.current;
             const batchKey = `${sessionSeq}:${data.response_id ?? currentResponseIdRef.current ?? ''}`;
             const batch =
