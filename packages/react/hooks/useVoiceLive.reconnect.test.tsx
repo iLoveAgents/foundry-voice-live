@@ -5,7 +5,13 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 import { useVoiceLive } from './useVoiceLive';
-import { FakeWebSocket, FakePeerConnection, installBrowserFakes, makeFakeMicStream } from './testFakes';
+import {
+  FakeWebSocket,
+  FakePeerConnection,
+  FakeAudioWorkletNode,
+  installBrowserFakes,
+  makeFakeMicStream,
+} from './testFakes';
 import type { UseVoiceLiveConfig } from '../types/voiceLive';
 
 let restore: () => void;
@@ -661,5 +667,134 @@ describe('useVoiceLive (reconnect)', () => {
     });
     expect(hook.result.current.connectionState).toBe('connected');
     expect(hook.result.current.isReady).toBe(true);
+  });
+
+  it('does not stream microphone audio while reconnecting or before the session is configured', async () => {
+    const { stream } = makeFakeMicStream();
+    const restoreFakes = installBrowserFakes({ getUserMedia: async () => stream as unknown as MediaStream });
+    try {
+      const hook = renderHook(() =>
+        useVoiceLive({ ...baseConfig, autoStartMic: false, reconnect: { initialDelayMs: 10, jitter: 0 } })
+      );
+      await act(async () => {
+        await hook.result.current.connect();
+      });
+      const ws = FakeWebSocket.instances.at(-1)!;
+      await act(async () => {
+        ws.open();
+      });
+      // socket open but session.updated not yet received: audio must not be forwarded
+      const worklet = FakeAudioWorkletNode.instances.at(-1);
+      const pushAudio = (): void => {
+        const node = FakeAudioWorkletNode.instances.at(-1);
+        node?.port.onmessage?.({ data: new Int16Array(2400).buffer });
+      };
+      await act(async () => {
+        await hook.result.current.startMic();
+      });
+      pushAudio();
+      expect(ws.sent.filter((e) => e.type === 'input_audio_buffer.append')).toHaveLength(0);
+      expect(worklet ?? true).toBeTruthy();
+
+      await act(async () => {
+        ws.receive({ type: 'session.created', session: { id: 's1' } });
+        ws.receive({ type: 'session.updated', session: { id: 's1' } });
+      });
+      pushAudio();
+      expect(ws.sent.filter((e) => e.type === 'input_audio_buffer.append')).toHaveLength(1);
+
+      // during the reconnect backoff there is no session: chunks are dropped silently
+      await act(async () => {
+        ws.drop(1006);
+      });
+      pushAudio();
+      pushAudio();
+      const ws2 = FakeWebSocket.instances.at(-1)!;
+      expect(ws2).toBe(ws); // still waiting for the retry
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(10);
+      });
+      const fresh = FakeWebSocket.instances.at(-1)!;
+      await act(async () => {
+        fresh.open();
+      });
+      pushAudio();
+      expect(fresh.sent.filter((e) => e.type === 'input_audio_buffer.append')).toHaveLength(0);
+      await act(async () => {
+        fresh.receive({ type: 'session.created', session: { id: 's2' } });
+        fresh.receive({ type: 'session.updated', session: { id: 's2' } });
+      });
+      pushAudio();
+      expect(fresh.sent.filter((e) => e.type === 'input_audio_buffer.append')).toHaveLength(1);
+    } finally {
+      restoreFakes();
+    }
+  });
+
+  it('reconnects after a remote 1001 (service going away)', async () => {
+    const { hook, ws } = await connectAndReady({
+      ...baseConfig,
+      reconnect: { initialDelayMs: 10, jitter: 0 },
+    });
+    await act(async () => {
+      ws.close(1001, 'going away'); // clean, but sent by the service on restart
+    });
+    expect(hook.result.current.connectionState).toBe('reconnecting');
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10);
+    });
+    const ws2 = FakeWebSocket.instances.at(-1)!;
+    await act(async () => {
+      ws2.open();
+      ws2.receive({ type: 'session.created', session: { id: 's2' } });
+      ws2.receive({ type: 'session.updated', session: { id: 's2' } });
+    });
+    expect(hook.result.current.connectionState).toBe('connected');
+  });
+
+  it('ignores an avatar offer that rejects after teardown', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const originalCreateOffer = FakePeerConnection.prototype.createOffer;
+    try {
+      const hook = renderHook(() =>
+        useVoiceLive({
+          ...baseConfig,
+          session: { instructions: 'Be nice.', avatar: { character: 'lisa', style: 'casual-sitting' } },
+        })
+      );
+      await act(async () => {
+        await hook.result.current.connect();
+      });
+      const ws = FakeWebSocket.instances.at(-1)!;
+      await act(async () => {
+        ws.open();
+        ws.receive({ type: 'session.created', session: { id: 's1' } });
+      });
+      // make the offer fail, but only after the app has disconnected
+      let failOffer: (err: Error) => void = () => undefined;
+      FakePeerConnection.prototype.createOffer = () =>
+        new Promise((_resolve, reject) => {
+          failOffer = reject;
+        }) as never;
+      await act(async () => {
+        ws.receive({
+          type: 'session.updated',
+          session: { id: 's1', avatar: { ice_servers: [{ urls: 'turn:relay.example' }] } },
+        });
+      });
+      act(() => {
+        hook.result.current.disconnect();
+      });
+      await act(async () => {
+        failOffer(new Error('peer connection closed'));
+        await Promise.resolve();
+      });
+      // the rejection belongs to a session that is gone — it must not surface as an error
+      expect(hook.result.current.error).toBeNull();
+      expect(hook.result.current.connectionState).toBe('disconnected');
+    } finally {
+      FakePeerConnection.prototype.createOffer = originalCreateOffer;
+      errorSpy.mockRestore();
+    }
   });
 });

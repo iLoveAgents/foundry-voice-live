@@ -159,6 +159,8 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
   const [connectionState, setConnectionState] = useState<ConnectionState>('disconnected');
   const [sessionState, setSessionState] = useState<SessionState>('idle');
   const [isReady, setIsReady] = useState(false);
+  /** Mirror of `isReady` for the audio callback, which must not depend on a render */
+  const isReadyRef = useRef(false);
   const [error, setError] = useState<string | null>(null);
   const [videoStream, setVideoStream] = useState<MediaStream | null>(null);
   const [audioStream, setAudioStream] = useState<MediaStream | null>(null);
@@ -184,6 +186,12 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
   const currentResponseIdRef = useRef<string | null>(null);
   const responseActiveRef = useRef<boolean>(false);
   const pendingResponseCreateRef = useRef<boolean>(false);
+  /**
+   * True from the moment we send `response.create` until `response.done`. `responseActiveRef` only
+   * flips on the server's `response.created`, so two quick `sendText()` calls would otherwise both
+   * see an idle conversation and send two `response.create` — which the service rejects.
+   */
+  const responseRequestedRef = useRef<boolean>(false);
   const assistantTranscriptRef = useRef<string>('');
   const userTranscriptRef = useRef<string>('');
   const videoStreamRef = useRef<MediaStream | null>(null);
@@ -227,6 +235,10 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
    * Converts to base64 and sends to Voice Live API
    */
   const handleAudioData = useCallback((audioData: ArrayBuffer): void => {
+    // Only stream while the session is configured: during a reconnect (and between socket-open and
+    // session.updated) the audio would either be dropped with a warning per 100 ms chunk, or worse,
+    // be processed by a session that has not received our session.update yet.
+    if (!isReadyRef.current) return;
     sendEventRef.current?.({ type: 'input_audio_buffer.append', audio: arrayBufferToBase64(audioData) });
   }, []);
 
@@ -296,11 +308,12 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
    * until `response.done` (Voice Live rejects overlapping responses).
    */
   const requestResponse = useCallback((): void => {
-    if (responseActiveRef.current) {
+    if (responseActiveRef.current || responseRequestedRef.current) {
       pendingResponseCreateRef.current = true;
-      log.debug('Response in progress — deferring response.create until response.done');
+      log.debug('Response in progress or already requested — deferring response.create');
       return;
     }
+    responseRequestedRef.current = true;
     sendEvent({ type: 'response.create' });
   }, [sendEvent, log]);
   requestResponseRef.current = requestResponse;
@@ -424,6 +437,7 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
 
   /** Mark the session ready (both transports) and settle a pending reconnect */
   const announceReady = useCallback((): void => {
+    isReadyRef.current = true;
     setIsReady(true);
     setSessionState('listening');
     if (reconnectAttemptRef.current > 0) {
@@ -476,8 +490,16 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
       const { onEvent, onTranscript, onWarning, onMcpApprovalRequest, onSessionUpdated, toolExecutor } =
         configRef.current;
 
-      // Call custom event handler if provided (never let it abort our own handling)
+      // Call custom event handler first (never let it abort our own handling)
+      const sessionAtEntry = sessionSeqRef.current;
+      const connectAtEntry = connectIdRef.current;
       safeCall('onEvent', onEvent, data);
+      if (sessionSeqRef.current !== sessionAtEntry || connectIdRef.current !== connectAtEntry) {
+        // The consumer called disconnect()/connect() from onEvent: this event belongs to a session
+        // that no longer exists, so applying it would resurrect state for it
+        log.debug(`Dropping ${data.type}: the session changed inside onEvent`);
+        return;
+      }
 
       const isWebRtc = transportKindRef.current === 'webrtc';
 
@@ -512,9 +534,15 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
           log.debug('Session configured');
 
           if (data.session?.avatar?.ice_servers) {
+            const avatarConnectId = connectIdRef.current;
             try {
               await connectAvatar(data.session.avatar.ice_servers);
             } catch (err) {
+              if (connectIdRef.current !== avatarConnectId) {
+                // Torn down while the offer was in flight — the rejection is expected
+                log.debug('Avatar offer rejected after teardown — ignoring');
+                break;
+              }
               log.error('Avatar setup failed:', err);
               setError(err instanceof Error ? err.message : 'Avatar setup failed');
             }
@@ -625,10 +653,12 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
             finishToolBatchIfReady(doneKey, doneBatch, sessionSeqRef.current);
           }
           responseActiveRef.current = false;
+          responseRequestedRef.current = false;
           // Exactly one response.create for everything requested while this response ran
           if (pendingResponseCreateRef.current) {
             pendingResponseCreateRef.current = false;
             log.debug('Sending deferred response.create');
+            responseRequestedRef.current = true;
             sendEvent({ type: 'response.create' });
           }
           break;
@@ -731,6 +761,9 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
           }
 
           log.error('API Error:', data.error);
+          // The error may be the rejection of a response.create we are waiting on; clearing the
+          // flag keeps later turns possible instead of deferring them forever
+          responseRequestedRef.current = false;
           setError(errorMessage);
           break;
         }
@@ -832,6 +865,7 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
     }
     currentResponseIdRef.current = null;
     responseActiveRef.current = false;
+    responseRequestedRef.current = false;
     pendingResponseCreateRef.current = false;
     toolBatchesRef.current.clear();
     assistantTranscriptRef.current = '';
@@ -921,6 +955,7 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
           if (!info.wasClean) {
             log.warn('Connection closed unexpectedly');
           }
+          isReadyRef.current = false;
           setIsReady(false);
           setSessionState('idle');
           transportRef.current = null; // already closed — releaseConnection() must not close it again
@@ -1008,6 +1043,7 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
             log.error(message);
             nextTransport.close();
             transportRef.current = null;
+            isReadyRef.current = false;
             setIsReady(false);
             setError(message);
             setConnectionState('error');
@@ -1090,6 +1126,7 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
 
     setSessionExpiresAt(null);
     setReconnectAttempt(0);
+    isReadyRef.current = false;
     setIsReady(false);
     setSessionState('idle');
     setConnectionState('disconnected');

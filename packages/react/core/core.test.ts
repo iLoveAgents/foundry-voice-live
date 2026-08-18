@@ -237,6 +237,28 @@ describe('WebRtcMicrophone', () => {
 });
 
 describe('WebRtcMicrophone (stop during a pending start)', () => {
+  it('coalesces concurrent start() calls into one acquisition', async () => {
+    const first = makeFakeMicStream();
+    const second = makeFakeMicStream();
+    const streams = [first.stream, second.stream];
+    let calls = 0;
+    const getUserMedia = vi.fn(async () => {
+      const s = streams[calls] ?? second.stream;
+      calls += 1;
+      return s as never;
+    });
+    const mic = new WebRtcMicrophone({ getUserMedia });
+    // two starts during one permission prompt must not acquire two microphones: the second stream
+    // would overwrite the first and leave a live track that stop() can no longer reach
+    const [a, b] = await Promise.all([mic.start(), mic.start()]);
+    expect(getUserMedia).toHaveBeenCalledTimes(1);
+    expect(a).toBe(first.track);
+    expect(b).toBe(first.track);
+    expect(second.track.stop).not.toHaveBeenCalled();
+    mic.stop();
+    expect(first.track.stop).toHaveBeenCalled();
+  });
+
   it('releases a stream whose permission prompt resolved after stop()', async () => {
     const { stream, track } = makeFakeMicStream();
     let release: (s: MediaStream) => void = () => undefined;
@@ -279,7 +301,9 @@ describe('reconnect policy', () => {
 
   it('classifies closes', () => {
     expect(isReconnectableClose({ code: 1000, reason: '', wasClean: true })).toBe(false);
-    expect(isReconnectableClose({ code: 1001, reason: 'going away', wasClean: true })).toBe(false);
+    // 1001 from the *service* means it is going away/restarting — exactly what reconnect is for.
+    // We never see our own 1001: disconnect() detaches the transport callbacks first.
+    expect(isReconnectableClose({ code: 1001, reason: 'going away', wasClean: true })).toBe(true);
     expect(isReconnectableClose({ code: 1006, reason: '', wasClean: false })).toBe(true);
     expect(isReconnectableClose({ code: 1011, reason: 'server error', wasClean: true })).toBe(true);
     expect(isReconnectableClose({ code: 4008, reason: 'timeout', wasClean: false })).toBe(true);

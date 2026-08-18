@@ -102,8 +102,18 @@ const logger: Logger = {
   },
 };
 
+/**
+ * Largest browser frame accepted. Voice Live client frames are small (100 ms of PCM16 is a few KB,
+ * an SDP offer or a session.update with long instructions well under this), so a low cap keeps a
+ * hostile client from making the proxy buffer ~100 MB per frame (the `ws` default) before any of
+ * our own limits can apply. `ws` closes offenders with 1009.
+ */
+const MAX_CLIENT_FRAME_BYTES = parseInt(process.env.MAX_FRAME_BYTES || "1048576", 10);
+
 // Initialize Express with WebSocket support
-const { app } = expressWs(express());
+const { app } = expressWs(express(), undefined, {
+  wsOptions: { maxPayload: MAX_CLIENT_FRAME_BYTES },
+});
 
 // Configuration - API key secured in backend (not exposed to browser)
 const config: ProxyConfig = {
@@ -580,6 +590,7 @@ app.listen(config.port, () => {
     `  Rate Limit: ${securityConfig.rateLimitMax} req/${securityConfig.rateLimitWindowMs}ms per IP`
   );
   logger.info(`  Max Conns:  ${securityConfig.maxConnections} concurrent`);
+  logger.info(`  Max Frame:  ${MAX_CLIENT_FRAME_BYTES} bytes per client message`);
   logger.info(`\nTelemetry:  ${telemetryStatus}\n`);
 
   logger.trackEvent("ServerStarted", {

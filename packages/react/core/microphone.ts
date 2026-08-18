@@ -19,6 +19,12 @@ export class WebRtcMicrophone {
    * microphone hot after the caller asked for it to be released.
    */
   private generation = 0;
+  /**
+   * The in-flight `getUserMedia` call. Without it, two `start()` calls during one permission
+   * prompt would each acquire a stream and the second would overwrite the first — leaving a live
+   * microphone track that `stop()` can no longer reach.
+   */
+  private pendingStart: Promise<MediaStreamTrack | null> | null = null;
 
   constructor(private readonly options: WebRtcMicrophoneOptions = {}) {}
 
@@ -41,25 +47,35 @@ export class WebRtcMicrophone {
    */
   async start(constraints?: MediaTrackConstraints | boolean): Promise<MediaStreamTrack | null> {
     if (this.stream) return this.track;
+    if (this.pendingStart) return this.pendingStart; // one prompt, one stream
     const getUserMedia =
       this.options.getUserMedia ??
       ((c: MediaStreamConstraints): Promise<MediaStream> => navigator.mediaDevices.getUserMedia(c));
     const generation = this.generation;
-    const stream = await getUserMedia(buildMicConstraints(constraints));
-    if (generation !== this.generation) {
-      // stop() was called while the permission prompt was open — release immediately
-      stream.getTracks().forEach((t) => t.stop());
-      return null;
+    const attempt = (async (): Promise<MediaStreamTrack | null> => {
+      const stream = await getUserMedia(buildMicConstraints(constraints));
+      if (generation !== this.generation) {
+        // stop() was called while the permission prompt was open — release immediately
+        stream.getTracks().forEach((t) => t.stop());
+        return null;
+      }
+      this.stream = stream;
+      const track = this.track;
+      if (track) track.enabled = !this.mutedFlag;
+      return track;
+    })();
+    this.pendingStart = attempt;
+    try {
+      return await attempt;
+    } finally {
+      if (this.pendingStart === attempt) this.pendingStart = null;
     }
-    this.stream = stream;
-    const track = this.track;
-    if (track) track.enabled = !this.mutedFlag;
-    return track;
   }
 
   /** Stop and release the microphone (also cancels an acquisition that is still pending) */
   stop(): void {
     this.generation += 1;
+    this.pendingStart = null;
     this.stream?.getTracks().forEach((t) => t.stop());
     this.stream = null;
   }

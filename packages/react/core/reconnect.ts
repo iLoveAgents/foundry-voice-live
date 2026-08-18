@@ -42,8 +42,15 @@ export function computeBackoffDelay(
   return Math.max(0, Math.round(jittered));
 }
 
-/** Close codes that indicate a normal, intentional end of the session */
-const NORMAL_CLOSE_CODES = new Set([1000, 1001]);
+/**
+ * Close codes that indicate a normal, intentional end of the session.
+ *
+ * `1001 Going Away` is deliberately **not** in this set: on a client it means "navigating away",
+ * but we never observe our own — `disconnect()` detaches the transport callbacks first — so a 1001
+ * that reaches us came from the service shutting down or restarting, which is exactly what the
+ * reconnect policy is for.
+ */
+const NORMAL_CLOSE_CODES = new Set([1000]);
 
 /**
  * Whether a control-channel close should trigger a reconnect attempt: anything that was not

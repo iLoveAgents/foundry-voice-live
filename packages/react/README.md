@@ -433,7 +433,9 @@ const { connectionState, reconnectAttempt } = useVoiceLive({
 // connectionState: 'reconnecting' while attempts run; reconnectAttempt = 1, 2, …
 ```
 
-Triggered by any unclean close: a network drop (`1006`), a service restart, a connect that times out (`connectTimeoutMs`, default 15 s), and every terminal WebRTC failure — SDP answer rejected (`4009`), `rtc.call.error` (`4010`) and a peer connection that goes `failed`, e.g. switching from Wi‑Fi to cellular mid-call (`4011`). Never after `disconnect()` or a clean `1000`/`1001` close.
+Triggered by any unclean close, plus a clean `1001 Going Away` (which only the *service* sends to us): a network drop (`1006`), a service restart, a connect that times out (`connectTimeoutMs`, default 15 s), and every terminal WebRTC failure — SDP answer rejected (`4009`), `rtc.call.error` (`4010`) and a peer connection that goes `failed`, e.g. switching from Wi‑Fi to cellular mid-call (`4011`). Never after `disconnect()` or a clean `1000`/`1001` close.
+
+While reconnecting, microphone audio is dropped rather than queued — speech during the gap is lost by design instead of being replayed into a session that has not been configured yet.
 
 What happens on such a close: the transport is rebuilt, the WebRTC microphone track / WebSocket capture keep running and are re-attached, the `AudioContext` created on the user's gesture is kept, the proactive greeting is **not** re-sent. Standard-mode sessions start fresh (the service keeps no history across sockets); Foundry agents continue the conversation when `conversationId` is set. Clean closes and exhausted attempts end in `'disconnected'` / `'error'`.
 

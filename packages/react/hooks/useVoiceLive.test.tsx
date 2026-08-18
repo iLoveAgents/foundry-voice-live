@@ -435,4 +435,63 @@ describe('useVoiceLive (websocket)', () => {
     expect(ws.sent.filter((e) => e.type === 'conversation.item.create')).toHaveLength(0);
     expect(ws.sent.filter((e) => e.type === 'response.create')).toHaveLength(0);
   });
+
+  it('sends only one response.create when two turns are submitted before the server answers', async () => {
+    const { hook, ws } = await connectAndOpen(baseConfig);
+    await deliver(ws, { type: 'session.created', session: {} });
+    await deliver(ws, { type: 'session.updated', session: {} });
+
+    // Two sends in a row: response.created has not arrived yet, so the conversation still *looks*
+    // idle — without request tracking both would be sent and the service would reject the second
+    await act(async () => {
+      hook.result.current.sendText('first');
+      hook.result.current.sendText('second');
+    });
+    expect(ws.sent.filter((e) => e.type === 'response.create')).toHaveLength(1);
+    expect(ws.sent.filter((e) => e.type === 'conversation.item.create')).toHaveLength(2);
+
+    // the deferred one goes out when the first response completes
+    await deliver(ws, { type: 'response.created', response: { id: 'r1' } });
+    await deliver(ws, { type: 'response.done', response: { id: 'r1' } });
+    expect(ws.sent.filter((e) => e.type === 'response.create')).toHaveLength(2);
+
+    // an API error clears the outstanding request so later turns still work
+    await act(async () => {
+      hook.result.current.sendText('third');
+    });
+    expect(ws.sent.filter((e) => e.type === 'response.create')).toHaveLength(2);
+    await deliver(ws, { type: 'error', error: { message: 'rejected', code: 'x' } });
+    await act(async () => {
+      hook.result.current.sendText('fourth');
+    });
+    expect(ws.sent.filter((e) => e.type === 'response.create')).toHaveLength(3);
+    hook.unmount();
+  });
+
+  it('stops handling an event when a consumer callback disconnects from onEvent', async () => {
+    let hookRef: { current: ReturnType<typeof useVoiceLive> } | null = null;
+    const onEvent = vi.fn((event: { type: string }) => {
+      if (event.type === 'session.updated') {
+        hookRef?.current.disconnect();
+      }
+    });
+    const config = { ...baseConfig, onEvent };
+    const hook = renderHook(() => useVoiceLive(config));
+    hookRef = hook.result as never;
+    await act(async () => {
+      await hook.result.current.connect();
+    });
+    const ws = FakeWebSocket.instances[0]!;
+    await act(async () => {
+      ws.open();
+      ws.receive({ type: 'session.created', session: {} });
+    });
+    await act(async () => {
+      ws.receive({ type: 'session.updated', session: {} });
+    });
+    // announceReady() must not resurrect a session the consumer just ended
+    expect(hook.result.current.isReady).toBe(false);
+    expect(hook.result.current.connectionState).toBe('disconnected');
+    hook.unmount();
+  });
 });

@@ -293,6 +293,7 @@ Upstream parameter names: `agentName` → `agent-name`, `projectName` → `agent
 | `ALLOWED_ORIGINS`                       | No       | `http://localhost:3000` | CORS origins (comma-sep)                                                    |
 | `RATE_LIMIT_MAX_REQUESTS`               | No       | `100`                   | Max requests per window                                                     |
 | `RATE_LIMIT_WINDOW_MS`                  | No       | `60000`                 | Rate limit window (ms)                                                      |
+| `MAX_FRAME_BYTES`                       | No       | `1048576`               | Largest accepted browser frame (1 MiB); offenders are closed with `1009`     |
 | `MAX_CONNECTIONS`                       | No       | `1000`                  | Max concurrent connections                                                  |
 | `APPLICATIONINSIGHTS_CONNECTION_STRING` | No       | -                       | Enable Application Insights telemetry                                       |
 
