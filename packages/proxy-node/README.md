@@ -102,7 +102,9 @@ For every connection the proxy resolves credentials in this order (both modes):
 | 2        | `FOUNDRY_API_KEY` env (shared key)               | ✅            | –              |
 | 3        | `DefaultAzureCredential` (server-side, keyless)  | ✅            | ✅             |
 
-Tokens are always sent upstream as an `Authorization: Bearer` header — they never appear in the upstream URL, and `token` / `api-key` / `Authorization` values are redacted from logs.
+Tokens are always sent upstream as an `Authorization: Bearer` header — they never appear in the upstream URL, and `token` / `api-key` / `Authorization` values are redacted from logs. Errors sent back to the browser are limited to problems with its own request; token-acquisition, DNS and upstream-handshake details stay in the server log.
+
+> **Origin enforcement.** Browser connections are checked against `ALLOWED_ORIGINS` on the HTTP request *and* on the WebSocket upgrade (matching is exact — a prefix check would let `http://localhost:3001.attacker.com` through). Requests **without** an `Origin` header (curl, native apps, server-to-server) are allowed by design, so the origin check alone does not authenticate anyone: pair it with network rules or your own auth.
 
 > **Trust boundary.** With a shared API key or `DefaultAzureCredential`, every client that can reach `/ws` acts with the proxy's credentials — for any model and any agent the key/identity can access, in either mode. Restrict who can reach the proxy (`ALLOWED_ORIGINS`, network rules, your own auth in front of it) or use per-user `?token=` auth so each user is authorized and audited individually.
 

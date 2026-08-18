@@ -65,6 +65,7 @@ Targets Voice Live API **`2026-07-15` (GA)**. This release contains breaking cha
 
 #### Added
 - Pre-connect message queue is bounded by bytes as well as frame count (`PendingMessageQueue`, 1 MiB budget): an unauthenticated client can no longer make the proxy retain large payloads while the upstream connection is pending. Offenders are closed with `1009`.
+- **Security**: origin matching is exact (a prefix check accepted `http://localhost:3001.attacker.com` against a `http://localhost:3001` allow-list) and is now enforced on the WebSocket upgrade too — with `express-ws` the upgrade completes before CORS middleware can reject it. Errors returned to the browser are limited to problems with its own request; token/DNS/handshake detail stays server-side.
 - Upstream connections use a 15 s handshake timeout, and an upstream error closes the browser socket explicitly (`1011`) instead of relying on a paired `close` event — a hanging Azure handshake used to leave the client reporting `connected` while never becoming ready.
 - `transport=webrtc` query parameter → relays the control channel to `/voice-live/realtime/calls` (default api-version `2026-01-01-preview` for WebRTC).
 - Browser messages received before the upstream socket is open are queued and flushed (the WebRTC client sends `rtc.call.sdp.create` immediately on open — previously such early messages were dropped).

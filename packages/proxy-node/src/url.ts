@@ -34,6 +34,18 @@ export const DEFAULT_MODEL = "gpt-realtime";
 /** Entra ID scope for Voice Live / Foundry */
 export const ENTRA_SCOPE = "https://ai.azure.com/.default";
 
+/**
+ * A problem with the *client's* request (bad/missing query parameters). These messages are safe to
+ * send back to the browser; every other failure is reported generically so server-side detail
+ * (token acquisition, upstream handshake, DNS) never leaks.
+ */
+export class ProxyRequestError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ProxyRequestError";
+  }
+}
+
 const REALTIME_PATH = "/voice-live/realtime";
 const REALTIME_CALLS_PATH = "/voice-live/realtime/calls";
 
@@ -85,7 +97,9 @@ export function resolveTransport(query: QueryParams): Transport {
   if (raw === "webrtc") {
     return "webrtc";
   }
-  throw new Error(`Unsupported transport '${query.transport}' (expected 'websocket' or 'webrtc')`);
+  throw new ProxyRequestError(
+    `Unsupported transport '${query.transport}' (expected 'websocket' or 'webrtc')`
+  );
 }
 
 /**
@@ -189,7 +203,7 @@ export async function buildAzureUrl(
   if (mode === "foundry-agent") {
     const { agentName, projectName } = resolveAgent(query, cfg);
     if (!agentName || !projectName) {
-      throw new Error(
+      throw new ProxyRequestError(
         "Foundry Agents requires both agentName and projectName (URL params or .env)"
       );
     }

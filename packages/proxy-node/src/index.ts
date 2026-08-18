@@ -38,9 +38,11 @@ import {
   resolveApiVersion,
   DEFAULT_MODEL,
   ENTRA_SCOPE,
+  ProxyRequestError,
 } from "./url.js";
 import { readPackageInfo } from "./packageInfo.js";
 import { PendingMessageQueue } from "./pendingQueue.js";
+import { isOriginAllowed } from "./security.js";
 
 dotenv.config();
 
@@ -177,11 +179,8 @@ app.use(
         return callback(null, true);
       }
 
-      // Check if origin is in allowed list or if wildcard is set
-      if (
-        securityConfig.allowedOrigins.includes("*") ||
-        securityConfig.allowedOrigins.some((allowed) => origin.startsWith(allowed))
-      ) {
+      // Exact match — a prefix check would let http://localhost:3001.attacker.com through
+      if (isOriginAllowed(origin, securityConfig.allowedOrigins)) {
         callback(null, true);
       } else {
         logger.warn(`[Security] Blocked origin: ${origin}`, { origin });
@@ -329,6 +328,14 @@ app.get("/health", (_req, res) => {
  * Optional: &apiVersion=YYYY-MM-DD[-preview] overrides API_VERSION / the built-in default.
  */
 app.ws("/ws", async (ws, req) => {
+  // The upgrade completes before the CORS middleware can reject it, so check here too
+  const origin = req.headers.origin;
+  if (!isOriginAllowed(origin, securityConfig.allowedOrigins)) {
+    logger.warn(`[Security] Blocked WebSocket origin: ${origin}`, { origin });
+    ws.close(1008, "Origin not allowed");
+    return;
+  }
+
   // Check connection limit
   if (activeConnections >= securityConfig.maxConnections) {
     logger.warn("[Security] Max connections reached", {
@@ -488,7 +495,11 @@ app.ws("/ws", async (ws, req) => {
     logger.error("[Proxy] Error:", error instanceof Error ? error : undefined, { errorMessage });
     logger.trackEvent("WebSocketError", { errorMessage });
     if (ws.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify({ type: "error", error: { message: errorMessage } }));
+      // Only surface errors about the client's own request. Everything else (token acquisition,
+      // upstream handshake, DNS) can carry server-side detail the browser has no business seeing.
+      const clientMessage =
+        error instanceof ProxyRequestError ? error.message : "Upstream connection failed";
+      ws.send(JSON.stringify({ type: "error", error: { message: clientMessage } }));
     }
     ws.close();
     azureWs?.close();
