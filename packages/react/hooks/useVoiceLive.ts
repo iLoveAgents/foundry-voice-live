@@ -211,6 +211,8 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
 
   // ===== Protocol state =====
   const isAgentModeRef = useRef<boolean>(false);
+  /** Effective `turn_detection.create_response` as last reported by the service (default: on) */
+  const autoCreateResponseRef = useRef<boolean>(true);
   const currentResponseIdRef = useRef<string | null>(null);
   /** Serializes `response.create` against the service (see `core/responseGate.ts`) */
   const responseGateRef = useRef<ResponseGate | null>(null);
@@ -595,6 +597,10 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
           if (data.session?.expires_at) {
             setSessionExpiresAt(data.session.expires_at * 1000);
           }
+          // The service echoes the effective session: keep the VAD behaviour in sync with it
+          const turnDetection = (data.session as { turn_detection?: { create_response?: boolean } } | undefined)
+            ?.turn_detection;
+          autoCreateResponseRef.current = turnDetection ? turnDetection.create_response !== false : true;
           if (!safeCall('onSessionUpdated', onSessionUpdated, data.session as Record<string, unknown>)) {
             // The consumer disconnected/reconnected: do not set up an avatar for a dead session
             break;
@@ -682,8 +688,9 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
           // With server VAD creating responses (the default), the service is about to start one.
           // Reserving the slot keeps a turn submitted in this window from overlapping it; the
           // reservation is speculative and self-heals if no `response.created` follows.
-          const autoCreates = configRef.current.session?.turnDetection?.createResponse !== false;
-          if (autoCreates && !isAgentModeRef.current) {
+          // Read what the *service* reports (session.updated), because updateSession() can change
+          // this at runtime — local config would go stale
+          if (autoCreateResponseRef.current && !isAgentModeRef.current) {
             const gate = responseGateRef.current as ResponseGate;
             gate.reserveAutomatic();
             if (gate.isSpeculative) {
@@ -703,14 +710,14 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
         case 'conversation.item.input_audio_transcription.delta':
           if (onTranscript && data.delta) {
             userTranscriptRef.current += data.delta;
-            safeCall('onTranscript', onTranscript, 'user', userTranscriptRef.current, false);
+            if (!safeCall('onTranscript', onTranscript, 'user', userTranscriptRef.current, false)) break;
           }
           break;
 
         case 'conversation.item.input_audio_transcription.completed':
           log.debug(`User said: "${data.transcript}"`);
           if (onTranscript && data.transcript) {
-            safeCall('onTranscript', onTranscript, 'user', data.transcript, true);
+            if (!safeCall('onTranscript', onTranscript, 'user', data.transcript, true)) break;
           }
           userTranscriptRef.current = '';
           break;
@@ -727,15 +734,18 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
         case 'response.text.delta':
           if (onTranscript && data.delta) {
             assistantTranscriptRef.current += data.delta;
-            safeCall('onTranscript', onTranscript, 'assistant', assistantTranscriptRef.current, false);
+            if (!safeCall('onTranscript', onTranscript, 'assistant', assistantTranscriptRef.current, false)) break;
           }
           break;
 
         case 'response.done': {
           // Emit final assistant transcript if accumulated
           if (onTranscript && assistantTranscriptRef.current) {
-            safeCall('onTranscript', onTranscript, 'assistant', assistantTranscriptRef.current, true);
+            const transcript = assistantTranscriptRef.current;
             assistantTranscriptRef.current = '';
+            // A consumer may disconnect() on the final transcript: everything below belongs to a
+            // session that would no longer exist (state, the gate, a queued flush)
+            if (!safeCall('onTranscript', onTranscript, 'assistant', transcript, true)) break;
           }
           setSessionState('listening');
           // No further tool calls can arrive for this response, so a batch whose executors have
@@ -855,7 +865,9 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
           log.error('API Error:', data.error);
           // The error may be the rejection of a response.create we are waiting on: no response.done
           // will follow, so the gate falls back to idle and any queued turn is sent now
-          if ((responseGateRef.current as ResponseGate).onError(data.event_id as string | undefined)) {
+          // The offending *client* event id is inside the error payload; the top-level event_id
+          // identifies the server's error event itself
+          if ((responseGateRef.current as ResponseGate).onError(data.error?.event_id)) {
             log.debug('Sending queued response.create after an API error');
             sendGatedResponseCreate();
           }
@@ -1038,11 +1050,18 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
           clearConnectTimer();
           log.info(kind === 'webrtc' ? 'Control channel connected' : 'WebSocket connected');
           setConnectionState('connected');
-          const graph = ensureGraph();
-          if (kind === 'websocket' && !configRef.current.session?.avatar) {
-            // Voice-only WebSocket mode: expose played audio as a MediaStream
-            const stream = graph.ensureDestination();
-            if (stream) setAudioStream(stream);
+          try {
+            const graph = ensureGraph();
+            if (kind === 'websocket' && !configRef.current.session?.avatar) {
+              // Voice-only WebSocket mode: expose played audio as a MediaStream
+              const stream = graph.ensureDestination();
+              if (stream) setAudioStream(stream);
+            }
+          } catch (err) {
+            // A blocked/unavailable AudioContext must not abort the connection: over WebRTC the
+            // remote RTP stream plays on its own and the graph is only used for visualization.
+            // (Over WebSocket, playback then fails later with a clear error from the player.)
+            log.warn('Audio graph unavailable:', err);
           }
         },
         onEvent: (event) => {

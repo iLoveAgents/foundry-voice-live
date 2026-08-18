@@ -152,7 +152,12 @@ export class WebRtcTransport implements VoiceLiveTransport {
 
     ws.onopen = async (): Promise<void> => {
       this.currentState = 'open';
-      this.callbacks.onOpen();
+      try {
+        this.callbacks.onOpen();
+      } catch (err) {
+        // The caller's bookkeeping is not ours to depend on: negotiation continues regardless
+        log?.warn('onOpen callback threw:', err);
+      }
 
       let offer: WebRtcOffer;
       try {

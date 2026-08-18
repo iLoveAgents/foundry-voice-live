@@ -1166,4 +1166,120 @@ describe('useVoiceLive (reconnect)', () => {
     expect(FakePeerConnection.instances).toHaveLength(0);
     expect(hook.result.current.connectionState).toBe('disconnected');
   });
+
+  it('correlates an API error with the client event it rejected', async () => {
+    const { hook, ws } = await connectAndReady(baseConfig);
+    await act(async () => {
+      hook.result.current.sendText('first');
+    });
+    const request = ws.lastSent('response.create');
+    expect(request.event_id).toBeTruthy();
+
+    // an unrelated failure (a bad session.update) must NOT release our outstanding request
+    await act(async () => {
+      ws.receive({
+        type: 'error',
+        event_id: 'server_evt_1',
+        error: { message: 'bad session', code: 'invalid', event_id: 'evt_other' },
+      });
+      hook.result.current.sendText('second');
+    });
+    expect(ws.sent.filter((e) => e.type === 'response.create')).toHaveLength(1);
+
+    // the rejection of our own request releases it, and the queued turn goes out
+    await act(async () => {
+      ws.receive({
+        type: 'error',
+        event_id: 'server_evt_2',
+        error: { message: 'rejected', code: 'conflict', event_id: request.event_id },
+      });
+    });
+    expect(ws.sent.filter((e) => e.type === 'response.create')).toHaveLength(2);
+  });
+
+  it('follows the service when updateSession() turns automatic responses off', async () => {
+    const { hook, ws } = await connectAndReady(baseConfig);
+    // the service reports the effective setting; local config would go stale here
+    await act(async () => {
+      ws.receive({
+        type: 'session.updated',
+        session: { id: 's1', turn_detection: { type: 'azure_semantic_vad', create_response: false } },
+      });
+      ws.receive({ type: 'input_audio_buffer.speech_stopped' });
+    });
+    // no automatic response is coming, so an explicit turn must not be held back
+    await act(async () => {
+      hook.result.current.createResponse();
+    });
+    expect(ws.sent.filter((e) => e.type === 'response.create')).toHaveLength(1);
+  });
+
+  it('stops handling response.done when the final transcript callback disconnects', async () => {
+    let api: ReturnType<typeof useVoiceLive> | null = null;
+    const hook = renderHook(() =>
+      useVoiceLive({
+        ...baseConfig,
+        onTranscript: (_role, _text, isFinal) => {
+          if (isFinal) api?.disconnect();
+        },
+      })
+    );
+    api = hook.result.current;
+    await act(async () => {
+      await hook.result.current.connect();
+    });
+    const ws = FakeWebSocket.instances.at(-1)!;
+    await act(async () => {
+      ws.open();
+      ws.receive({ type: 'session.created', session: { id: 's1' } });
+      ws.receive({ type: 'session.updated', session: { id: 's1' } });
+      ws.receive({ type: 'response.created', response: { id: 'r1' } });
+      ws.receive({ type: 'response.audio_transcript.delta', delta: 'hi' });
+    });
+    await act(async () => {
+      ws.receive({ type: 'response.done', response: { id: 'r1' } });
+    });
+    // the rest of response.done (session state, the gate) belongs to a session that is gone
+    expect(hook.result.current.connectionState).toBe('disconnected');
+    expect(hook.result.current.sessionState).toBe('idle');
+  });
+
+  it('still negotiates WebRTC when the audio graph cannot be created', async () => {
+    const restoreFakes = installBrowserFakes();
+    try {
+      vi.stubGlobal(
+        'AudioContext',
+        class {
+          constructor() {
+            throw new Error('AudioContext blocked');
+          }
+        }
+      );
+      const hook = renderHook(() =>
+        useVoiceLive({
+          ...baseConfig,
+          connection: { resourceName: 'my-res', apiKey: 'secret', transport: 'webrtc' },
+          autoStartMic: false,
+        })
+      );
+      await act(async () => {
+        await hook.result.current.connect();
+      });
+      const ws = FakeWebSocket.instances.at(-1)!;
+      await act(async () => {
+        ws.open();
+      });
+      // the offer must still be sent: WebRTC playback uses the remote track, not the graph
+      await vi.waitFor(() => expect(ws.lastSent('rtc.call.sdp.create')).toBeTruthy());
+      const pc = FakePeerConnection.instances.at(-1)!;
+      await act(async () => {
+        pc.setConnectionState('connected');
+        pc.dataChannels[0]!.open();
+      });
+      expect(hook.result.current.isReady).toBe(true);
+      expect(hook.result.current.connectionState).toBe('connected');
+    } finally {
+      restoreFakes();
+    }
+  });
 });

@@ -27,6 +27,7 @@ src/
   index.ts            # Express + WebSocket server, logging, telemetry, DefaultAzureCredential, relay
   pendingQueue.ts     # PendingMessageQueue: pre-connect frames, bounded by count AND bytes
   security.ts         # isOriginAllowed: exact-match origin check (HTTP + the WS upgrade)
+  closeFrame.ts       # toClientCloseFrame: forward upstream close codes (the SDK reconnects on them)
   url.ts              # Pure: buildAzureUrl, resolveMode/Transport/ApiVersion, redactUrl, defaults
   packageInfo.ts      # Reads name/version from package.json (GET / info endpoint, banner)
   types.ts            # TypeScript type definitions (QueryParams, ProxyConfig, ProxyMode, ...)

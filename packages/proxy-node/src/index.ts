@@ -43,6 +43,7 @@ import {
 import { readPackageInfo } from "./packageInfo.js";
 import { PendingMessageQueue } from "./pendingQueue.js";
 import { isOriginAllowed } from "./security.js";
+import { toClientCloseFrame } from "./closeFrame.js";
 
 dotenv.config();
 
@@ -481,15 +482,19 @@ app.ws("/ws", async (ws, req) => {
     });
 
     azureWs.on("close", (code, reason) => {
+      const reasonText = reason.toString();
       logger.info(
-        `[Proxy] Azure WebSocket closed - Code: ${code}, Reason: ${reason.toString() || "No reason"}`,
+        `[Proxy] Azure WebSocket closed - Code: ${code}, Reason: ${reasonText || "No reason"}`,
         {
           source: "azure",
           closeCode: code,
-          closeReason: reason.toString(),
+          closeReason: reasonText,
         }
       );
-      ws.close();
+      // Pass the upstream's own code through: the SDK decides whether to reconnect from it, and a
+      // plain ws.close() would arrive as 1005 "no status" — indistinguishable from an abnormal end
+      const { code: clientCode, reason: clientReason } = toClientCloseFrame(code, reasonText);
+      ws.close(clientCode, clientReason);
     });
 
     azureWs.on("error", (error) => {

@@ -41,7 +41,11 @@ export class WebSocketTransport implements VoiceLiveTransport {
 
     ws.onopen = (): void => {
       this.currentState = 'open';
-      this.callbacks.onOpen();
+      try {
+        this.callbacks.onOpen();
+      } catch (err) {
+        this.options.log?.warn('onOpen callback threw:', err);
+      }
     };
     ws.onmessage = (event: MessageEvent): void => {
       const parsed = parseServerEvent(String(event.data));
