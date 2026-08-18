@@ -36,6 +36,12 @@ export const RTC_NEGOTIATION_TIMEOUT_CLOSE_CODE = 4008;
 /** Close code reported when the SDP answer arrives but cannot be applied */
 export const RTC_SDP_ANSWER_FAILED_CLOSE_CODE = 4009;
 
+/** Close code reported when the service rejects the call with `rtc.call.error` */
+export const RTC_CALL_ERROR_CLOSE_CODE = 4010;
+
+/** Close code reported when the peer connection fails (ICE death, network change, NAT rebind) */
+export const RTC_MEDIA_FAILED_CLOSE_CODE = 4011;
+
 export interface WebRtcTransportOptions {
   rtcConfiguration?: RTCConfiguration;
   negotiationTimeoutMs?: number;
@@ -123,9 +129,14 @@ export class WebRtcTransport implements VoiceLiveTransport {
             }, this.options.dataChannelFallbackMs ?? DEFAULT_DATA_CHANNEL_FALLBACK_MS);
           }
         } else if (state === 'failed') {
-          this.callbacks.onError(
-            "WebRTC connection failed. UDP may be blocked on this network — configure rtcConfiguration (TURN) or use transport: 'websocket'."
-          );
+          // Terminal per spec (unlike 'disconnected', which can recover). It can happen mid-call
+          // — a network change or NAT rebind — so close instead of only reporting: otherwise the
+          // media is dead while the control channel still looks 'open', blocking reconnect.
+          const message =
+            "WebRTC connection failed. UDP may be blocked on this network — configure rtcConfiguration (TURN) or use transport: 'websocket'.";
+          this.callbacks.onError(message);
+          this.close();
+          this.callbacks.onClose({ code: RTC_MEDIA_FAILED_CLOSE_CODE, reason: message, wasClean: false });
         }
       },
     });
@@ -284,8 +295,11 @@ export class WebRtcTransport implements VoiceLiveTransport {
     } else if (event.type === 'rtc.call.error') {
       const message = formatRtcCallError(event as RtcCallErrorEvent);
       this.options.log?.error(message);
-      this.teardownMedia();
       this.callbacks.onError(message, event);
+      // The service rejected the call: there will be no answer and no media, so this is terminal.
+      // Closing releases the control channel and lets the caller reconnect or connect() again.
+      this.close();
+      this.callbacks.onClose({ code: RTC_CALL_ERROR_CLOSE_CODE, reason: message, wasClean: false });
     }
   }
 

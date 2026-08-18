@@ -144,4 +144,56 @@ describe('useAudioCapture', () => {
     await vi.waitFor(() => expect(result.current.isCapturing).toBe(true));
     expect(FakeAudioContext.instances[0]!.audioWorklet.addModule).toHaveBeenCalledWith('/custom-processor.js');
   });
+
+  it('abandons a start whose getUserMedia resolves after stopCapture()', async () => {
+    restore();
+    let release: (s: MediaStream) => void = () => undefined;
+    const late = makeFakeMicStream();
+    restore = installBrowserFakes({
+      getUserMedia: () =>
+        new Promise<MediaStream>((resolve) => {
+          release = resolve;
+        }),
+    });
+    const { result } = renderHook(() => useAudioCapture({ onAudioData: vi.fn() }));
+    const started = result.current.startCapture();
+    act(() => {
+      result.current.stopCapture();
+    });
+    await act(async () => {
+      release(late.stream as unknown as MediaStream);
+      await started;
+    });
+    // the late stream is released, and no capture is reported (which would stop the auto-retry)
+    expect(late.track.stop).toHaveBeenCalled();
+    expect(result.current.isCapturing).toBe(false);
+    expect(result.current.stream).toBeNull();
+  });
+
+  it('abandons a start whose worklet module resolves after stopCapture()', async () => {
+    let resolveModule: () => void = () => undefined;
+    FakeAudioContext.addModuleImpl = () =>
+      new Promise<void>((resolve) => {
+        resolveModule = resolve;
+      });
+    const { result } = renderHook(() => useAudioCapture({ onAudioData: vi.fn() }));
+    const started = result.current.startCapture();
+    await vi.waitFor(() => expect(FakeAudioContext.instances).toHaveLength(1));
+    const ctx = FakeAudioContext.instances[0]!;
+    await vi.waitFor(() => expect(ctx.audioWorklet.addModule).toHaveBeenCalled());
+
+    act(() => {
+      result.current.stopCapture();
+    });
+    await act(async () => {
+      resolveModule();
+      await started;
+    });
+
+    // No nodes are wired into the closing context, and capture is not falsely reported active
+    expect(result.current.isCapturing).toBe(false);
+    expect(result.current.stream).toBeNull();
+    expect(ctx.closed).toBe(true);
+    expect(FakeAudioWorkletNode.instances).toHaveLength(0);
+  });
 });

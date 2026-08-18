@@ -35,3 +35,10 @@ export const DEFAULT_MODEL = 'gpt-realtime';
  * WebRTC data channel label used by the Voice Live service for non-audio events.
  */
 export const VOICE_LIVE_DATA_CHANNEL = 'voice-live-events';
+
+/**
+ * Default timeout for the control channel to open (ms). Guards against a socket that never
+ * opens *and* never errors (silently dropped upgrade, dead proxy), which would otherwise leave
+ * the hook in `'connecting'` forever. Set `connectTimeoutMs: 0` to disable.
+ */
+export const DEFAULT_CONNECT_TIMEOUT_MS = 15000;

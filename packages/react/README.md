@@ -348,6 +348,8 @@ session: sessionConfig()
   .build()
 ```
 
+`toolExecutor` semantics: a returned value is sent as `function_call_output`; with parallel tool calls every output of a response is sent first and then **one** `response.create` follows (after `response.done`, so no answer is produced from a partial result set). If your executor rejects, `{ error: message }` is sent as the output — the model can then apologise or retry instead of the conversation stalling forever. Results that arrive after the session ended or reconnected are discarded.
+
 Supported in Foundry agent mode and with cascaded text models (`gpt-4.1`, `gpt-5`, …) + Azure voices. Native audio models (`gpt-realtime`, `gpt-realtime-mini`, `azure-realtime`) don't support interim responses — the SDK warns at connect time.
 
 Measured live (August 2026, `gpt-4.1`, client-side function tool that takes 6 s): `static_interim_response` spoke its filler in every run; `llm_interim_response` produced a filler in 1 of 11 runs regardless of `model`/`instructions`/`latency` settings. Use static texts for client-side tools; LLM-generated fillers are aimed at server-side waits (MCP servers, Foundry agent tools).
@@ -431,7 +433,9 @@ const { connectionState, reconnectAttempt } = useVoiceLive({
 // connectionState: 'reconnecting' while attempts run; reconnectAttempt = 1, 2, …
 ```
 
-What happens on an unexpected close (network drop, `1006`, service restart, WebRTC negotiation timeout — never after `disconnect()` or a clean `1000` close): the transport is rebuilt, the WebRTC microphone track / WebSocket capture keep running and are re-attached, the `AudioContext` created on the user's gesture is kept, the proactive greeting is **not** re-sent. Standard-mode sessions start fresh (the service keeps no history across sockets); Foundry agents continue the conversation when `conversationId` is set. Clean closes and exhausted attempts end in `'disconnected'` / `'error'`.
+Triggered by any unclean close: a network drop (`1006`), a service restart, a connect that times out (`connectTimeoutMs`, default 15 s), and every terminal WebRTC failure — SDP answer rejected (`4009`), `rtc.call.error` (`4010`) and a peer connection that goes `failed`, e.g. switching from Wi‑Fi to cellular mid-call (`4011`). Never after `disconnect()` or a clean `1000`/`1001` close.
+
+What happens on such a close: the transport is rebuilt, the WebRTC microphone track / WebSocket capture keep running and are re-attached, the `AudioContext` created on the user's gesture is kept, the proactive greeting is **not** re-sent. Standard-mode sessions start fresh (the service keeps no history across sockets); Foundry agents continue the conversation when `conversationId` is set. Clean closes and exhausted attempts end in `'disconnected'` / `'error'`.
 
 ## Event Handling
 

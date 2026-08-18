@@ -13,6 +13,12 @@ export interface WebRtcMicrophoneOptions {
 export class WebRtcMicrophone {
   private stream: MediaStream | null = null;
   private mutedFlag = false;
+  /**
+   * Incremented by `stop()`. A `stop()` that lands while `getUserMedia` is still pending would
+   * otherwise be a no-op (there is no stream yet) and the resolved track would keep the
+   * microphone hot after the caller asked for it to be released.
+   */
+  private generation = 0;
 
   constructor(private readonly options: WebRtcMicrophoneOptions = {}) {}
 
@@ -38,15 +44,22 @@ export class WebRtcMicrophone {
     const getUserMedia =
       this.options.getUserMedia ??
       ((c: MediaStreamConstraints): Promise<MediaStream> => navigator.mediaDevices.getUserMedia(c));
+    const generation = this.generation;
     const stream = await getUserMedia(buildMicConstraints(constraints));
+    if (generation !== this.generation) {
+      // stop() was called while the permission prompt was open — release immediately
+      stream.getTracks().forEach((t) => t.stop());
+      return null;
+    }
     this.stream = stream;
     const track = this.track;
     if (track) track.enabled = !this.mutedFlag;
     return track;
   }
 
-  /** Stop and release the microphone */
+  /** Stop and release the microphone (also cancels an acquisition that is still pending) */
   stop(): void {
+    this.generation += 1;
     this.stream?.getTracks().forEach((t) => t.stop());
     this.stream = null;
   }

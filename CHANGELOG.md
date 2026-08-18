@@ -13,6 +13,7 @@ Targets Voice Live API **`2026-07-15` (GA)**. This release contains breaking cha
 - **WebRTC transport (preview)** — `connection.transport: 'webrtc'`: RTP audio via `RTCPeerConnection`, control channel on `/voice-live/realtime/calls` (`rtc.call.sdp.create` / `rtc.call.sdp.created` / `rtc.call.error`), non-audio events on the `voice-live-events` data channel; `connection.rtcConfiguration` for TURN. Voice-only (avatar unsupported). New utils `buildVoiceLiveUrl`, `validateTransport`, `redactUrl`; constants `DEFAULT_WEBRTC_API_VERSION`, `MIN_WEBRTC_API_VERSION`.
 - **Interim responses**: `model` / `maxCompletionTokens` options, `withInterimResponse()`; documented model limitations.
 - **Typed protocol events**: `VoiceLiveServerEvent` / `VoiceLiveClientEvent` discriminated unions (`types/events.ts`); `onEvent` and `sendEvent` are typed.
+- **`connectTimeoutMs`** (default 15 s) and exported close codes (`RTC_SDP_ANSWER_FAILED_CLOSE_CODE`, `RTC_CALL_ERROR_CLOSE_CODE`, `RTC_MEDIA_FAILED_CLOSE_CODE`) so callers can tell why a session ended.
 - **Hook API**: `sendText()`, `sendToolResult()`, `cancelResponse()`, `clearInputAudio()`, `commitInputAudio()`, `approveMcpCall()`, `sessionExpiresAt`, `transport`; `toolExecutor` may return a value / Promise which is sent automatically as `function_call_output` + `response.create`; new callbacks `onWarning`, `onMcpApprovalRequest`, `onSessionUpdated`; `logLevel` option.
 - **Events handled**: `conversation.item.input_audio_transcription.delta` (user partial transcripts), `response.text.delta/done` (text modality), `conversation.item.truncated`, `warning`, `conversation.item.created` (MCP approval requests); typed `output_audio_buffer.started/stopped` (observed on the WebRTC data channel).
 - WebRTC: readiness waits for the data channel, events delivered on both channels are de-duplicated by `event_id`, server-created data channels are accepted, data-channel/RTP diagnostics at `logLevel: 'debug'`.
@@ -39,9 +40,16 @@ Targets Voice Live API **`2026-07-15` (GA)**. This release contains breaking cha
 - `ConnectionState` gains `'reconnecting'`; an unexpected close without `reconnect` now releases the audio graph (`audioStream`/`audioContext` become null until the next `connect()`).
 
 #### Fixed
-- Parallel tool calls: all `function_call_output`s of a response are sent before a single `response.create`, so the model no longer answers with only the first result when tool executors outlive `response.done`.
+- Parallel tool calls: every `function_call_output` of a response is sent before a **single** `response.create`, which now waits for `response.done` (only then is it certain no further tool call belongs to the response) and shares one gate with `sendText()`, so a user turn and a completing tool batch can no longer emit two overlapping `response.create`s.
+- Tool results whose executor settles after the session ended or reconnected are discarded instead of being injected into the new conversation; a **rejected** executor now sends `{ error }` as its `function_call_output` so the conversation cannot stall waiting for a result that will never come.
+- Terminal WebRTC failures all close the transport now (SDP answer not applicable `4009`, `rtc.call.error` `4010`, peer connection `failed` — e.g. a mid-call network change — `4011`), so auto-reconnect runs and `connect()` is accepted again. Previously the control channel stayed `open` and the session was unrecoverable.
+- A control channel that never opens (and never errors) fails after `connectTimeoutMs` instead of leaving the hook in `'connecting'` forever.
 - WebRTC: a `rtc.call.sdp.created` answer that cannot be applied now closes the transport (previously it stayed `open`, blocking both `connect()` and auto-reconnect).
-- A microphone permission prompt that resolves after `disconnect()` releases its track instead of leaving it live and reporting `isMicActive`.
+- A microphone permission prompt that resolves after `disconnect()` **or `stopMic()`** releases its track instead of leaving the microphone hot and reporting `isMicActive` (fixed in `WebRtcMicrophone` itself, so the exported class is safe standalone). The same race in `useAudioCapture` (`stopCapture()`/unmount during `getUserMedia` or worklet loading) no longer leaves `isCapturing: true` with no stream, which used to silently disable the auto-start retry.
+- Audio chunks still being decoded when playback is flushed (barge-in, reconnect) are dropped instead of being queued into the next turn.
+- A throwing consumer callback (`onEvent`, `onTranscript`, `onReconnecting`, …) can no longer abort event handling or strand the reconnect state machine.
+- Avatar ICE gathering is bounded by a timeout, so `close()` during negotiation cannot leave `createOffer()` pending forever.
+- `sessionExpiresAt` is cleared when a session ends (a stale expiry used to survive into a reconnect).
 - An avatar SDP answer applied after teardown no longer marks a disconnected (or replacement) session ready.
 - Reconnect: a transient `getToken()`/setup failure consumes an attempt and continues the backoff policy instead of ending in `'error'` with no transport and no timer.
 - Proxy URLs: an explicit `websocket` transport now overrides a stale `transport=webrtc` parameter in a reused `proxyUrl` (which would have routed the socket to the WebRTC control endpoint).
@@ -57,6 +65,7 @@ Targets Voice Live API **`2026-07-15` (GA)**. This release contains breaking cha
 
 #### Added
 - Pre-connect message queue is bounded by bytes as well as frame count (`PendingMessageQueue`, 1 MiB budget): an unauthenticated client can no longer make the proxy retain large payloads while the upstream connection is pending. Offenders are closed with `1009`.
+- Upstream connections use a 15 s handshake timeout, and an upstream error closes the browser socket explicitly (`1011`) instead of relying on a paired `close` event — a hanging Azure handshake used to leave the client reporting `connected` while never becoming ready.
 - `transport=webrtc` query parameter → relays the control channel to `/voice-live/realtime/calls` (default api-version `2026-01-01-preview` for WebRTC).
 - Browser messages received before the upstream socket is open are queued and flushed (the WebRTC client sends `rtc.call.sdp.create` immediately on open — previously such early messages were dropped).
 - Client disconnects during the upstream connect are handled (upstream socket closed, connection counter released); relay logging no longer `JSON.parse`s every frame.

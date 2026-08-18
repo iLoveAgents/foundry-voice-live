@@ -77,9 +77,18 @@ Tests: `core/*.test.ts` (transports, audio, avatar, mic, reconnect), `hooks/useV
   (`getUserMedia`, avatar `applyServerSdp`, tool executors) can resolve after `disconnect()` or a
   reconnect. Capture `connectIdRef.current` (and the object identity) before the await and bail out
   afterwards — otherwise dead sessions mark themselves ready or leak live microphone tracks.
-- **Automatic tool results are batched per response** (`toolBatchesRef`): outputs are sent with
-  `triggerResponse: false` and one `response.create` follows once the last executor of that
-  `response_id` settles, which is what makes `parallel_tool_calls` correct.
+- **Automatic tool results are batched per response** (`toolBatchesRef`, keyed
+  `<sessionSeq>:<response_id>`): outputs are sent with `triggerResponse: false`; the single
+  `response.create` waits for **both** `response.done` *and* the last executor, and is requested
+  through `requestResponse()` so it shares the deferral gate with `sendText()` (never two
+  overlapping `response.create`s). `sessionSeqRef` — not `connectIdRef`, which survives reconnects
+  — decides whether a late result still belongs to the live conversation.
+- **Terminal failures must close the transport**, not just report `onError`: state `'open'` blocks
+  both `connect()` and the reconnect policy. Close codes: `4001` reconnect setup, `4002` connect
+  timeout, `4008` negotiation timeout, `4009` SDP answer, `4010` `rtc.call.error`, `4011` peer
+  connection `failed`. (`'disconnected'` is *not* terminal — it can recover.)
+- **Consumer callbacks go through `safeCall`**: a throwing `onEvent`/`onTranscript`/`onReconnecting`
+  must never abort our own handling or strand the state machine.
 - `validateConfig()` returns warnings (never throws); the hook logs them before connecting.
 - Logging goes through `createLogger(logLevel)`; default `'warn'` — never `console.log` directly.
 - `sessionConfig()` builder output works in both standard and agent modes.

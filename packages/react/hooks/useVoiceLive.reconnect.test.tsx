@@ -397,4 +397,269 @@ describe('useVoiceLive (reconnect)', () => {
     expect(hook.result.current.connectionState).toBe('disconnected');
     expect(hook.result.current.error).toBeNull();
   });
+
+  it('fails a connect that never opens instead of sitting in connecting forever', async () => {
+    const hook = renderHook(() =>
+      useVoiceLive({ ...baseConfig, connectTimeoutMs: 5000 })
+    );
+    await act(async () => {
+      await hook.result.current.connect();
+    });
+    expect(hook.result.current.connectionState).toBe('connecting');
+    const ws = FakeWebSocket.instances.at(-1)!;
+    // socket neither opens nor errors (silently dropped upgrade / dead proxy)
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5000);
+    });
+    expect(hook.result.current.connectionState).toBe('error');
+    expect(hook.result.current.error).toMatch(/timed out after 5000 ms/i);
+    expect(ws.readyState).toBe(FakeWebSocket.CLOSED);
+    // ...and connect() works again (the guard no longer sees a 'connecting' transport)
+    await act(async () => {
+      await hook.result.current.connect();
+    });
+    expect(hook.result.current.connectionState).toBe('connecting');
+    expect(FakeWebSocket.instances).toHaveLength(2);
+  });
+
+  it('retries a timed-out connect when reconnect is enabled, and cancels the timer once open', async () => {
+    const hook = renderHook(() =>
+      useVoiceLive({ ...baseConfig, connectTimeoutMs: 1000, reconnect: { initialDelayMs: 10, jitter: 0 } })
+    );
+    await act(async () => {
+      await hook.result.current.connect();
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000);
+    });
+    expect(hook.result.current.connectionState).toBe('reconnecting');
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10);
+    });
+    const ws2 = FakeWebSocket.instances.at(-1)!;
+    await act(async () => {
+      ws2.open();
+      ws2.receive({ type: 'session.created', session: { id: 's1' } });
+      ws2.receive({ type: 'session.updated', session: { id: 's1' } });
+    });
+    expect(hook.result.current.connectionState).toBe('connected');
+    // the timer was cleared on open: advancing well past the timeout must not tear the session down
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5000);
+    });
+    expect(hook.result.current.connectionState).toBe('connected');
+    expect(hook.result.current.isReady).toBe(true);
+  });
+
+  it('discards a tool result whose executor settles after a reconnect', async () => {
+    let resolveTool: (v: object) => void = () => undefined;
+    const toolExecutor = vi.fn(
+      () =>
+        new Promise<object>((r) => {
+          resolveTool = r;
+        })
+    );
+    const { hook, ws } = await connectAndReady({
+      ...baseConfig,
+      toolExecutor,
+      reconnect: { initialDelayMs: 10, jitter: 0 },
+    });
+    await act(async () => {
+      ws.receive({ type: 'response.created', response: { id: 'resp-1' } });
+      ws.receive({
+        type: 'response.function_call_arguments.done',
+        response_id: 'resp-1',
+        call_id: 'call-a',
+        name: 'slow',
+        arguments: '{}',
+      });
+    });
+
+    // Connection drops and reconnects while the tool is still running
+    await act(async () => {
+      ws.drop(1006);
+      await vi.advanceTimersByTimeAsync(10);
+    });
+    const ws2 = FakeWebSocket.instances.at(-1)!;
+    await act(async () => {
+      ws2.open();
+      ws2.receive({ type: 'session.created', session: { id: 's2' } });
+      ws2.receive({ type: 'session.updated', session: { id: 's2' } });
+    });
+    expect(hook.result.current.isReady).toBe(true);
+
+    await act(async () => {
+      resolveTool({ ok: true });
+    });
+    // The output belongs to a conversation the new session does not have: it must not be sent,
+    // and it must not trigger a response there
+    expect(ws2.sent.filter((e) => e.type === 'conversation.item.create')).toHaveLength(0);
+    expect(ws2.sent.filter((e) => e.type === 'response.create')).toHaveLength(0);
+  });
+
+  it('releases a microphone acquired after stopMic() was called', async () => {
+    const { stream, track } = makeFakeMicStream();
+    let release: (s: MediaStream) => void = () => undefined;
+    const restoreFakes = installBrowserFakes({
+      getUserMedia: () =>
+        new Promise<MediaStream>((resolve) => {
+          release = resolve;
+        }),
+    });
+    try {
+      const hook = renderHook(() =>
+        useVoiceLive({
+          ...baseConfig,
+          connection: { resourceName: 'my-res', apiKey: 'secret', transport: 'webrtc' },
+          autoStartMic: false,
+        })
+      );
+      await act(async () => {
+        await hook.result.current.connect();
+      });
+      const ws = FakeWebSocket.instances.at(-1)!;
+      await act(async () => {
+        ws.open();
+      });
+      await vi.waitFor(() => expect(ws.lastSent('rtc.call.sdp.create')).toBeTruthy());
+
+      const micPromise = hook.result.current.startMic();
+      act(() => {
+        hook.result.current.stopMic(); // user changed their mind while the prompt was open
+      });
+      await act(async () => {
+        release(stream as unknown as MediaStream);
+        await micPromise;
+      });
+      expect(track.stop).toHaveBeenCalled();
+      expect(hook.result.current.isMicActive).toBe(false);
+    } finally {
+      restoreFakes();
+    }
+  });
+
+  it('survives throwing consumer callbacks and still reconnects', async () => {
+    const onReconnecting = vi.fn(() => {
+      throw new Error('consumer bug');
+    });
+    const onEvent = vi.fn(() => {
+      throw new Error('consumer bug');
+    });
+    const { hook, ws } = await connectAndReady({
+      ...baseConfig,
+      onEvent,
+      onReconnecting,
+      reconnect: { initialDelayMs: 10, jitter: 0 },
+    });
+    // a throwing onEvent must not abort our own handling: session.update was still sent
+    expect(onEvent).toHaveBeenCalled();
+    expect(ws.lastSent('session.update')).toBeTruthy();
+
+    await act(async () => {
+      ws.drop(1006);
+    });
+    expect(onReconnecting).toHaveBeenCalled();
+    // the retry was armed before the callback threw
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10);
+    });
+    const ws2 = FakeWebSocket.instances.at(-1)!;
+    expect(ws2).not.toBe(ws);
+    await act(async () => {
+      ws2.open();
+      ws2.receive({ type: 'session.created', session: { id: 's2' } });
+      ws2.receive({ type: 'session.updated', session: { id: 's2' } });
+    });
+    expect(hook.result.current.connectionState).toBe('connected');
+    expect(hook.result.current.isReady).toBe(true);
+  });
+
+  it('reports a failed tool executor to the model instead of stalling the conversation', async () => {
+    const toolExecutor = vi.fn(async () => {
+      throw new Error('backend down');
+    });
+    const { ws } = await connectAndReady({ ...baseConfig, toolExecutor });
+    await act(async () => {
+      ws.receive({ type: 'response.created', response: { id: 'r1' } });
+      ws.receive({
+        type: 'response.function_call_arguments.done',
+        response_id: 'r1',
+        call_id: 'call-a',
+        name: 'lookup',
+        arguments: '{}',
+      });
+    });
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    const output = ws.lastSent('conversation.item.create');
+    expect(output.item.call_id).toBe('call-a');
+    expect(JSON.parse(output.item.output)).toEqual({ error: 'backend down' });
+    // ...and the follow-up response still happens once the response is done
+    await act(async () => {
+      ws.receive({ type: 'response.done', response: { id: 'r1' } });
+    });
+    expect(ws.sent.filter((e) => e.type === 'response.create')).toHaveLength(1);
+  });
+
+  it('clears the session expiry when the session ends', async () => {
+    const { hook, ws } = await connectAndReady(baseConfig);
+    await act(async () => {
+      ws.receive({ type: 'session.updated', session: { id: 's1', expires_at: 1_800_000_000 } });
+    });
+    expect(hook.result.current.sessionExpiresAt).toBe(1_800_000_000_000);
+    act(() => {
+      hook.result.current.disconnect();
+    });
+    // a stale expiry would keep a countdown UI ticking against a dead session
+    expect(hook.result.current.sessionExpiresAt).toBeNull();
+  });
+
+  it('reconnects after a mid-call WebRTC media failure', async () => {
+    const hook = renderHook(() =>
+      useVoiceLive({
+        ...baseConfig,
+        connection: { resourceName: 'my-res', apiKey: 'secret', transport: 'webrtc' },
+        reconnect: { initialDelayMs: 10, jitter: 0 },
+      })
+    );
+    await act(async () => {
+      await hook.result.current.connect();
+    });
+    const ws = FakeWebSocket.instances.at(-1)!;
+    await act(async () => {
+      ws.open();
+    });
+    await vi.waitFor(() => expect(ws.lastSent('rtc.call.sdp.create')).toBeTruthy());
+    const pc = FakePeerConnection.instances.at(-1)!;
+    await act(async () => {
+      pc.setConnectionState('connected');
+      pc.dataChannels[0]!.open();
+    });
+    expect(hook.result.current.isReady).toBe(true);
+
+    // network change mid-call
+    await act(async () => {
+      pc.setConnectionState('failed');
+    });
+    expect(hook.result.current.isReady).toBe(false);
+    expect(hook.result.current.connectionState).toBe('reconnecting');
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10);
+    });
+    const ws2 = FakeWebSocket.instances.at(-1)!;
+    expect(ws2).not.toBe(ws);
+    await act(async () => {
+      ws2.open();
+    });
+    await vi.waitFor(() => expect(ws2.lastSent('rtc.call.sdp.create')).toBeTruthy());
+    const pc2 = FakePeerConnection.instances.at(-1)!;
+    await act(async () => {
+      pc2.setConnectionState('connected');
+      pc2.dataChannels[0]!.open();
+    });
+    expect(hook.result.current.connectionState).toBe('connected');
+    expect(hook.result.current.isReady).toBe(true);
+  });
 });

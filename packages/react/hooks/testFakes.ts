@@ -93,12 +93,19 @@ export class FakeAudioWorkletNode {
 
 export class FakeAudioContext {
   static instances: FakeAudioContext[] = [];
+  /** Test seam: when set, every `audioWorklet.addModule` call awaits this instead of resolving */
+  static addModuleImpl: (() => Promise<void>) | null = null;
   state = 'running';
   sampleRate = 48000;
   currentTime = 0;
   baseLatency = 0.01;
   destination = new FakeNode();
-  audioWorklet = { addModule: vi.fn(async () => undefined) };
+  audioWorklet = {
+    addModule: vi.fn(async () => {
+      if (FakeAudioContext.addModuleImpl) await FakeAudioContext.addModuleImpl();
+      return undefined;
+    }),
+  };
   closed = false;
   mediaStreamSources: any[] = [];
 
@@ -130,6 +137,7 @@ export class FakeAudioContext {
   }
   static reset() {
     FakeAudioContext.instances = [];
+    FakeAudioContext.addModuleImpl = null;
   }
 }
 

@@ -225,6 +225,9 @@ const AUTH_LABELS = {
   "entra-credential": "DefaultAzureCredential (server-side)",
 } as const;
 
+/** How long the upstream Voice Live WebSocket handshake may take before it is aborted */
+const UPSTREAM_HANDSHAKE_TIMEOUT_MS = 15000;
+
 /**
  * Result of `connectToAzure`: the open upstream socket plus what was resolved (for telemetry)
  */
@@ -264,7 +267,9 @@ async function connectToAzure(query: QueryParams): Promise<AzureConnection> {
     headerCount: Object.keys(headers).length,
   });
 
-  const azureWs = new WebSocket(url, { headers });
+  // handshakeTimeout: an upstream that accepts the TCP connection but never completes the
+  // WebSocket handshake would otherwise hold the client socket and a connection slot forever
+  const azureWs = new WebSocket(url, { headers, handshakeTimeout: UPSTREAM_HANDSHAKE_TIMEOUT_MS });
 
   return new Promise((resolve, reject) => {
     azureWs.once("open", () => {
@@ -472,6 +477,11 @@ app.ws("/ws", async (ws, req) => {
 
     azureWs.on("error", (error) => {
       logger.error("[Proxy] Azure WebSocket error:", error, { source: "azure" });
+      // Don't rely on `ws` always emitting a paired "close": tell the browser explicitly, so the
+      // SDK sees an unclean close and can reconnect
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.close(1011, "Upstream error");
+      }
     });
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : "Unknown error";

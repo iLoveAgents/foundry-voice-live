@@ -16,9 +16,17 @@ export interface AvatarConnectionCallbacks {
 
 export interface AvatarConnectionOptions {
   log?: Logger;
+  /** Max time to wait for ICE gathering before sending the offer anyway */
+  iceGatheringTimeoutMs?: number;
   /** Factory for the peer connection (test seam) */
   createPeerConnection?: (configuration?: RTCConfiguration) => RTCPeerConnection;
 }
+
+/**
+ * Max time to wait for avatar ICE gathering. Closing a peer connection is not guaranteed to
+ * fire `icegatheringstatechange`, so an unbounded wait could hang `createOffer()` forever.
+ */
+export const DEFAULT_AVATAR_ICE_GATHERING_TIMEOUT_MS = 3000;
 
 /** Encode a local description the way `session.avatar.connect` expects it */
 export function encodeAvatarSdp(description: RTCSessionDescriptionInit): string {
@@ -84,8 +92,11 @@ export class AvatarConnection {
 
     const offer = await pc.createOffer();
     await pc.setLocalDescription(offer);
-    await waitForIceGatheringComplete(pc);
-    log?.debug('Avatar ICE gathering complete');
+    const gathered = await waitForIceGatheringComplete(
+      pc,
+      this.options.iceGatheringTimeoutMs ?? DEFAULT_AVATAR_ICE_GATHERING_TIMEOUT_MS
+    );
+    log?.debug(gathered ? 'Avatar ICE gathering complete' : 'Avatar ICE gathering timed out — sending offer anyway');
 
     const localDescription = pc.localDescription ?? offer;
     return encodeAvatarSdp(localDescription);
@@ -112,16 +123,26 @@ export class AvatarConnection {
   }
 }
 
-/** Resolve once ICE gathering is complete (the avatar signaling expects a full SDP) */
-function waitForIceGatheringComplete(pc: RTCPeerConnection): Promise<void> {
-  if (pc.iceGatheringState === 'complete') return Promise.resolve();
-  return new Promise<void>((resolve) => {
-    const onChange = (): void => {
-      if (pc.iceGatheringState === 'complete') {
-        pc.removeEventListener('icegatheringstatechange', onChange);
-        resolve();
-      }
+/**
+ * Resolve once ICE gathering is complete (the avatar signaling expects a full SDP), or after
+ * `timeoutMs`. Resolves `true` when gathering completed, `false` on timeout — never hangs, and
+ * always removes its listener.
+ */
+function waitForIceGatheringComplete(pc: RTCPeerConnection, timeoutMs: number): Promise<boolean> {
+  if (pc.iceGatheringState === 'complete') return Promise.resolve(true);
+  return new Promise<boolean>((resolve) => {
+    let settled = false;
+    const finish = (complete: boolean): void => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      pc.removeEventListener('icegatheringstatechange', onChange);
+      resolve(complete);
     };
+    const onChange = (): void => {
+      if (pc.iceGatheringState === 'complete') finish(true);
+    };
+    const timer = setTimeout(() => finish(false), timeoutMs);
     pc.addEventListener('icegatheringstatechange', onChange);
   });
 }

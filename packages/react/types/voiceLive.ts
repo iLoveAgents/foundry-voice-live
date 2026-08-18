@@ -1203,6 +1203,14 @@ export interface UseVoiceLiveConfig {
   logLevel?: LogLevel;
 
   /**
+   * How long the control channel may take to open before the attempt fails with an error
+   * (and, with `reconnect` enabled, is retried). Guards against sockets that never open and
+   * never error. `0` disables the timeout.
+   * @default 15000
+   */
+  connectTimeoutMs?: number;
+
+  /**
    * Automatically reconnect after an unexpected control-channel close (network drop,
    * `1006`, service restart, WebRTC negotiation timeout). `true` uses exponential backoff
    * (500 ms → 8 s, 5 attempts); pass an object to tune it. Off by default.

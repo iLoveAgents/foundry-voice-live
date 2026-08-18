@@ -5,6 +5,8 @@ import {
   WebRtcTransport,
   RTC_NEGOTIATION_TIMEOUT_CLOSE_CODE,
   RTC_SDP_ANSWER_FAILED_CLOSE_CODE,
+  RTC_CALL_ERROR_CLOSE_CODE,
+  RTC_MEDIA_FAILED_CLOSE_CODE,
 } from './webrtcTransport';
 import type { TransportCallbacks } from './types';
 import { FakeWebSocket, FakePeerConnection, installBrowserFakes } from '../../hooks/testFakes';
@@ -132,21 +134,40 @@ describe('WebRtcTransport', () => {
     expect(types).toContain('response.done');
   });
 
-  it('exposes the remote stream and reports media failure', async () => {
-    const { pc, cb } = await openNegotiated();
+  it('exposes the remote stream and treats a media failure as terminal', async () => {
+    const { t, pc, cb } = await openNegotiated();
     pc.emitRemoteTrack({ id: 'remote', getAudioTracks: () => [] });
     expect(cb.onRemoteStream).toHaveBeenCalledWith(expect.objectContaining({ id: 'remote' }));
+
+    // 'disconnected' can recover on its own — it must NOT tear the session down
+    pc.setConnectionState('disconnected');
+    expect(cb.onClose).not.toHaveBeenCalled();
+    expect(t.state).toBe('open');
+
+    // 'failed' is terminal (network change / NAT rebind mid-call): close so the caller can retry
     pc.setConnectionState('failed');
     expect(cb.onError).toHaveBeenCalledWith(expect.stringMatching(/UDP may be blocked/));
+    expect(cb.onClose).toHaveBeenCalledWith({
+      code: RTC_MEDIA_FAILED_CLOSE_CODE,
+      reason: expect.stringMatching(/UDP may be blocked/),
+      wasClean: false,
+    });
+    expect(t.state).toBe('closed');
   });
 
-  it('reports rtc.call.error and tears down the peer connection (control channel stays open)', async () => {
+  it('treats rtc.call.error as terminal: reports it, tears down and closes so the caller can retry', async () => {
     const { t, ws, pc, cb } = await openNegotiated();
     ws.receive({ type: 'rtc.call.error', event_id: 'err', error: { code: 'session_error', message: 'bad sdp' } });
     expect(cb.onError).toHaveBeenCalledWith(expect.stringMatching(/session_error: bad sdp/), expect.anything());
     expect(pc.closed).toBe(true);
-    expect(t.state).toBe('open');
-    expect(cb.onClose).not.toHaveBeenCalled();
+    // The service rejected the call: leaving the transport 'open' would block both reconnect
+    // and a fresh connect()
+    expect(cb.onClose).toHaveBeenCalledWith({
+      code: RTC_CALL_ERROR_CLOSE_CODE,
+      reason: expect.stringMatching(/session_error: bad sdp/),
+      wasClean: false,
+    });
+    expect(t.state).toBe('closed');
   });
 
   it('times out waiting for the SDP answer: error + unclean close, and a late answer is ignored', async () => {

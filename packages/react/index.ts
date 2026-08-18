@@ -21,6 +21,7 @@ export {
   MIN_WEBRTC_API_VERSION,
   DEFAULT_MODEL,
   VOICE_LIVE_DATA_CHANNEL,
+  DEFAULT_CONNECT_TIMEOUT_MS,
 } from './utils/constants';
 export { OPENAI_VOICES, AZURE_REALTIME_NATIVE_VOICES } from './types/voiceLive';
 export {
@@ -124,6 +125,9 @@ export {
   type WebRtcTransportOptions,
   DEFAULT_DATA_CHANNEL_FALLBACK_MS,
   RTC_NEGOTIATION_TIMEOUT_CLOSE_CODE,
+  RTC_SDP_ANSWER_FAILED_CLOSE_CODE,
+  RTC_CALL_ERROR_CLOSE_CODE,
+  RTC_MEDIA_FAILED_CLOSE_CODE,
 } from './core/transports/webrtcTransport';
 export type {
   VoiceLiveTransport as VoiceLiveTransportInstance,
@@ -134,7 +138,13 @@ export type {
   TransportState,
 } from './core/transports/types';
 export { OutputAudioGraph, PcmPlayer, type OutputAudioGraphOptions, type PcmPlayerOptions } from './core/audioOutput';
-export { AvatarConnection, encodeAvatarSdp, decodeAvatarSdp, type AvatarConnectionCallbacks } from './core/avatarConnection';
+export {
+  AvatarConnection,
+  encodeAvatarSdp,
+  decodeAvatarSdp,
+  DEFAULT_AVATAR_ICE_GATHERING_TIMEOUT_MS,
+  type AvatarConnectionCallbacks,
+} from './core/avatarConnection';
 export { WebRtcMicrophone } from './core/microphone';
 export {
   resolveReconnectOptions,

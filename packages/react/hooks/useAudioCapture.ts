@@ -88,6 +88,12 @@ export function useAudioCapture({
   const blobUrlRef = useRef<string | null>(null);
   const audioBufferRef = useRef<Int16Array[]>([]);
   const bufferedSamplesRef = useRef<number>(0);
+  /**
+   * Incremented by `stopCapture()`. `startCapture()` awaits `getUserMedia` and
+   * `audioWorklet.addModule`; without this check a stop during either await would be undone by
+   * the resuming continuation, leaving `isCapturing` true with no stream (silently dead capture).
+   */
+  const startGenerationRef = useRef<number>(0);
 
   // Buffer size: 2400 samples = 4800 bytes = 100ms at 24kHz mono PCM16
   // Reduces WebSocket message frequency by batching small worklet outputs
@@ -127,10 +133,17 @@ export function useAudioCapture({
     try {
       setError(null);
 
+      const generation = startGenerationRef.current;
+      const isSuperseded = (): boolean => generation !== startGenerationRef.current;
+
       // Request microphone access with the SDK's defaults for voice applications
       const stream = await navigator.mediaDevices.getUserMedia(
         buildMicConstraints(audioConstraints, sampleRate)
       );
+      if (isSuperseded()) {
+        stream.getTracks().forEach((track) => track.stop());
+        return;
+      }
       streamRef.current = stream;
 
       // Create AudioContext with specified sample rate
@@ -150,6 +163,15 @@ export function useAudioCapture({
 
       // Load AudioWorklet processor
       await audioContext.audioWorklet.addModule(processorUrl);
+      if (isSuperseded()) {
+        // stopCapture()/unmount happened while the module was loading: release what we created
+        // here instead of wiring nodes into a context that is already closing
+        stream.getTracks().forEach((track) => track.stop());
+        audioContext.close().catch(() => undefined);
+        if (audioContextRef.current === audioContext) audioContextRef.current = null;
+        if (streamRef.current === stream) streamRef.current = null;
+        return;
+      }
 
       // Create audio source and worklet node
       const source = audioContext.createMediaStreamSource(stream);
@@ -192,6 +214,8 @@ export function useAudioCapture({
    * Stop capturing audio and release resources
    */
   const stopCapture = useCallback(() => {
+    // Cancel any acquisition still in flight (see startGenerationRef)
+    startGenerationRef.current += 1;
     // Disconnect and cleanup audio nodes
     if (sourceRef.current) {
       sourceRef.current.disconnect();

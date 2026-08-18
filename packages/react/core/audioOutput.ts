@@ -155,6 +155,12 @@ export class PcmPlayer {
   private responseStartTime: number | null = null;
   private awaitingFirstChunk = true;
   private disposed = false;
+  /**
+   * Incremented by `stop()`. Chunks whose decode/init was still in flight when the queue was
+   * flushed (barge-in, or a reconnect that keeps the audio graph) must not be re-queued
+   * afterwards — that would play a stale fragment into the next turn.
+   */
+  private flushGeneration = 0;
 
   constructor(
     private readonly graph: OutputAudioGraph,
@@ -171,13 +177,14 @@ export class PcmPlayer {
   async enqueue(base64Audio: string): Promise<void> {
     const ctx = this.graph.context;
     if (!ctx || this.disposed) return;
+    const generation = this.flushGeneration;
     try {
       // Browser autoplay policy: the context may start suspended
       await this.graph.resume();
       if (!this.worklet) {
         await this.init();
       }
-      if (this.disposed) return;
+      if (this.disposed || generation !== this.flushGeneration) return;
 
       if (this.awaitingFirstChunk) {
         this.responseStartTime = ctx.currentTime;
@@ -197,8 +204,9 @@ export class PcmPlayer {
     }
   }
 
-  /** Flush queued audio immediately (barge-in / cancel) */
+  /** Flush queued audio immediately (barge-in / cancel) and drop chunks still being decoded */
   stop(): void {
+    this.flushGeneration += 1;
     this.worklet?.port.postMessage(null);
   }
 

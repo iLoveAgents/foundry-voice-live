@@ -137,6 +137,38 @@ describe('PcmPlayer', () => {
     expect(FakeAudioWorkletNode.instances).toHaveLength(1);
   });
 
+  it('drops chunks that were still decoding when the queue was flushed', async () => {
+    const graph = new OutputAudioGraph();
+    graph.ensure();
+    const player = new PcmPlayer(graph, { sourceSampleRate: 24000 });
+    await player.enqueue(pcm([1])); // initialize the worklet
+    const node = FakeAudioWorkletNode.instances[0]!;
+    node.port.postMessage.mockClear();
+
+    // A chunk whose await is still pending when stop() runs (barge-in / reconnect flush) must not
+    // be re-queued afterwards — that would play a stale fragment into the next turn
+    const ctx = FakeAudioContext.instances[0]!;
+    let resumed: () => void = () => undefined;
+    ctx.state = 'suspended';
+    ctx.resume = () =>
+      new Promise<void>((resolve) => {
+        resumed = () => {
+          ctx.state = 'running';
+          resolve();
+        };
+      });
+    const pending = player.enqueue(pcm([2, 3]));
+    player.stop();
+    resumed();
+    await pending;
+    // only the flush message, no audio buffer
+    expect(node.port.postMessage.mock.calls).toEqual([[null]]);
+
+    // subsequent chunks play again
+    await player.enqueue(pcm([4]));
+    expect(node.port.postMessage.mock.calls.length).toBe(2);
+  });
+
   it('does nothing without an audio context', async () => {
     const player = new PcmPlayer(new OutputAudioGraph(), { sourceSampleRate: 24000 });
     await player.enqueue(pcm([1]));
@@ -198,6 +230,27 @@ describe('WebRtcMicrophone', () => {
     mic.setMuted(false);
     expect(track.enabled).toBe(true);
     mic.stop();
+    expect(track.stop).toHaveBeenCalled();
+    expect(mic.isActive).toBe(false);
+    expect(mic.track).toBeNull();
+  });
+});
+
+describe('WebRtcMicrophone (stop during a pending start)', () => {
+  it('releases a stream whose permission prompt resolved after stop()', async () => {
+    const { stream, track } = makeFakeMicStream();
+    let release: (s: MediaStream) => void = () => undefined;
+    const mic = new WebRtcMicrophone({
+      getUserMedia: () =>
+        new Promise<MediaStream>((resolve) => {
+          release = resolve;
+        }),
+    });
+    const started = mic.start();
+    mic.stop(); // there is no stream yet — without a generation this would be a no-op
+    release(stream as unknown as MediaStream);
+    await expect(started).resolves.toBeNull();
+    // the microphone must not stay hot after the caller asked for it to be released
     expect(track.stop).toHaveBeenCalled();
     expect(mic.isActive).toBe(false);
     expect(mic.track).toBeNull();

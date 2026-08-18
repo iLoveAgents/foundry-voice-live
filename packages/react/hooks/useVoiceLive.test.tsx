@@ -169,12 +169,16 @@ describe('useVoiceLive (websocket)', () => {
     expect(toolExecutor).toHaveBeenCalledWith('get_time', '{}', 'call_1');
     const output = ws.lastSent('conversation.item.create');
     expect(output.item).toEqual({ type: 'function_call_output', call_id: 'call_1', output: '{"time":"12:00"}' });
-    expect(ws.lastSent('response.create')).toBeDefined();
+    // The output goes out immediately; the follow-up response waits for response.done, because
+    // only then is it certain that no further tool call belongs to this response
+    expect(ws.lastSent('response.create')).toBeUndefined();
+    await deliver(ws, { type: 'response.done', response: { id: 'r' } });
+    expect(ws.sent.filter((e) => e.type === 'response.create')).toHaveLength(1);
 
     const before = ws.sent.length;
     await deliver(ws, {
       type: 'response.function_call_arguments.done',
-      response_id: 'r',
+      response_id: 'r2',
       item_id: 'i2',
       output_index: 0,
       call_id: 'call_2',
@@ -185,6 +189,8 @@ describe('useVoiceLive (websocket)', () => {
       await Promise.resolve();
       await Promise.resolve();
     });
+    await deliver(ws, { type: 'response.done', response: { id: 'r2' } });
+    // A void executor produces no output, so it must not request a response either
     expect(ws.sent.length).toBe(before);
     hook.unmount();
   });
