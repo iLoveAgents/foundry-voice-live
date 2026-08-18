@@ -330,6 +330,9 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
    * Free a speculative reservation the service never acknowledged, so a conversation whose
    * automatic response never arrives is not blocked. Armed wherever a reservation is taken.
    */
+  /** Stable ref: `sendGatedResponseCreate` is defined before the helper it needs here */
+  const armSpeculativeReleaseRef = useRef<() => void>();
+
   const armSpeculativeRelease = useCallback((): void => {
     const gate = responseGateRef.current as ResponseGate;
     if (!gate.isSpeculative) return;
@@ -341,6 +344,7 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
       }
     }, SPECULATIVE_RESPONSE_TIMEOUT_MS);
   }, [clearSpeculativeTimer]);
+  armSpeculativeReleaseRef.current = armSpeculativeRelease;
 
   const clearConnectTimer = useCallback((): void => {
     if (connectTimerRef.current) {
@@ -500,6 +504,7 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
       if (!sendRaw({ ...event, event_id: eventId })) {
         // Nothing reached the service (disconnected, or mid-reconnect): the gate must not stay busy
         gate.onRequestNotSent();
+        armSpeculativeReleaseRef.current?.();
       }
     },
     [sendRaw]
@@ -1143,6 +1148,10 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
           if ((responseGateRef.current as ResponseGate).onError(data.error?.event_id)) {
             log.debug('Sending queued response.create after an API error');
             sendGatedResponseCreate();
+          } else {
+            // The gate may have taken over a reservation for an automatic response announced while
+            // the rejected request was in flight — it needs its release timer
+            armSpeculativeRelease();
           }
           setError(errorMessage);
           break;

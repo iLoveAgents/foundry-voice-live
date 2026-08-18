@@ -107,6 +107,24 @@ export class ResponseGate {
   }
 
   /**
+   * Take a reservation that was deferred because the gate was busy (see `automaticPending`).
+   *
+   * Every path that frees the gate goes through this first: the announced response is still
+   * coming, whether our own request finished, was rejected, or never reached the service. Missing
+   * one of them sends the next turn straight into the window the service is about to use.
+   *
+   * @returns true when the reservation was taken (the gate stays busy, speculatively)
+   */
+  private takeDeferredAutomatic(): boolean {
+    if (!this.automaticPending) return false;
+    this.automaticPending = false;
+    this.state = 'requested';
+    this.speculative = true;
+    this.pendingEventId = null;
+    return true;
+  }
+
+  /**
    * Undo a speculative reservation that was never acknowledged.
    * @returns true when a queued request should be sent now
    */
@@ -134,16 +152,9 @@ export class ResponseGate {
    * @returns true when a queued request should be sent now (the gate moves back to `requested`).
    */
   onResponseDone(): boolean {
-    if (this.automaticPending) {
-      // The service is about to start the response it announced while this one was running. Hold
-      // the slot for it (speculatively, so a timeout still frees it) and keep any queued turn
-      // queued: it is answered after that response, not alongside it.
-      this.automaticPending = false;
-      this.state = 'requested';
-      this.speculative = true;
-      this.pendingEventId = null;
-      return false;
-    }
+    // The service may be about to start a response it announced while this one was running: hold
+    // the slot for it and keep any queued turn queued — it is answered after that response.
+    if (this.takeDeferredAutomatic()) return false;
     if (this.queued) {
       this.queued = false;
       this.state = 'requested';
@@ -179,6 +190,9 @@ export class ResponseGate {
     if (errorEventId && this.pendingEventId && errorEventId !== this.pendingEventId) return false;
     this.pendingEventId = null;
     this.speculative = false;
+    // A response the service announced while our request was in flight is still coming: releasing
+    // to idle here would send the queued turn into that window
+    if (this.takeDeferredAutomatic()) return false;
     if (this.queued) {
       this.queued = false;
       return true; // stay 'requested': the caller sends the queued turn instead
@@ -197,6 +211,7 @@ export class ResponseGate {
       this.state = 'idle';
       this.speculative = false;
       this.pendingEventId = null;
+      this.takeDeferredAutomatic();
     }
   }
 

@@ -243,6 +243,30 @@ describe('ResponseGate', () => {
     expect(gate.currentState).toBe('requested');
   });
 
+  it('keeps a deferred automatic reservation when the request it waited behind is rejected', () => {
+    const gate = new ResponseGate();
+    expect(gate.request()).toBe(true); // our response.create is on the wire, unacknowledged
+    gate.trackRequest('evt_1');
+    gate.reserveAutomatic(); // server VAD committed a turn meanwhile
+    expect(gate.request()).toBe(false); // a user turn queues
+
+    // the service rejects our request: the queued turn must NOT go out now — the automatic
+    // response the service announced is still coming
+    expect(gate.onError('evt_1')).toBe(false);
+    expect(gate.isSpeculative).toBe(true);
+    expect(gate.hasQueuedRequest).toBe(true);
+    expect(gate.releaseSpeculative()).toBe(true); // ...and it is not lost either
+  });
+
+  it('keeps a deferred automatic reservation when the request never reached the service', () => {
+    const gate = new ResponseGate();
+    gate.request();
+    gate.reserveAutomatic();
+    gate.onRequestNotSent();
+    expect(gate.isSpeculative).toBe(true);
+    expect(gate.request()).toBe(false);
+  });
+
   it('reset() forgets state for a new session', () => {
     const gate = new ResponseGate();
     gate.request();
