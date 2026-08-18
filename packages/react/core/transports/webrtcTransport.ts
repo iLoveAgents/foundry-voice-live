@@ -27,6 +27,9 @@ import type {
   VoiceLiveTransport,
 } from './types';
 
+/** Events buffered between `onOpen` and `rtc.call.sdp.create` (a handshake is a handful) */
+const MAX_PRE_CALL_QUEUE = 64;
+
 /** How long to wait for the events data channel after media is connected before continuing without it */
 export const DEFAULT_DATA_CHANNEL_FALLBACK_MS = 2000;
 
@@ -63,6 +66,12 @@ export class WebRtcTransport implements VoiceLiveTransport {
   private offerPromise: Promise<WebRtcOffer> | null = null;
   private pendingTrack: MediaStreamTrack | null | undefined = undefined;
   private negotiationTimer: ReturnType<typeof setTimeout> | null = null;
+  /**
+   * Events the caller sent between `onOpen` and `rtc.call.sdp.create`. The contract says events may
+   * be sent once the control channel is open, but for WebRTC the *call* does not exist until the
+   * offer has been negotiated, so anything sent earlier would be rejected or lost.
+   */
+  private preCallQueue: string[] = [];
   private dataChannelFallbackTimer: ReturnType<typeof setTimeout> | null = null;
   private currentState: TransportState = 'idle';
   private generation = 0;
@@ -246,6 +255,12 @@ export class WebRtcTransport implements VoiceLiveTransport {
 
       ws.send(JSON.stringify(buildRtcSdpCreateEvent(offer.sdpOffer, session)));
       log?.debug('Sent rtc.call.sdp.create');
+      // Anything the caller sent while the call was being negotiated goes out now, in order
+      const queued = this.preCallQueue.splice(0);
+      if (queued.length > 0) {
+        log?.debug(`Flushing ${queued.length} event(s) queued before the call was created`);
+        for (const json of queued) ws.send(json);
+      }
 
       this.negotiationTimer = setTimeout(() => {
         this.negotiationTimer = null;
@@ -289,6 +304,16 @@ export class WebRtcTransport implements VoiceLiveTransport {
 
   send(json: string): boolean {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return false;
+    if (!this.handle) {
+      // The control channel is open but the call is not created yet: queue rather than send into
+      // a session the service does not have. Bounded, because a caller could keep writing.
+      if (this.preCallQueue.length >= MAX_PRE_CALL_QUEUE) {
+        this.options.log?.warn('Dropping event: too many events queued before the WebRTC call was created');
+        return false;
+      }
+      this.preCallQueue.push(json);
+      return true;
+    }
     this.ws.send(json);
     return true;
   }
@@ -324,6 +349,7 @@ export class WebRtcTransport implements VoiceLiveTransport {
     }
     this.teardownMedia();
     this.pendingTrack = undefined;
+    this.preCallQueue = [];
     this.seen.clear();
   }
 
@@ -346,6 +372,12 @@ export class WebRtcTransport implements VoiceLiveTransport {
     // sees events through `onEvent` would never learn why if the teardown ran first. The callback
     // is consumer code, so it must not be able to strand the negotiation that follows.
     this.notify('onEvent', this.callbacks.onEvent, event);
+    if (generation !== this.generation) {
+      // The consumer closed (or replaced) this transport from its handler: `close()` promises no
+      // further callbacks, and acting now could tear down its replacement
+      this.options.log?.debug('Transport changed inside onEvent — dropping the rest of this event');
+      return;
+    }
     this.handleNegotiationEvent(event);
   }
 

@@ -274,6 +274,39 @@ describe('WebRtcTransport', () => {
     expect(pc.closed).toBe(true);
   });
 
+  it('queues events sent before the call exists and flushes them after rtc.call.sdp.create', async () => {
+    const cb = makeCallbacks();
+    const t = new WebRtcTransport(cb, {});
+    // the contract says events may be sent once onOpen fires — for WebRTC the call does not exist
+    // until the offer is negotiated, so they must be held rather than sent into nothing
+    (cb.onOpen as ReturnType<typeof vi.fn>).mockImplementation(() => {
+      t.send(JSON.stringify({ type: 'session.update', session: {} }));
+    });
+    t.connect('wss://x/calls', { modalities: ['audio'] });
+    const ws = FakeWebSocket.instances.at(-1)!;
+    ws.open();
+    expect(ws.sent).toHaveLength(0); // nothing before the offer
+
+    await vi.waitFor(() => expect(ws.lastSent('rtc.call.sdp.create')).toBeTruthy());
+    // ...and the queued event follows it, in order
+    expect(ws.sent.map((e) => e.type)).toEqual(['rtc.call.sdp.create', 'session.update']);
+  });
+
+  it('stops handling an event when the consumer closes the transport from onEvent', async () => {
+    const cb = makeCallbacks();
+    const { t, ws, pc } = await openNegotiated(cb);
+    (cb.onEvent as ReturnType<typeof vi.fn>).mockImplementation((event: { type: string }) => {
+      if (event.type === 'rtc.call.error') t.close();
+    });
+    const closesBefore = (cb.onClose as ReturnType<typeof vi.fn>).mock.calls.length;
+    ws.receive({ type: 'rtc.call.error', event_id: 'e', error: { code: 'x', message: 'nope' } });
+
+    // close() promises no further callbacks, so the terminal handling must not run afterwards
+    expect((cb.onClose as ReturnType<typeof vi.fn>).mock.calls.length).toBe(closesBefore);
+    expect(t.state).toBe('closed');
+    expect(pc.closed).toBe(true);
+  });
+
   it('attaches the microphone track once the transceiver exists (before and after negotiation)', async () => {
     const cb = makeCallbacks();
     const t = new WebRtcTransport(cb);

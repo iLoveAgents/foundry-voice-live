@@ -99,6 +99,15 @@ describe('buildVoiceLiveUrl — proxy mode', () => {
     expect(buildVoiceLiveUrl({ proxyUrl: 'ws://x/ws?agentName=a', agentMode: false }).isAgentMode).toBe(false);
   });
 
+  it('needs a non-empty agentName, like the proxy itself', () => {
+    // the proxy routes to an agent only for a truthy agentName; assuming agent mode here would
+    // strip instructions, tools, temperature and the voice from a standard session
+    expect(buildVoiceLiveUrl({ proxyUrl: 'ws://x/ws?model=gpt-realtime&projectName=p' }).isAgentMode).toBe(false);
+    expect(buildVoiceLiveUrl({ proxyUrl: 'ws://x/ws?agentName=' }).isAgentMode).toBe(false);
+    expect(buildVoiceLiveUrl({ proxyUrl: 'ws://x/ws?agentName=%20' }).isAgentMode).toBe(false);
+    expect(buildVoiceLiveUrl({ proxyUrl: 'ws://x/ws?agentName=support&projectName=p' }).isAgentMode).toBe(true);
+  });
+
   it('forwards apiVersion to the proxy for the websocket transport too', () => {
     expect(buildVoiceLiveUrl({ proxyUrl: 'ws://x/ws?model=gpt-4.1', apiVersion: '2026-06-01-preview' }).url).toBe(
       'ws://x/ws?model=gpt-4.1&apiVersion=2026-06-01-preview'

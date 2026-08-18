@@ -65,7 +65,10 @@ function parseProxyUrl(url: string): { parsed: URL; serialize: (u: URL) => strin
  */
 function isProxyAgentMode(connection: VoiceLiveConnectionConfig, parsed: URL): boolean {
   if (connection.agentMode !== undefined) return connection.agentMode;
-  return parsed.searchParams.has('agentName') || parsed.searchParams.has('projectName');
+  // Match the proxy: it routes to an agent only for a *non-empty* agentName. Treating
+  // `projectName` (or an empty agentName) as sufficient would make the hook build an agent-mode
+  // session and silently strip instructions, tools, temperature and the voice from a standard one.
+  return (parsed.searchParams.get('agentName') ?? '').trim().length > 0;
 }
 
 /**

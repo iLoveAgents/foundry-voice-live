@@ -61,7 +61,7 @@ Tests: `core/*.test.ts` (transports, audio, avatar, mic, reconnect), `hooks/useV
   with `computeBackoffDelay`, sets `connectionState: 'reconnecting'`, re-attaches the mic track
   (WebRTC) and does not resend the greeting (`greetingSentRef`). `connection.getToken` is awaited on
   every attempt.
-- **Agent mode** is auto-detected from `agentName` (connection config or proxy URL params) or forced via
+- **Agent mode** is auto-detected from a non-empty `agentName` (connection config or proxy URL params — the proxy uses the same rule) or forced via
   `agentMode`; `buildAgentSessionConfig()` strips the agent-owned fields listed in `AGENT_OWNED_FIELDS`
   (`instructions`, `temperature`, `tools`, `toolChoice`, `maxResponseOutputTokens`, `reasoningEffort`,
   `parallelToolCalls`), sends no default voice (the agent's portal voice wins), and `updateSession()` is agent-aware.
