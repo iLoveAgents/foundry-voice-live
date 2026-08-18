@@ -31,6 +31,20 @@ export class WebSocketTransport implements VoiceLiveTransport {
     return this.currentState;
   }
 
+  /** Consumer callbacks never affect our control flow (see `WebRtcTransport.notify`) */
+  private notify<TArgs extends unknown[]>(
+    name: string,
+    fn: ((...args: TArgs) => void) | undefined,
+    ...args: TArgs
+  ): void {
+    if (!fn) return;
+    try {
+      fn(...args);
+    } catch (err) {
+      this.options.log?.error(`${name} callback threw:`, err);
+    }
+  }
+
   connect(url: string): void {
     if (this.ws) {
       throw new Error('WebSocketTransport.connect() called twice — create a new transport per connection');
@@ -45,8 +59,12 @@ export class WebSocketTransport implements VoiceLiveTransport {
       const message =
         err instanceof Error ? `Failed to open the WebSocket: ${err.message}` : 'Failed to open the WebSocket';
       this.options.log?.error(message);
-      this.callbacks.onError(message, err);
-      this.callbacks.onClose({ code: CONTROL_CHANNEL_SETUP_FAILED_CLOSE_CODE, reason: message, wasClean: false });
+      this.notify('onError', this.callbacks.onError, message, err);
+      this.notify('onClose', this.callbacks.onClose, {
+        code: CONTROL_CHANNEL_SETUP_FAILED_CLOSE_CODE,
+        reason: message,
+        wasClean: false,
+      });
       return;
     }
     this.ws = ws;
@@ -54,11 +72,7 @@ export class WebSocketTransport implements VoiceLiveTransport {
 
     ws.onopen = (): void => {
       this.currentState = 'open';
-      try {
-        this.callbacks.onOpen();
-      } catch (err) {
-        this.options.log?.warn('onOpen callback threw:', err);
-      }
+      this.notify('onOpen', this.callbacks.onOpen);
     };
     ws.onmessage = (event: MessageEvent): void => {
       const parsed = parseServerEvent(String(event.data));
@@ -66,14 +80,18 @@ export class WebSocketTransport implements VoiceLiveTransport {
         this.options.log?.warn('Ignoring non-JSON message from the service');
         return;
       }
-      this.callbacks.onEvent(parsed);
+      this.notify('onEvent', this.callbacks.onEvent, parsed);
     };
     ws.onerror = (event): void => {
-      this.callbacks.onError('WebSocket connection error', event);
+      this.notify('onError', this.callbacks.onError, 'WebSocket connection error', event);
     };
     ws.onclose = (event: CloseEvent): void => {
       this.currentState = 'closed';
-      this.callbacks.onClose({ code: event.code, reason: event.reason, wasClean: event.wasClean });
+      this.notify('onClose', this.callbacks.onClose, {
+        code: event.code,
+        reason: event.reason,
+        wasClean: event.wasClean,
+      });
     };
   }
 

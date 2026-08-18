@@ -62,6 +62,31 @@ export class AvatarConnection {
     const pc = create({ iceServers });
     this.pc = pc;
 
+    try {
+      this.wireHandlers(pc, log);
+      pc.addTransceiver('video', { direction: 'recvonly' });
+      pc.addTransceiver('audio', { direction: 'recvonly' });
+
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+      const gathered = await waitForIceGatheringComplete(
+        pc,
+        this.options.iceGatheringTimeoutMs ?? DEFAULT_AVATAR_ICE_GATHERING_TIMEOUT_MS
+      );
+      log?.debug(gathered ? 'Avatar ICE gathering complete' : 'Avatar ICE gathering timed out — sending offer anyway');
+
+      const localDescription = pc.localDescription ?? offer;
+      return encodeAvatarSdp(localDescription);
+    } catch (err) {
+      // Everything after the peer connection exists is guarded: the caller only learns about the
+      // failure, so it cannot clean up a connection it never received
+      this.close();
+      throw err;
+    }
+  }
+
+  /** Wire the media/state handlers of a freshly created avatar peer connection */
+  private wireHandlers(pc: RTCPeerConnection, log: Logger | undefined): void {
     pc.ontrack = (event: RTCTrackEvent): void => {
       const stream = event.streams[0] ?? null;
       if (event.track.kind === 'video') {
@@ -87,26 +112,6 @@ export class AvatarConnection {
       }
     };
 
-    pc.addTransceiver('video', { direction: 'recvonly' });
-    pc.addTransceiver('audio', { direction: 'recvonly' });
-
-    try {
-      const offer = await pc.createOffer();
-      await pc.setLocalDescription(offer);
-      const gathered = await waitForIceGatheringComplete(
-        pc,
-        this.options.iceGatheringTimeoutMs ?? DEFAULT_AVATAR_ICE_GATHERING_TIMEOUT_MS
-      );
-      log?.debug(gathered ? 'Avatar ICE gathering complete' : 'Avatar ICE gathering timed out — sending offer anyway');
-
-      const localDescription = pc.localDescription ?? offer;
-      return encodeAvatarSdp(localDescription);
-    } catch (err) {
-      // The caller only learns about the failure, so it cannot clean up a connection it never
-      // received — a failed setup would otherwise stay alive until the session is disconnected
-      this.close();
-      throw err;
-    }
   }
 
   /** Apply the server SDP from `session.avatar.connecting` */

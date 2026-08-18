@@ -238,6 +238,22 @@ describe('WebRtcMicrophone', () => {
 });
 
 describe('AvatarConnection failures', () => {
+  it('closes the peer connection when transceiver setup throws', async () => {
+    const avatar = new AvatarConnection({ onVideoStream: vi.fn(), onAudioStream: vi.fn(), onError: vi.fn() });
+    const original = FakePeerConnection.prototype.addTransceiver;
+    FakePeerConnection.prototype.addTransceiver = (): never => {
+      throw new Error('addTransceiver unsupported');
+    };
+    try {
+      await expect(avatar.createOffer([{ urls: 'turn:relay.example' }])).rejects.toThrow('addTransceiver unsupported');
+      // setup failures before the offer must be cleaned up too, not just offer failures
+      expect(FakePeerConnection.instances.at(-1)!.closed).toBe(true);
+      expect(avatar.peerConnection).toBeNull();
+    } finally {
+      FakePeerConnection.prototype.addTransceiver = original;
+    }
+  });
+
   it('closes the peer connection when the offer cannot be created', async () => {
     const avatar = new AvatarConnection({ onVideoStream: vi.fn(), onAudioStream: vi.fn(), onError: vi.fn() });
     const original = FakePeerConnection.prototype.createOffer;

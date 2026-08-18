@@ -151,6 +151,22 @@ describe('WebRtcTransport', () => {
     expect(cb.onReady).toHaveBeenCalledWith('media + data channel');
   });
 
+  it('completes terminal cleanup even when the consumer onError throws', async () => {
+    vi.useFakeTimers();
+    const cb = makeCallbacks();
+    (cb.onError as ReturnType<typeof vi.fn>).mockImplementation(() => {
+      throw new Error('consumer bug');
+    });
+    const { t, pc } = await openNegotiated(cb, { negotiationTimeoutMs: 50 });
+    await vi.advanceTimersByTimeAsync(50);
+    // the close must still happen, or the caller could neither reconnect nor connect() again
+    expect(cb.onClose).toHaveBeenCalledWith(
+      expect.objectContaining({ code: RTC_NEGOTIATION_TIMEOUT_CLOSE_CODE, wasClean: false })
+    );
+    expect(t.state).toBe('closed');
+    expect(pc.closed).toBe(true);
+  });
+
   it('keeps a throwing onEvent from stranding the negotiation', async () => {
     const cb = makeCallbacks();
     (cb.onEvent as ReturnType<typeof vi.fn>).mockImplementation(() => {

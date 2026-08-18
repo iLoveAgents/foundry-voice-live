@@ -77,6 +77,24 @@ export class WebRtcTransport implements VoiceLiveTransport {
     return this.currentState;
   }
 
+  /**
+   * Invoke a consumer callback without letting it affect our control flow. Terminal handling
+   * (close + `onClose`) must run even when the caller's `onError` throws, or the transport would
+   * be stuck `open` with no way for anyone to recover it.
+   */
+  private notify<TArgs extends unknown[]>(
+    name: string,
+    fn: ((...args: TArgs) => void) | undefined,
+    ...args: TArgs
+  ): void {
+    if (!fn) return;
+    try {
+      fn(...args);
+    } catch (err) {
+      this.options.log?.error(`${name} callback threw:`, err);
+    }
+  }
+
   connect(url: string, session: Record<string, unknown>, connectOptions: TransportConnectOptions = {}): void {
     if (this.ws) {
       throw new Error('WebRtcTransport.connect() called twice — create a new transport per connection');
@@ -92,7 +110,7 @@ export class WebRtcTransport implements VoiceLiveTransport {
       readyAnnounced = true;
       this.clearDataChannelFallback();
       log?.info(`WebRTC session ready (${reason})`);
-      this.callbacks.onReady?.(reason);
+      this.notify('onReady', this.callbacks.onReady, reason);
     };
 
     // 1. Peer connection + local offer (ICE gathering) — in parallel with the control-channel
@@ -105,7 +123,7 @@ export class WebRtcTransport implements VoiceLiveTransport {
       onRemoteStream: (stream) => {
         if (generation !== this.generation) return;
         log?.debug('Remote audio track received');
-        this.callbacks.onRemoteStream?.(stream);
+        this.notify('onRemoteStream', this.callbacks.onRemoteStream, stream);
       },
       onDataChannelMessage: (raw) => this.deliver(raw, generation),
       onDataChannelStateChange: (state, label) => {
@@ -147,9 +165,13 @@ export class WebRtcTransport implements VoiceLiveTransport {
           // media is dead while the control channel still looks 'open', blocking reconnect.
           const message =
             "WebRTC connection failed. UDP may be blocked on this network — configure rtcConfiguration (TURN) or use transport: 'websocket'.";
-          this.callbacks.onError(message);
+          this.notify('onError', this.callbacks.onError, message);
           this.close();
-          this.callbacks.onClose({ code: RTC_MEDIA_FAILED_CLOSE_CODE, reason: message, wasClean: false });
+          this.notify('onClose', this.callbacks.onClose, {
+            code: RTC_MEDIA_FAILED_CLOSE_CODE,
+            reason: message,
+            wasClean: false,
+          });
         }
       },
     });
@@ -173,8 +195,12 @@ export class WebRtcTransport implements VoiceLiveTransport {
       const message =
         err instanceof Error ? `Failed to open the control channel: ${err.message}` : 'Failed to open the control channel';
       log?.error(message);
-      this.callbacks.onError(message, err);
-      this.callbacks.onClose({ code: CONTROL_CHANNEL_SETUP_FAILED_CLOSE_CODE, reason: message, wasClean: false });
+      this.notify('onError', this.callbacks.onError, message, err);
+      this.notify('onClose', this.callbacks.onClose, {
+        code: CONTROL_CHANNEL_SETUP_FAILED_CLOSE_CODE,
+        reason: message,
+        wasClean: false,
+      });
       return;
     }
     this.ws = ws;
@@ -182,12 +208,8 @@ export class WebRtcTransport implements VoiceLiveTransport {
 
     ws.onopen = async (): Promise<void> => {
       this.currentState = 'open';
-      try {
-        this.callbacks.onOpen();
-      } catch (err) {
-        // The caller's bookkeeping is not ours to depend on: negotiation continues regardless
-        log?.warn('onOpen callback threw:', err);
-      }
+      // The caller's bookkeeping is not ours to depend on: negotiation continues regardless
+      this.notify('onOpen', this.callbacks.onOpen);
 
       let offer: WebRtcOffer;
       try {
@@ -199,7 +221,9 @@ export class WebRtcTransport implements VoiceLiveTransport {
           log?.debug('Offer rejected after the control channel closed — ignoring');
           return;
         }
-        this.callbacks.onError(
+        this.notify(
+          'onError',
+          this.callbacks.onError,
           err instanceof Error ? `Failed to create WebRTC offer: ${err.message}` : 'Failed to create WebRTC offer',
           err
         );
@@ -226,10 +250,10 @@ export class WebRtcTransport implements VoiceLiveTransport {
       this.negotiationTimer = setTimeout(() => {
         this.negotiationTimer = null;
         log?.error('Timed out waiting for rtc.call.sdp.created');
-        this.callbacks.onError('Timed out waiting for the WebRTC SDP answer');
+        this.notify('onError', this.callbacks.onError, 'Timed out waiting for the WebRTC SDP answer');
         // Tear down so a late answer cannot resurrect a session the caller reports as failed
         this.close();
-        this.callbacks.onClose({
+        this.notify('onClose', this.callbacks.onClose, {
           code: RTC_NEGOTIATION_TIMEOUT_CLOSE_CODE,
           reason: 'WebRTC SDP negotiation timeout',
           wasClean: false,
@@ -240,7 +264,7 @@ export class WebRtcTransport implements VoiceLiveTransport {
     ws.onmessage = (event: MessageEvent): void => this.deliver(String(event.data), generation);
 
     ws.onerror = (event): void => {
-      this.callbacks.onError('WebSocket connection error', event);
+      this.notify('onError', this.callbacks.onError, 'WebSocket connection error', event);
     };
 
     ws.onclose = (event: CloseEvent): void => {
@@ -255,7 +279,11 @@ export class WebRtcTransport implements VoiceLiveTransport {
         this.negotiationTimer = null;
       }
       this.teardownMedia();
-      this.callbacks.onClose({ code: event.code, reason: event.reason, wasClean: event.wasClean });
+      this.notify('onClose', this.callbacks.onClose, {
+        code: event.code,
+        reason: event.reason,
+        wasClean: event.wasClean,
+      });
     };
   }
 
@@ -317,11 +345,7 @@ export class WebRtcTransport implements VoiceLiveTransport {
     // Report first, act second: `rtc.call.error` tears the session down, and a consumer that only
     // sees events through `onEvent` would never learn why if the teardown ran first. The callback
     // is consumer code, so it must not be able to strand the negotiation that follows.
-    try {
-      this.callbacks.onEvent(event);
-    } catch (err) {
-      this.options.log?.error('onEvent callback threw:', err);
-    }
+    this.notify('onEvent', this.callbacks.onEvent, event);
     this.handleNegotiationEvent(event);
   }
 
@@ -338,11 +362,11 @@ export class WebRtcTransport implements VoiceLiveTransport {
         .then(() => this.options.log?.debug('WebRTC SDP answer applied'))
         .catch((err: unknown) => {
           if (generation !== this.generation) return;
-          this.callbacks.onError('Failed to apply WebRTC SDP answer', err);
+          this.notify('onError', this.callbacks.onError, 'Failed to apply WebRTC SDP answer', err);
           // Terminal for this call: without closing, `state` would stay 'open', so the caller
           // could neither reconnect nor connect() again
           this.close();
-          this.callbacks.onClose({
+          this.notify('onClose', this.callbacks.onClose, {
             code: RTC_SDP_ANSWER_FAILED_CLOSE_CODE,
             reason: 'Failed to apply WebRTC SDP answer',
             wasClean: false,
@@ -351,11 +375,15 @@ export class WebRtcTransport implements VoiceLiveTransport {
     } else if (event.type === 'rtc.call.error') {
       const message = formatRtcCallError(event as RtcCallErrorEvent);
       this.options.log?.error(message);
-      this.callbacks.onError(message, event);
+      this.notify('onError', this.callbacks.onError, message, event);
       // The service rejected the call: there will be no answer and no media, so this is terminal.
       // Closing releases the control channel and lets the caller reconnect or connect() again.
       this.close();
-      this.callbacks.onClose({ code: RTC_CALL_ERROR_CLOSE_CODE, reason: message, wasClean: false });
+      this.notify('onClose', this.callbacks.onClose, {
+        code: RTC_CALL_ERROR_CLOSE_CODE,
+        reason: message,
+        wasClean: false,
+      });
     }
   }
 

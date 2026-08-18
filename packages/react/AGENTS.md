@@ -126,6 +126,10 @@ Tests: `core/*.test.ts` (transports, audio, avatar, mic, reconnect), `hooks/useV
 - **`onError` is advisory, `onClose` decides the lifecycle** (stated in
   `core/transports/types.ts`): a transport that cannot continue must close itself, because
   reconnect *and* teardown — including releasing the microphone — key off `onClose`.
+- **Consumer callbacks can never affect control flow.** In the transports every callback goes
+  through `notify()`, in the hook through `safeCall()`; teardown and negotiation must complete even
+  when the caller's handler throws. Equally, **cleanup must not sit behind anything that can
+  throw** — object setup that can fail belongs inside the guard that closes it.
 - **Terminal failures must close the transport**, not just report `onError`: state `'open'` blocks
   both `connect()` and the reconnect policy. Close codes: `4001` reconnect setup, `4002` connect
   timeout, `4008` negotiation timeout, `4009` SDP answer, `4010` `rtc.call.error`, `4011` peer
