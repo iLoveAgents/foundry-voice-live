@@ -121,7 +121,9 @@ Tests: `core/*.test.ts` (transports, audio, avatar, mic, reconnect), `hooks/useV
   own queue via `consumeQueuedRequest()`), because answering before the `function_call_output`
   exists would make the model reply to a conversation with an unanswered tool call — one follow-up
   covers both. **The gate being idle is not sufficient reason to send: check the batches too.**
-  A late result belongs to the live conversation only if
+  An executor returning `undefined` means "no output for this call" (`pendingCallIds` drops it);
+  a `sendToolResult()` the consumer calls themselves is counted into the batch instead of racing
+  it. A late result belongs to the live conversation only if
   `sessionRef.current === session && session.scope.isActive`.
 - **`onError` is advisory, `onClose` decides the lifecycle** (stated in
   `core/transports/types.ts`): a transport that cannot continue must close itself, because

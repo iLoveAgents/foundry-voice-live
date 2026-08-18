@@ -64,7 +64,14 @@ export class WebRtcTransport implements VoiceLiveTransport {
   private ws: WebSocket | null = null;
   private handle: WebRtcHandle | null = null;
   private offerPromise: Promise<WebRtcOffer> | null = null;
-  private pendingTrack: MediaStreamTrack | null | undefined = undefined;
+  /**
+   * A microphone attachment requested before the transceiver existed. The caller's promise is kept
+   * open until the real `replaceTrack()` runs, so a failure is reported instead of the caller
+   * believing the microphone is live.
+   */
+  private pendingTrack:
+    | { track: MediaStreamTrack | null; resolve: () => void; reject: (err: unknown) => void }
+    | null = null;
   private negotiationTimer: ReturnType<typeof setTimeout> | null = null;
   /**
    * Events the caller sent between `onOpen` and `rtc.call.sdp.create`. The contract says events may
@@ -245,12 +252,16 @@ export class WebRtcTransport implements VoiceLiveTransport {
         return;
       }
       this.handle = offer.handle;
-      if (this.pendingTrack !== undefined) {
-        const track = this.pendingTrack;
-        this.pendingTrack = undefined;
-        offer.handle.audioTransceiver.sender.replaceTrack(track).catch((err: unknown) => {
-          log?.warn('Could not attach microphone track:', err);
-        });
+      const pending = this.pendingTrack;
+      if (pending) {
+        this.pendingTrack = null;
+        offer.handle.audioTransceiver.sender
+          .replaceTrack(pending.track)
+          .then(() => pending.resolve())
+          .catch((err: unknown) => {
+            log?.warn('Could not attach microphone track:', err);
+            pending.reject(err);
+          });
       }
 
       ws.send(JSON.stringify(buildRtcSdpCreateEvent(offer.sdpOffer, session)));
@@ -323,8 +334,12 @@ export class WebRtcTransport implements VoiceLiveTransport {
       await this.handle.audioTransceiver.sender.replaceTrack(track);
       return;
     }
-    // Offer still in flight — attach once the transceiver exists
-    this.pendingTrack = track;
+    // Offer still in flight — attach once the transceiver exists, and keep this promise open until
+    // then so the caller learns whether the microphone actually got attached
+    this.pendingTrack?.reject(new Error('Superseded by a newer microphone attachment'));
+    return new Promise<void>((resolve, reject) => {
+      this.pendingTrack = { track, resolve, reject };
+    });
   }
 
   close(): void {
@@ -348,7 +363,8 @@ export class WebRtcTransport implements VoiceLiveTransport {
       }
     }
     this.teardownMedia();
-    this.pendingTrack = undefined;
+    this.pendingTrack?.reject(new Error('Transport closed before the microphone was attached'));
+    this.pendingTrack = null;
     this.preCallQueue = [];
     this.seen.clear();
   }

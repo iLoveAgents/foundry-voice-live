@@ -312,19 +312,54 @@ describe('WebRtcTransport', () => {
     const t = new WebRtcTransport(cb);
     t.connect('wss://x/calls', session);
     const early = { kind: 'audio' } as any;
-    await t.setMicrophoneTrack(early); // offer still in flight → pending
+    // requested before the transceiver exists: the promise stays open until it is really attached,
+    // so the caller cannot report a live microphone that is not sending anything
+    let attached = false;
+    const earlyAttach = t.setMicrophoneTrack(early).then(() => {
+      attached = true;
+    });
+    await Promise.resolve();
+    expect(attached).toBe(false);
+
     const ws = FakeWebSocket.instances.at(-1)!;
     ws.open();
     await vi.waitFor(() => expect(ws.lastSent('rtc.call.sdp.create')).toBeTruthy());
     const pc = FakePeerConnection.instances.at(-1)!;
     const sender = pc.transceivers[0]!.sender;
-    await vi.waitFor(() => expect(sender.replaceTrack).toHaveBeenCalledWith(early));
+    await earlyAttach;
+    expect(sender.replaceTrack).toHaveBeenCalledWith(early);
 
     const late = { kind: 'audio', id: 'late' } as any;
     await t.setMicrophoneTrack(late);
     expect(sender.replaceTrack).toHaveBeenLastCalledWith(late);
     await t.setMicrophoneTrack(null);
     expect(sender.replaceTrack).toHaveBeenLastCalledWith(null);
+  });
+
+  it('reports a deferred microphone attachment that fails, instead of resolving optimistically', async () => {
+    const cb = makeCallbacks();
+    const t = new WebRtcTransport(cb, {
+      createPeerConnection: () => {
+        const pc = new FakePeerConnection();
+        const transceiver = { sender: { replaceTrack: vi.fn(async () => { throw new Error('device gone'); }) } };
+        pc.addTransceiver = () => transceiver as never;
+        return pc as unknown as RTCPeerConnection;
+      },
+    });
+    t.connect('wss://x/calls', {});
+    const attach = t.setMicrophoneTrack({ kind: 'audio' } as never);
+    const ws = FakeWebSocket.instances.at(-1)!;
+    ws.open();
+    await expect(attach).rejects.toThrow('device gone');
+  });
+
+  it('settles a pending microphone attachment when the transport closes first', async () => {
+    const cb = makeCallbacks();
+    const t = new WebRtcTransport(cb);
+    t.connect('wss://x/calls', {});
+    const attach = t.setMicrophoneTrack({ kind: 'audio' } as never);
+    t.close();
+    await expect(attach).rejects.toThrow(/closed before the microphone was attached/);
   });
 
   it('close() detaches everything without firing onClose; a control-channel drop closes media', async () => {

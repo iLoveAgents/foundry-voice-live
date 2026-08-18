@@ -212,7 +212,7 @@ Open <http://localhost:3001> to explore the examples.
 
 ### Prerequisites
 
-- Node.js >= 18.0.0
+- Node.js >= 22.0.0 (development; the protocol contract test's `@azure/ai-voicelive` dev dependency requires it. The published packages themselves run on older runtimes — the proxy declares Node >= 18.)
 - pnpm >= 9.0.0
 - [just](https://github.com/casey/just) command runner
 

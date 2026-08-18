@@ -153,6 +153,12 @@ interface ToolBatch {
   /** Tool calls seen for this response so far */
   seenCalls: number;
   /**
+   * Calls whose `function_call_output` has not been sent yet. An executor that returns a value
+   * clears its own entry; a consumer sending the output themselves (`sendToolResult`) clears it
+   * too. An executor returning `undefined` means "no output for this call" — see AGENTS.md.
+   */
+  pendingCallIds: Set<string>;
+  /**
    * Guard for declared calls that never arrive: without it a dropped control-channel event would
    * hold every later turn forever, which is worse than answering slightly early.
    */
@@ -549,6 +555,14 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
    */
   const sendToolResult = useCallback(
     (callId: string, output: ToolResult, options: { triggerResponse?: boolean } = {}): void => {
+      // A result the consumer sends themselves counts towards the batch that is coordinating this
+      // response, so the follow-up covers it instead of racing a second one
+      for (const batch of toolBatchesRef.current.values()) {
+        if (batch.pendingCallIds.delete(callId)) {
+          batch.sentOutput = true;
+          break;
+        }
+      }
       sendEvent({
         type: 'conversation.item.create',
         item: {
@@ -910,6 +924,7 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
               followUpOwed: false,
               seenCalls: 0,
               expectedCalls: toolCallCount,
+              pendingCallIds: new Set<string>(),
             };
             toolBatchesRef.current.set(doneKey, doneBatch);
           }
@@ -986,8 +1001,10 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
                 followUpOwed: false,
                 seenCalls: 0,
                 expectedCalls: completed.get(batchKey) ?? 0,
+                pendingCallIds: new Set<string>(),
               } satisfies ToolBatch);
             batch.seenCalls += 1;
+            batch.pendingCallIds.add(callId);
             batch.pending += 1;
             toolBatchesRef.current.set(batchKey, batch);
             Promise.resolve()
@@ -1002,6 +1019,7 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
                 }
                 sendToolResult(callId, result, { triggerResponse: false });
                 batch.sentOutput = true;
+                batch.pendingCallIds.delete(callId);
               })
               .catch((err) => {
                 log.error(`toolExecutor failed for ${name}:`, err);
@@ -1012,8 +1030,11 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
                   triggerResponse: false,
                 });
                 batch.sentOutput = true;
+                batch.pendingCallIds.delete(callId);
               })
               .finally(() => {
+                // A void executor means "no automatic output for this call": stop waiting for one
+                batch.pendingCallIds.delete(callId);
                 batch.pending -= 1;
                 if (session) finishToolBatchIfReady(batchKey, batch, session);
               });

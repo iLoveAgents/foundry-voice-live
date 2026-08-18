@@ -348,7 +348,12 @@ session: sessionConfig()
   .build()
 ```
 
-`toolExecutor` semantics: a returned value is sent as `function_call_output`; with parallel tool calls every output of a response is sent first and then **one** `response.create` follows (after `response.done`, so no answer is produced from a partial result set). If your executor rejects, `{ error: message }` is sent as the output — the model can then apologise or retry instead of the conversation stalling forever. Results that arrive after the session ended or reconnected are discarded.
+`toolExecutor` semantics: a returned value is sent as `function_call_output`; returning `undefined`
+means **no automatic output for that call** — if you intend to send one yourself later, keep the
+executor's promise pending until you have (that is what makes the follow-up wait for it), or send
+it with `sendToolResult()` and ask for the answer with `createResponse()`. A `sendToolResult()` you
+call yourself is counted into the response's batch, so it shares the same single follow-up instead
+of racing a second one. With parallel tool calls every output of a response is sent first and then **one** `response.create` follows (after `response.done`, so no answer is produced from a partial result set). If your executor rejects, `{ error: message }` is sent as the output — the model can then apologise or retry instead of the conversation stalling forever. Results that arrive after the session ended or reconnected are discarded.
 
 Supported in Foundry agent mode and with cascaded text models (`gpt-4.1`, `gpt-5`, …) + Azure voices. Native audio models (`gpt-realtime`, `gpt-realtime-mini`, `azure-realtime`) don't support interim responses — the SDK warns at connect time.
 
