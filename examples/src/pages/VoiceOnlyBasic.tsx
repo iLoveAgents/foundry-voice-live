@@ -1,6 +1,7 @@
 import { useRef, useEffect, useState } from 'react';
 import { useVoiceLive, createVoiceLiveConfig } from '@iloveagents/foundry-voice-live-react';
 import { SampleLayout, StatusBadge, ControlGroup, ErrorPanel } from '../components';
+import { directOrProxyConnection } from '../lib/connection';
 
 /**
  * VoiceOnlyBasic - Simple voice chat example
@@ -14,10 +15,9 @@ export function VoiceOnlyBasic(): JSX.Element {
 
   // Create Voice Live configuration
   const config = createVoiceLiveConfig({
-    connection: {
-      resourceName: import.meta.env.VITE_FOUNDRY_RESOURCE_NAME,
-      apiKey: import.meta.env.VITE_FOUNDRY_API_KEY,
-    }
+    // Direct with the dev API key when configured, otherwise through the proxy (keyless)
+    connection: directOrProxyConnection(),
+    logLevel: 'debug', // trace every event in the dev console (default: 'warn')
   });
 
   // Voice Live hook - mic capture is integrated and auto-starts!

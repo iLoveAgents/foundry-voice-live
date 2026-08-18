@@ -22,6 +22,7 @@
 
 import { useState, useRef, useCallback, useEffect } from 'react';
 import type { AudioCaptureConfig, AudioCaptureReturn } from '../types';
+import { buildMicConstraints } from '../utils/audioHelpers';
 
 /**
  * Inline AudioWorklet processor code
@@ -87,6 +88,14 @@ export function useAudioCapture({
   const blobUrlRef = useRef<string | null>(null);
   const audioBufferRef = useRef<Int16Array[]>([]);
   const bufferedSamplesRef = useRef<number>(0);
+  /**
+   * Incremented by `stopCapture()`. `startCapture()` awaits `getUserMedia` and
+   * `audioWorklet.addModule`; without this check a stop during either await would be undone by
+   * the resuming continuation, leaving `isCapturing` true with no stream (silently dead capture).
+   */
+  const startGenerationRef = useRef<number>(0);
+  /** The start attempt in flight, so concurrent callers share it instead of racing */
+  const pendingStartRef = useRef<Promise<void> | null>(null);
 
   // Buffer size: 2400 samples = 4800 bytes = 100ms at 24kHz mono PCM16
   // Reduces WebSocket message frequency by batching small worklet outputs
@@ -120,30 +129,73 @@ export function useAudioCapture({
   }, [onAudioData]);
 
   /**
+   * Undo a half-built capture graph after a failed attempt.
+   *
+   * Only what *this* attempt published is released: a slow failure (a worklet module that rejects
+   * seconds later) must never tear down the capture a newer attempt has meanwhile started, which
+   * would leave `isCapturing` true with no stream behind it.
+   */
+  const releasePartialCapture = useCallback(
+    (owned: {
+      stream: MediaStream | null;
+      audioContext: AudioContext | null;
+      blobUrl: string | null;
+    }): void => {
+      if (owned.stream) {
+        owned.stream.getTracks().forEach((track) => track.stop());
+        if (streamRef.current === owned.stream) streamRef.current = null;
+      }
+      if (owned.audioContext) {
+        if (audioContextRef.current === owned.audioContext) {
+          sourceRef.current?.disconnect();
+          sourceRef.current = null;
+          if (audioWorkletNodeRef.current) {
+            audioWorkletNodeRef.current.disconnect();
+            audioWorkletNodeRef.current.port.onmessage = null;
+            audioWorkletNodeRef.current = null;
+          }
+          audioContextRef.current = null;
+        }
+        owned.audioContext.close().catch(() => undefined);
+      }
+      if (owned.blobUrl) {
+        URL.revokeObjectURL(owned.blobUrl);
+        if (blobUrlRef.current === owned.blobUrl) blobUrlRef.current = null;
+      }
+    },
+    []
+  );
+
+  /**
    * Start capturing audio from the microphone
    */
-  const startCapture = useCallback(async () => {
+  const runCapture = useCallback(async () => {
+    // What this attempt created, so a failure releases its own resources and nothing else
+    const owned: { stream: MediaStream | null; audioContext: AudioContext | null; blobUrl: string | null } = {
+      stream: null,
+      audioContext: null,
+      blobUrl: null,
+    };
     try {
       setError(null);
 
-      // Request microphone access with sensible defaults for voice applications
-      const defaultConstraints: MediaTrackConstraints = {
-        echoCancellation: true,
-        noiseSuppression: true,
-        autoGainControl: true,
-        sampleRate: sampleRate,
-        channelCount: 1,
-      };
-      const mergedConstraints = audioConstraints
-        ? { ...defaultConstraints, ...audioConstraints }
-        : defaultConstraints;
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: mergedConstraints,
-      });
+      const generation = startGenerationRef.current;
+      const isSuperseded = (): boolean => generation !== startGenerationRef.current;
+
+      // Request microphone access with the SDK's defaults for voice applications
+      const stream = await navigator.mediaDevices.getUserMedia(
+        buildMicConstraints(audioConstraints, sampleRate)
+      );
+      if (isSuperseded()) {
+        stream.getTracks().forEach((track) => track.stop());
+        return;
+      }
+      owned.stream = stream;
       streamRef.current = stream;
 
       // Create AudioContext with specified sample rate
       const audioContext = new AudioContext({ sampleRate });
+      owned.audioContext = audioContext;
       audioContextRef.current = audioContext;
 
       // Determine processor path: use inline processor if no custom path provided
@@ -154,11 +206,21 @@ export function useAudioCapture({
       } else {
         // Use inline processor (default - zero config!)
         processorUrl = createProcessorBlobUrl();
+        owned.blobUrl = processorUrl;
         blobUrlRef.current = processorUrl;
       }
 
       // Load AudioWorklet processor
       await audioContext.audioWorklet.addModule(processorUrl);
+      if (isSuperseded()) {
+        // stopCapture()/unmount happened while the module was loading: release what we created
+        // here instead of wiring nodes into a context that is already closing
+        stream.getTracks().forEach((track) => track.stop());
+        audioContext.close().catch(() => undefined);
+        if (audioContextRef.current === audioContext) audioContextRef.current = null;
+        if (streamRef.current === stream) streamRef.current = null;
+        return;
+      }
 
       // Create audio source and worklet node
       const source = audioContext.createMediaStreamSource(stream);
@@ -190,17 +252,43 @@ export function useAudioCapture({
 
       setIsCapturing(true);
     } catch (err) {
+      // Release whatever this attempt managed to create. Leaving `streamRef` set would keep the
+      // microphone live *and* make every later startCapture() return early as "already
+      // capturing" — capture could never be retried.
+      releasePartialCapture(owned);
       const errorMessage = err instanceof Error ? err.message : 'Failed to start audio capture';
       setError(errorMessage);
       console.error('Audio capture error:', err);
       throw err;
     }
-  }, [sampleRate, workletPath, audioConstraints, onAudioData, flushAudioBuffer]);
+  }, [sampleRate, workletPath, audioConstraints, onAudioData, flushAudioBuffer, releasePartialCapture]);
+
+  /**
+   * Start capturing, coalescing concurrent calls.
+   *
+   * `getUserMedia` and the worklet module both take a while, and `isCapturing` only flips at the
+   * end — so two calls in that window (a re-rendered auto-start effect, a consumer calling
+   * `startMic()` twice) would each acquire a stream and the second would overwrite the refs of
+   * the first, leaving a microphone recording that nothing can stop. Callers share one attempt.
+   */
+  const startCapture = useCallback(async (): Promise<void> => {
+    if (pendingStartRef.current) return pendingStartRef.current;
+    if (streamRef.current) return; // already capturing
+    const attempt = runCapture().finally(() => {
+      if (pendingStartRef.current === attempt) pendingStartRef.current = null;
+    });
+    pendingStartRef.current = attempt;
+    return attempt;
+  }, [runCapture]);
 
   /**
    * Stop capturing audio and release resources
    */
   const stopCapture = useCallback(() => {
+    // Cancel any acquisition still in flight (see startGenerationRef). The attempt cleans up what
+    // it created; dropping the shared promise means a later startCapture() begins a fresh one.
+    startGenerationRef.current += 1;
+    pendingStartRef.current = null;
     // Disconnect and cleanup audio nodes
     if (sourceRef.current) {
       sourceRef.current.disconnect();

@@ -12,20 +12,20 @@ import {
   ErrorPanel,
   AvatarContainer,
 } from '../components';
+import { directOrProxyConnection } from '../lib/connection';
 
 export function AvatarBasic(): JSX.Element {
   const [error, setError] = useState<string | null>(null);
 
   const { connect, disconnect, connectionState, videoStream, audioStream } = useVoiceLive({
-    connection: {
-      resourceName: import.meta.env.VITE_FOUNDRY_RESOURCE_NAME,
-      apiKey: import.meta.env.VITE_FOUNDRY_API_KEY,
-    },
+    // Direct with the dev API key when configured, otherwise through the proxy (keyless)
+    connection: directOrProxyConnection(),
     session: sessionConfig()
       .instructions('You are a helpful assistant. Keep responses brief.')
       .hdVoice('en-US-Ava:DragonHDLatestNeural')
       .avatar('lisa', 'casual-sitting', { codec: 'h264' })
       .build(),
+    logLevel: 'debug',
   });
 
   const handleStart = async (): Promise<void> => {

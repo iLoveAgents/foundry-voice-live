@@ -1,4 +1,4 @@
-import { useRef, useEffect, useState } from 'react';
+import { useState } from 'react';
 import {
   useVoiceLive,
   VoiceLiveAvatar,
@@ -13,7 +13,11 @@ import {
   Section,
   AlertBox,
   AvatarContainer,
+  TranscriptPanel,
+  TextInput,
 } from '../components';
+import { proxyWsUrl } from '../lib/connection';
+import { useTranscripts } from '../lib/useTranscripts';
 
 /**
  * Foundry Agent Service example with avatar and server-side authentication.
@@ -26,24 +30,21 @@ import {
  *
  * Prerequisites:
  * - examples .env: VITE_FOUNDRY_AGENT_NAME, VITE_FOUNDRY_PROJECT_NAME
- * - proxy .env: FOUNDRY_RESOURCE_NAME, API_VERSION=2026-01-01-preview
+ *   (and VITE_BACKEND_PROXY_URL if the proxy is not on ws://localhost:8080)
+ * - proxy .env: FOUNDRY_RESOURCE_NAME (the GA API version is the default)
  * - `az login` for local dev (or managed identity in production)
  */
-export default function FoundryAgentAvatar(): JSX.Element {
-  const audioRef = useRef<HTMLAudioElement>(null);
+export function FoundryAgentAvatar(): JSX.Element {
   const [error, setError] = useState<string | null>(null);
-
-  const backendProxyUrl =
-    import.meta.env.VITE_BACKEND_PROXY_URL || 'ws://localhost:8080';
+  const { transcripts, onTranscript, clear: clearTranscripts } = useTranscripts();
 
   const agentName = import.meta.env.VITE_FOUNDRY_AGENT_NAME;
   const projectName = import.meta.env.VITE_FOUNDRY_PROJECT_NAME;
   const agentConfigured = !!(agentName && projectName);
 
   // Pass agent config as URL params — proxy handles auth via DefaultAzureCredential
-  const proxyUrl = agentConfigured
-    ? `${backendProxyUrl}/ws?agentName=${encodeURIComponent(agentName)}&projectName=${encodeURIComponent(projectName)}`
-    : `${backendProxyUrl}/ws`;
+  // (proxy base from VITE_BACKEND_PROXY_URL, default ws://localhost:8080)
+  const proxyUrl = proxyWsUrl({ agentName, projectName });
 
   const config = createVoiceLiveConfig({
     connection: {
@@ -59,40 +60,27 @@ export default function FoundryAgentAvatar(): JSX.Element {
       .semanticVAD({ interruptResponse: true })
       .echoCancellation()
       .noiseReduction()
-      .transcription()
+      // Azure speech transcription is the model compatible with Foundry agent sessions
+      .transcription({ model: 'azure-speech' })
       .build(),
-    onEvent: (event) => {
-      if (
-        event.type === 'conversation.item.input_audio_transcription.completed'
-      ) {
-        console.log(`[Foundry Agent Avatar] You: "${event.transcript}"`);
-      } else if (event.type === 'response.audio_transcript.done') {
-        console.log(`[Foundry Agent Avatar] Agent: "${event.transcript}"`);
-      } else if (event.type === 'error') {
-        console.error('[Foundry Agent Avatar] Error:', event);
-        const errorObj = event.error as
-          | { message?: string; code?: string }
-          | undefined;
-        setError(
-          `Azure Error: ${errorObj?.message || errorObj?.code || 'Unknown error'}`
-        );
-      }
-    },
+    onTranscript,
+    logLevel: 'debug',
   });
 
-  const { connect, disconnect, connectionState, videoStream, audioStream } =
-    useVoiceLive(config);
-
-  useEffect(() => {
-    if (audioRef.current && audioStream) {
-      audioRef.current.srcObject = audioStream;
-      audioRef.current.play().catch(console.error);
-    }
-  }, [audioStream]);
+  const {
+    connect,
+    disconnect,
+    connectionState,
+    videoStream,
+    audioStream,
+    sendText,
+    error: sessionError,
+  } = useVoiceLive(config);
 
   const handleStart = async (): Promise<void> => {
     try {
       setError(null);
+      clearTranscripts();
       await connect();
       console.log(
         '[Foundry Agent Avatar] Connected - microphone will auto-start when session ready'
@@ -115,7 +103,7 @@ export default function FoundryAgentAvatar(): JSX.Element {
       title="Foundry Agent Service - Avatar"
       description="Voice conversation with avatar and a Foundry Agent. The proxy handles authentication via DefaultAzureCredential — no MSAL or app registration needed."
     >
-      <ErrorPanel error={error} />
+      <ErrorPanel error={error || sessionError} />
 
       {!agentConfigured && (
         <Section>
@@ -134,10 +122,9 @@ export default function FoundryAgentAvatar(): JSX.Element {
               </li>
             </ul>
             <p>
-              The proxy also needs <code>FOUNDRY_RESOURCE_NAME</code> and{' '}
-              <code>API_VERSION=2026-01-01-preview</code>. For local dev, run{' '}
-              <code>az login</code>. In production, use managed identity or a
-              service principal.
+              The proxy also needs <code>FOUNDRY_RESOURCE_NAME</code>. For local
+              dev, run <code>az login</code>. In production, use managed identity
+              or a service principal.
             </p>
           </AlertBox>
         </Section>
@@ -182,7 +169,8 @@ export default function FoundryAgentAvatar(): JSX.Element {
         </AvatarContainer>
       </Section>
 
-      <audio ref={audioRef} autoPlay hidden />
+      <TextInput onSend={sendText} disabled={!isConnected} />
+      <TranscriptPanel transcripts={transcripts} />
     </SampleLayout>
   );
 }

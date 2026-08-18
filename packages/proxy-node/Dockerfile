@@ -1,63 +1,49 @@
-# Foundry Voice Live Proxy - Docker Image
-# Multi-stage build for optimized production image
+# Foundry Voice Live Proxy — production image.
+#
+# Built from the REPOSITORY ROOT so the pnpm workspace lockfile is available:
+#
+#   docker build -f packages/proxy-node/Dockerfile -t foundry-voice-live-proxy .
+#
+# pnpm itself is pinned by the root `packageManager` field via corepack, and dependencies
+# are installed with --frozen-lockfile, so the image is reproducible.
 
-# Stage 1: Build
-FROM node:20-alpine AS builder
+# Stage 1: build the TypeScript sources
+FROM node:22-alpine AS builder
 
-# Install pnpm
-RUN corepack enable && corepack prepare pnpm@latest --activate
+RUN corepack enable
 
-WORKDIR /app
+WORKDIR /repo
 
-# Copy package files
-COPY package.json tsconfig.json ./
+# Manifests first, so a source-only change reuses the dependency layer
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY packages/proxy-node/package.json packages/proxy-node/
 
-# Install dependencies
-RUN pnpm install
+RUN pnpm install --frozen-lockfile --filter @iloveagents/foundry-voice-live-proxy-node
 
-# Copy source code
-COPY src ./src
+COPY packages/proxy-node/ packages/proxy-node/
 
-# Build TypeScript
-RUN pnpm run build
+RUN pnpm --filter @iloveagents/foundry-voice-live-proxy-node run build
 
-# Stage 2: Production
-FROM node:20-alpine
+# Production dependencies + build output as a self-contained directory
+RUN pnpm --filter @iloveagents/foundry-voice-live-proxy-node deploy --prod /app
 
-# Install pnpm
-RUN corepack enable && corepack prepare pnpm@latest --activate
+# Stage 2: runtime (no pnpm, no build toolchain)
+FROM node:22-alpine
 
-# Add security: non-root user
 RUN addgroup -g 1001 -S nodejs && \
-    adduser -S nodejs -u 1001
+  adduser -S nodejs -u 1001
 
 WORKDIR /app
 
-# Environment for runtime image
-ENV NODE_ENV=production \
-  HUSKY=0
+ENV NODE_ENV=production
 
-# Copy package files
-COPY package.json ./
+COPY --from=builder --chown=nodejs:nodejs /app ./
 
-# Install production dependencies only, skip lifecycle scripts (e.g., husky)
-RUN pnpm install --prod --ignore-scripts
-
-# Copy built application from builder
-COPY --from=builder /app/dist ./dist
-
-# Change ownership to non-root user
-RUN chown -R nodejs:nodejs /app
-
-# Switch to non-root user
 USER nodejs
 
-# Expose port
 EXPOSE 8080
 
-# Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
-  CMD node -e "require('http').get('http://localhost:8080/health', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})"
+  CMD node -e "require('http').get('http://localhost:8080/health', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)}).on('error', () => process.exit(1))"
 
-# Start application
 CMD ["node", "dist/index.js"]

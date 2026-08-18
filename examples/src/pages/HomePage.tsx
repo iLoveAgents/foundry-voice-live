@@ -20,6 +20,18 @@ const samples: Record<string, SampleInfo[]> = {
         'Semantic VAD, echo cancellation, noise suppression, and barge-in',
     },
     {
+      path: '/voice-webrtc',
+      title: 'Voice over WebRTC (Preview)',
+      description:
+        'Low-latency RTP audio with a WebSocket control channel and data-channel events',
+    },
+    {
+      path: '/azure-realtime',
+      title: 'Azure Realtime Voices',
+      description:
+        'azure-realtime model with native voices — ~100 ms lower latency',
+    },
+    {
       path: '/voice-proxy',
       title: 'Voice with Proxy',
       description: 'Secure backend proxy pattern with API key protection',
@@ -76,23 +88,21 @@ const samples: Record<string, SampleInfo[]> = {
       description: 'Avatar with per-user Entra ID authentication.',
     },
   ],
-  'Agent Service (classic)': [
-    {
-      path: '/agent-service',
-      title: 'Voice',
-      description: 'Agent with MSAL and Whisper transcription',
-    },
-    {
-      path: '/agent-service-avatar',
-      title: 'Avatar',
-      description: 'Agent integration with avatar video',
-    },
-  ],
   'Advanced Features': [
     {
       path: '/function-calling',
       title: 'Function Calling',
       description: 'Tool definitions with get_weather and get_time examples',
+    },
+    {
+      path: '/interim-response',
+      title: 'Interim Responses',
+      description: 'Filler messages while a slow tool runs or latency is high',
+    },
+    {
+      path: '/mcp-tools',
+      title: 'MCP Server Tools',
+      description: 'Server-side MCP tools with an approval flow',
     },
     {
       path: '/audio-visualizer',

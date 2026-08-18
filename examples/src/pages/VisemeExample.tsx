@@ -4,6 +4,7 @@ import {
   createVoiceLiveConfig,
   withViseme,
 } from '@iloveagents/foundry-voice-live-react';
+import type { VoiceLiveServerEvent } from '@iloveagents/foundry-voice-live-react';
 import {
   SampleLayout,
   StatusBadge,
@@ -11,6 +12,7 @@ import {
   ControlGroup,
   ErrorPanel,
 } from '../components';
+import { directOrProxyConnection } from '../lib/connection';
 
 interface VisemeData {
   viseme_id: number;
@@ -19,6 +21,8 @@ interface VisemeData {
 
 export function VisemeExample(): JSX.Element {
   const [currentViseme, setCurrentViseme] = useState<number | null>(null);
+  /** Mirror of `currentViseme` for the animation loop (see the effect below) */
+  const currentVisemeRef = useRef<number | null>(null);
   const [visemeHistory, setVisemeHistory] = useState<
     Array<{ viseme: number; offset: number }>
   >([]);
@@ -30,10 +34,8 @@ export function VisemeExample(): JSX.Element {
   // Enable viseme output
   // IMPORTANT: Visemes only work with Azure STANDARD voices (not HD or OpenAI voices)
   const config = createVoiceLiveConfig({
-    connection: {
-      resourceName: import.meta.env.VITE_FOUNDRY_RESOURCE_NAME,
-      apiKey: import.meta.env.VITE_FOUNDRY_API_KEY,
-    },
+    // Direct with the dev API key when configured, otherwise through the proxy (keyless)
+    connection: directOrProxyConnection(),
     session: withViseme({
       instructions:
         'You are a helpful assistant. Always respond in English. Keep responses brief.',
@@ -52,32 +54,27 @@ export function VisemeExample(): JSX.Element {
     audioStream,
   } = useVoiceLive({
     ...config,
-    onEvent: useCallback(
-      (event: { type: string; viseme_id?: number; audio_offset_ms?: number }) => {
-        if (
-          event.type === 'response.animation_viseme.delta' &&
-          event.viseme_id !== undefined &&
-          event.audio_offset_ms !== undefined
-        ) {
-          const visemeId = event.viseme_id;
-          const audioOffset = event.audio_offset_ms;
-          // Buffer viseme events for synchronized playback
-          visemeBufferRef.current.push({
-            viseme_id: visemeId,
-            audio_offset_ms: audioOffset,
-          });
-          setVisemeHistory((prev) => [
-            ...prev.slice(-20),
-            { viseme: visemeId, offset: audioOffset },
-          ]);
-        }
-        if (event.type === 'response.created') {
-          // Clear buffer for new response
-          visemeBufferRef.current = [];
-        }
-      },
-      []
-    ),
+    logLevel: 'debug',
+    // Typed server events: `event.type` narrows to the viseme delta shape
+    onEvent: useCallback((event: VoiceLiveServerEvent) => {
+      if (event.type === 'response.animation_viseme.delta') {
+        const visemeId = event.viseme_id;
+        const audioOffset = event.audio_offset_ms;
+        // Buffer viseme events for synchronized playback
+        visemeBufferRef.current.push({
+          viseme_id: visemeId,
+          audio_offset_ms: audioOffset,
+        });
+        setVisemeHistory((prev) => [
+          ...prev.slice(-20),
+          { viseme: visemeId, offset: audioOffset },
+        ]);
+      }
+      if (event.type === 'response.created') {
+        // Clear buffer for new response
+        visemeBufferRef.current = [];
+      }
+    }, []),
   });
 
   // Connect audio stream to audio element
@@ -106,7 +103,8 @@ export function VisemeExample(): JSX.Element {
           }
         }
 
-        if (activeViseme && activeViseme.viseme_id !== currentViseme) {
+        if (activeViseme && activeViseme.viseme_id !== currentVisemeRef.current) {
+          currentVisemeRef.current = activeViseme.viseme_id;
           setCurrentViseme(activeViseme.viseme_id);
         }
       }
@@ -121,7 +119,9 @@ export function VisemeExample(): JSX.Element {
         cancelAnimationFrame(animationFrameRef.current);
       }
     };
-  }, [getAudioPlaybackTime, currentViseme]);
+    // `currentViseme` is read through a ref on purpose: listing it here would cancel and restart
+    // the animation loop on every single viseme
+  }, [getAudioPlaybackTime]);
 
   const handleStart = async (): Promise<void> => {
     try {

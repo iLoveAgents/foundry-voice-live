@@ -10,6 +10,7 @@ import {
   ControlGroup,
   ErrorPanel,
 } from '../components';
+import { directOrProxyConnection } from '../lib/connection';
 
 export function AudioVisualizer(): JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -18,13 +19,12 @@ export function AudioVisualizer(): JSX.Element {
   const [error, setError] = useState<string | null>(null);
 
   const config = createVoiceLiveConfig({
-    connection: {
-      resourceName: import.meta.env.VITE_FOUNDRY_RESOURCE_NAME,
-      apiKey: import.meta.env.VITE_FOUNDRY_API_KEY,
-    },
+    // Direct with the dev API key when configured, otherwise through the proxy (keyless)
+    connection: directOrProxyConnection(),
     session: {
       instructions: 'You are a helpful assistant. Keep responses brief.',
     },
+    logLevel: 'debug',
   });
 
   const { connect, disconnect, connectionState, audioStream, audioAnalyser } =

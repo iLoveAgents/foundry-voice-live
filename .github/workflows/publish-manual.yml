@@ -35,7 +35,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
           cache: 'pnpm'
           registry-url: 'https://registry.npmjs.org'
 
@@ -58,6 +58,8 @@ jobs:
           fi
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          # pnpm 9 has no --provenance flag; npm (which performs the upload) reads this
+          NPM_CONFIG_PROVENANCE: "true"
 
       - name: Publish Proxy package
         if: ${{ inputs.package == 'all' || inputs.package == 'proxy-node' }}
@@ -69,3 +71,5 @@ jobs:
           fi
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          # pnpm 9 has no --provenance flag; npm (which performs the upload) reads this
+          NPM_CONFIG_PROVENANCE: "true"

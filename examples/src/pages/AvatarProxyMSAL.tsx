@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import {
   useVoiceLive,
   VoiceLiveAvatar,
@@ -12,80 +12,21 @@ import {
   ErrorPanel,
   AvatarContainer,
 } from '../components';
-import { useMsal } from '@azure/msal-react';
-import { InteractionRequiredAuthError } from '@azure/msal-browser';
+import { proxyWsUrl } from '../lib/connection';
+import { useEntraToken } from '../lib/useEntraToken';
 
+/**
+ * Avatar session with per-user Entra ID auth: the SDK asks `getToken()` for a fresh token on
+ * every connect and reconnect, so the proxy sees the actual user rather than its own identity.
+ */
 export function AvatarProxyMSAL(): JSX.Element {
-  const [wsUrl, setWsUrl] = useState<string | null>(null);
-  const [authError, setAuthError] = useState<string | null>(null);
-  const [accessToken, setAccessToken] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const { instance, accounts } = useMsal();
-
-  const acquireToken = async (): Promise<void> => {
-    if (accounts.length === 0) {
-      try {
-        setAuthError(null);
-        await instance.loginPopup({
-          scopes: ['https://ai.azure.com/.default'],
-        });
-      } catch (err) {
-        console.error('Sign-in error:', err);
-        setAuthError(
-          `Sign-in failed: ${err instanceof Error ? err.message : String(err)}`
-        );
-      }
-      return;
-    }
-
-    try {
-      setAuthError(null);
-      const response = await instance.acquireTokenSilent({
-        scopes: ['https://ai.azure.com/.default'],
-        account: accounts[0],
-      });
-      setAccessToken(response.accessToken);
-      setWsUrl(
-        `ws://localhost:8080/ws?model=gpt-realtime&token=${encodeURIComponent(response.accessToken)}`
-      );
-      console.log('Access token acquired successfully');
-    } catch (err) {
-      if (err instanceof InteractionRequiredAuthError) {
-        try {
-          const response = await instance.acquireTokenPopup({
-            scopes: ['https://ai.azure.com/.default'],
-            account: accounts[0],
-          });
-          setAccessToken(response.accessToken);
-          setWsUrl(
-            `ws://localhost:8080/ws?model=gpt-realtime&token=${encodeURIComponent(response.accessToken)}`
-          );
-          console.log('Access token acquired via popup');
-        } catch (popupError) {
-          console.error('Token acquisition failed:', popupError);
-          setAuthError(
-            `Authentication failed: ${popupError instanceof Error ? popupError.message : String(popupError)}`
-          );
-        }
-      } else {
-        console.error('Token acquisition error:', err);
-        setAuthError(
-          `Token error: ${err instanceof Error ? err.message : String(err)}`
-        );
-      }
-    }
-  };
-
-  useEffect(() => {
-    if (accounts.length > 0 && !accessToken) {
-      acquireToken();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [accounts]);
+  const { signedIn, username, authError, signIn, signOut, getToken } = useEntraToken();
 
   const config = createVoiceLiveConfig({
     connection: {
-      proxyUrl: wsUrl || undefined,
+      proxyUrl: proxyWsUrl({ model: 'gpt-realtime' }),
+      getToken: signedIn ? getToken : undefined,
     },
     session: {
       voice: {
@@ -98,36 +39,23 @@ export function AvatarProxyMSAL(): JSX.Element {
       },
       instructions: 'You are a helpful assistant. Keep responses brief.',
     },
+    logLevel: 'debug',
   });
 
-  const { connect, disconnect, connectionState, videoStream, audioStream } =
-    useVoiceLive(config);
+  const { connect, disconnect, connectionState, videoStream, audioStream } = useVoiceLive(config);
 
   const handleStart = async (): Promise<void> => {
-    if (!wsUrl) {
-      setError('Waiting for authentication token...');
-      return;
-    }
-
     try {
       setError(null);
       await connect();
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to start';
-      setError(message);
-      console.error('Start error:', err);
+      setError(err instanceof Error ? err.message : 'Failed to start');
     }
   };
 
   const handleStop = (): void => {
     disconnect();
     setError(null);
-  };
-
-  const handleSignOut = (): void => {
-    instance.logoutPopup();
-    setAccessToken(null);
-    setWsUrl(null);
   };
 
   const isConnected = connectionState === 'connected';
@@ -140,21 +68,20 @@ export function AvatarProxyMSAL(): JSX.Element {
       <ErrorPanel error={error || authError} />
 
       <Section title="Authentication">
-        {accounts.length === 0 ? (
+        {!signedIn ? (
           <div>
             <p className="auth-section__status">Not signed in</p>
-            <button onClick={acquireToken}>Sign In with Microsoft</button>
+            <button onClick={signIn}>Sign In with Microsoft</button>
           </div>
         ) : (
           <div>
             <p className="auth-section__user">
-              <strong>Signed in as:</strong> {accounts[0]?.username}
+              <strong>Signed in as:</strong> {username}
             </p>
             <p className="auth-section__status">
-              <strong>Token:</strong>{' '}
-              {accessToken ? '✓ Acquired' : '✗ Not available'}
+              A fresh token is acquired for every connection attempt.
             </p>
-            <button onClick={handleSignOut}>Sign Out</button>
+            <button onClick={signOut}>Sign Out</button>
           </div>
         )}
       </Section>
@@ -162,7 +89,7 @@ export function AvatarProxyMSAL(): JSX.Element {
       <StatusBadge status={connectionState} />
 
       <ControlGroup>
-        <button onClick={handleStart} disabled={isConnected || !wsUrl}>
+        <button onClick={handleStart} disabled={isConnected || !signedIn}>
           Start Avatar
         </button>
         <button onClick={handleStop} disabled={!isConnected}>

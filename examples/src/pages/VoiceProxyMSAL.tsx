@@ -1,98 +1,43 @@
 import { useRef, useEffect, useState } from 'react';
-import {
-  useVoiceLive,
-  createVoiceLiveConfig,
-} from '@iloveagents/foundry-voice-live-react';
+import { useVoiceLive, createVoiceLiveConfig } from '@iloveagents/foundry-voice-live-react';
 import {
   SampleLayout,
   StatusBadge,
   Section,
   ControlGroup,
   ErrorPanel,
+  TranscriptPanel,
+  TextInput,
 } from '../components';
-import { useMsal } from '@azure/msal-react';
-import { InteractionRequiredAuthError } from '@azure/msal-browser';
+import { proxyWsUrl } from '../lib/connection';
+import { useEntraToken } from '../lib/useEntraToken';
+import { useTranscripts } from '../lib/useTranscripts';
 
+/**
+ * Per-user authentication: the browser signs the user in with MSAL and the SDK asks for a token
+ * on every connect via `connection.getToken`, so each user reaches Foundry as themselves.
+ */
 export function VoiceProxyMSAL(): JSX.Element {
   const audioRef = useRef<HTMLAudioElement>(null);
-  const [wsUrl, setWsUrl] = useState<string | null>(null);
-  const [authError, setAuthError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [accessToken, setAccessToken] = useState<string | null>(null);
-  const { instance, accounts } = useMsal();
-
-  const acquireToken = async (): Promise<void> => {
-    if (accounts.length === 0) {
-      try {
-        setAuthError(null);
-        await instance.loginPopup({
-          scopes: ['https://ai.azure.com/.default'],
-        });
-      } catch (err) {
-        console.error('Sign-in error:', err);
-        setAuthError(
-          `Sign-in failed: ${err instanceof Error ? err.message : String(err)}`
-        );
-      }
-      return;
-    }
-
-    try {
-      setAuthError(null);
-      const response = await instance.acquireTokenSilent({
-        scopes: ['https://ai.azure.com/.default'],
-        account: accounts[0],
-      });
-      setAccessToken(response.accessToken);
-      setWsUrl(
-        `ws://localhost:8080/ws?model=gpt-realtime&token=${encodeURIComponent(response.accessToken)}`
-      );
-      console.log('Access token acquired successfully');
-    } catch (err) {
-      if (err instanceof InteractionRequiredAuthError) {
-        try {
-          const response = await instance.acquireTokenPopup({
-            scopes: ['https://ai.azure.com/.default'],
-            account: accounts[0],
-          });
-          setAccessToken(response.accessToken);
-          setWsUrl(
-            `ws://localhost:8080/ws?model=gpt-realtime&token=${encodeURIComponent(response.accessToken)}`
-          );
-          console.log('Access token acquired via popup');
-        } catch (popupError) {
-          console.error('Token acquisition failed:', popupError);
-          setAuthError(
-            `Authentication failed: ${popupError instanceof Error ? popupError.message : String(popupError)}`
-          );
-        }
-      } else {
-        console.error('Token acquisition error:', err);
-        setAuthError(
-          `Token error: ${err instanceof Error ? err.message : String(err)}`
-        );
-      }
-    }
-  };
-
-  useEffect(() => {
-    if (accounts.length > 0 && !accessToken) {
-      acquireToken();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [accounts]);
+  const { signedIn, username, authError, signIn, signOut, getToken } = useEntraToken();
+  const { transcripts, onTranscript, clear: clearTranscripts } = useTranscripts();
 
   const config = createVoiceLiveConfig({
     connection: {
-      proxyUrl: wsUrl || undefined,
+      proxyUrl: proxyWsUrl({ model: 'gpt-realtime' }),
+      // Not a `token=` in the URL: the SDK calls this on every connect *and reconnect*, so the
+      // session never runs on a token that expired while the page was open
+      getToken: signedIn ? getToken : undefined,
     },
     session: {
       instructions: 'You are a helpful assistant. Keep responses brief.',
     },
+    onTranscript,
+    logLevel: 'debug',
   });
 
-  const { connect, disconnect, connectionState, audioStream } =
-    useVoiceLive(config);
+  const { connect, disconnect, connectionState, audioStream, sendText } = useVoiceLive(config);
 
   useEffect(() => {
     if (audioRef.current && audioStream) {
@@ -102,33 +47,18 @@ export function VoiceProxyMSAL(): JSX.Element {
   }, [audioStream]);
 
   const handleStart = async (): Promise<void> => {
-    if (!wsUrl) {
-      setError('Waiting for authentication token...');
-      return;
-    }
-
-    console.log('Starting...');
     try {
       setError(null);
+      clearTranscripts();
       await connect();
-      console.log('Connected - mic will auto-start when session ready');
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to start';
-      setError(message);
-      console.error('Start error:', err);
+      setError(err instanceof Error ? err.message : 'Failed to start');
     }
   };
 
   const handleStop = (): void => {
     disconnect();
     setError(null);
-  };
-
-  const handleSignOut = (): void => {
-    instance.logoutPopup();
-    setAccessToken(null);
-    setWsUrl(null);
-    setAuthError(null);
   };
 
   const isConnected = connectionState === 'connected';
@@ -141,23 +71,20 @@ export function VoiceProxyMSAL(): JSX.Element {
       <ErrorPanel error={error || authError} />
 
       <Section title="Authentication">
-        {accounts.length === 0 ? (
+        {!signedIn ? (
           <div>
-            <p className="auth-section__status">
-              Not signed in. Please authenticate to continue.
-            </p>
-            <button onClick={acquireToken}>Sign In with Microsoft</button>
+            <p className="auth-section__status">Not signed in. Please authenticate to continue.</p>
+            <button onClick={signIn}>Sign In with Microsoft</button>
           </div>
         ) : (
           <div>
             <p className="auth-section__user">
-              <strong>Signed in as:</strong> {accounts[0]?.username}
+              <strong>Signed in as:</strong> {username}
             </p>
             <p className="auth-section__status">
-              <strong>Token Status:</strong>{' '}
-              {accessToken ? '✓ Active' : '✗ Not acquired'}
+              A fresh token is acquired for every connection attempt.
             </p>
-            <button onClick={handleSignOut}>Sign Out</button>
+            <button onClick={signOut}>Sign Out</button>
           </div>
         )}
       </Section>
@@ -165,13 +92,16 @@ export function VoiceProxyMSAL(): JSX.Element {
       <StatusBadge status={connectionState} />
 
       <ControlGroup>
-        <button onClick={handleStart} disabled={isConnected || !wsUrl}>
+        <button onClick={handleStart} disabled={isConnected || !signedIn}>
           Start Conversation
         </button>
         <button onClick={handleStop} disabled={!isConnected}>
           Stop
         </button>
       </ControlGroup>
+
+      <TextInput onSend={sendText} disabled={!isConnected} />
+      <TranscriptPanel transcripts={transcripts} />
 
       <audio ref={audioRef} autoPlay hidden />
     </SampleLayout>

@@ -1,6 +1,4 @@
 import { useRef, useEffect, useState } from 'react';
-import { useMsal } from '@azure/msal-react';
-import { InteractionRequiredAuthError } from '@azure/msal-browser';
 import {
   useVoiceLive,
   createVoiceLiveConfig,
@@ -13,7 +11,12 @@ import {
   ControlGroup,
   ErrorPanel,
   AlertBox,
+  TranscriptPanel,
+  TextInput,
 } from '../components';
+import { proxyWsUrl } from '../lib/connection';
+import { useEntraToken } from '../lib/useEntraToken';
+import { useTranscripts } from '../lib/useTranscripts';
 
 /**
  * Foundry Agent example with MSAL browser-side authentication.
@@ -25,18 +28,13 @@ import {
  * 1. Azure AD app registration with API permission for Azure AI
  * 2. Set VITE_AZURE_CLIENT_ID and VITE_AZURE_TENANT_ID in examples .env
  * 3. Set VITE_FOUNDRY_AGENT_NAME and VITE_FOUNDRY_PROJECT_NAME in examples .env
- * 4. Set FOUNDRY_RESOURCE_NAME in proxy .env
- * 5. Set API_VERSION=2026-01-01-preview in proxy .env
+ * 4. Set FOUNDRY_RESOURCE_NAME in proxy .env (the GA API version is the default)
  */
-export default function FoundryAgentMSAL(): JSX.Element {
+export function FoundryAgentMSAL(): JSX.Element {
   const audioRef = useRef<HTMLAudioElement>(null);
-  const { instance, accounts } = useMsal();
-  const [accessToken, setAccessToken] = useState<string | null>(null);
-  const [authError, setAuthError] = useState<string | null>(null);
+  const { signedIn, username, authError, signIn, signOut, getToken } = useEntraToken();
+  const { transcripts, onTranscript, clear: clearTranscripts } = useTranscripts();
   const [error, setError] = useState<string | null>(null);
-
-  const backendProxyUrl =
-    import.meta.env.VITE_BACKEND_PROXY_URL || 'ws://localhost:8080';
 
   const msalConfigured =
     import.meta.env.VITE_AZURE_CLIENT_ID &&
@@ -46,104 +44,28 @@ export default function FoundryAgentMSAL(): JSX.Element {
   const projectName = import.meta.env.VITE_FOUNDRY_PROJECT_NAME;
   const agentConfigured = !!(agentName && projectName);
 
-  // Acquire access token via MSAL
-  const acquireToken = async (): Promise<void> => {
-    if (accounts.length === 0) {
-      try {
-        setAuthError(null);
-        await instance.loginPopup({
-          scopes: ['https://ai.azure.com/.default'],
-        });
-      } catch (err) {
-        console.error('Sign-in error:', err);
-        setAuthError(
-          `Sign-in failed: ${err instanceof Error ? err.message : String(err)}`
-        );
-      }
-      return;
-    }
+  const config = createVoiceLiveConfig({
+    connection: {
+      // Proxy base from VITE_BACKEND_PROXY_URL (default ws://localhost:8080). The token is NOT
+      // baked into this URL: `getToken` is called on every connect and reconnect, so a session
+      // that outlives the token still reconnects with a valid one.
+      proxyUrl: proxyWsUrl({ agentName, projectName }),
+      getToken: signedIn ? getToken : undefined,
+    },
+    session: sessionConfig()
+      .voice('en-US-AvaMultilingualNeural')
+      .semanticVAD({ interruptResponse: true })
+      .echoCancellation()
+      .noiseReduction()
+      // Azure speech transcription is the model compatible with Foundry agent sessions
+      .transcription({ model: 'azure-speech' })
+      .build(),
+    onTranscript,
+    logLevel: 'debug',
+  });
 
-    try {
-      setAuthError(null);
-      const response = await instance.acquireTokenSilent({
-        scopes: ['https://ai.azure.com/.default'],
-        account: accounts[0],
-      });
-      setAccessToken(response.accessToken);
-      console.log('[Foundry Agent MSAL] Access token acquired');
-    } catch (err) {
-      if (err instanceof InteractionRequiredAuthError) {
-        try {
-          const response = await instance.acquireTokenPopup({
-            scopes: ['https://ai.azure.com/.default'],
-            account: accounts[0],
-          });
-          setAccessToken(response.accessToken);
-          console.log('[Foundry Agent MSAL] Access token acquired via popup');
-        } catch (popupError) {
-          console.error('Token acquisition failed:', popupError);
-          setAuthError(
-            `Authentication failed: ${popupError instanceof Error ? popupError.message : String(popupError)}`
-          );
-        }
-      } else {
-        console.error('Token acquisition error:', err);
-        setAuthError(
-          `Token error: ${err instanceof Error ? err.message : String(err)}`
-        );
-      }
-    }
-  };
-
-  // Auto-acquire token when accounts change
-  useEffect(() => {
-    if (accounts.length > 0 && !accessToken) {
-      acquireToken();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [accounts]);
-
-  // Build proxy URL with MSAL token
-  const proxyUrl =
-    accessToken && agentName && projectName
-      ? `${backendProxyUrl}/ws?agentName=${encodeURIComponent(agentName)}&projectName=${encodeURIComponent(projectName)}&token=${encodeURIComponent(accessToken)}`
-      : null;
-
-  const config = proxyUrl
-    ? createVoiceLiveConfig({
-        connection: {
-          proxyUrl,
-        },
-        session: sessionConfig()
-          .voice('en-US-AvaMultilingualNeural')
-          .semanticVAD({ interruptResponse: true })
-          .echoCancellation()
-          .noiseReduction()
-          .transcription()
-          .build(),
-        onEvent: (event) => {
-          if (
-            event.type === 'conversation.item.input_audio_transcription.completed'
-          ) {
-            console.log(`[Foundry Agent MSAL] You: "${event.transcript}"`);
-          } else if (event.type === 'response.audio_transcript.done') {
-            console.log(`[Foundry Agent MSAL] Agent: "${event.transcript}"`);
-          } else if (event.type === 'error') {
-            console.error('[Foundry Agent MSAL] Error:', event);
-            const errorObj = event.error as
-              | { message?: string; code?: string }
-              | undefined;
-            setError(
-              `Azure Error: ${errorObj?.message || errorObj?.code || 'Unknown error'}`
-            );
-          }
-        },
-      })
-    : null;
-
-  const { connect, disconnect, connectionState, audioStream } = useVoiceLive(
-    config || { connection: { proxyUrl: '' } }
-  );
+  const { connect, disconnect, connectionState, audioStream, sendText, error: sessionError } =
+    useVoiceLive(config);
 
   useEffect(() => {
     if (audioRef.current && audioStream) {
@@ -153,12 +75,9 @@ export default function FoundryAgentMSAL(): JSX.Element {
   }, [audioStream]);
 
   const handleStart = async (): Promise<void> => {
-    if (!accessToken) {
-      setError('Please sign in first');
-      return;
-    }
     try {
       setError(null);
+      clearTranscripts();
       await connect();
       console.log(
         '[Foundry Agent MSAL] Connected - microphone will auto-start when session ready'
@@ -174,12 +93,6 @@ export default function FoundryAgentMSAL(): JSX.Element {
     setError(null);
   };
 
-  const handleSignOut = (): void => {
-    instance.logoutPopup();
-    setAccessToken(null);
-    setAuthError(null);
-  };
-
   const isConnected = connectionState === 'connected';
 
   return (
@@ -187,7 +100,7 @@ export default function FoundryAgentMSAL(): JSX.Element {
       title="Foundry Agent Service - Voice (MSAL)"
       description="Voice conversation with a Foundry Agent using per-user Entra ID authentication. The browser acquires a token via MSAL and passes it through the proxy."
     >
-      <ErrorPanel error={error || authError} />
+      <ErrorPanel error={error || authError || sessionError} />
 
       {!msalConfigured && (
         <Section>
@@ -240,21 +153,20 @@ export default function FoundryAgentMSAL(): JSX.Element {
       )}
 
       <Section title="Authentication">
-        {accounts.length === 0 ? (
+        {!signedIn ? (
           <div>
             <p className="auth-section__status">Not signed in</p>
-            <button onClick={acquireToken}>Sign In with Microsoft</button>
+            <button onClick={signIn}>Sign In with Microsoft</button>
           </div>
         ) : (
           <div>
             <p className="auth-section__user">
-              <strong>Signed in as:</strong> {accounts[0]?.username}
+              <strong>Signed in as:</strong> {username}
             </p>
             <p className="auth-section__status">
-              <strong>Token:</strong>{' '}
-              {accessToken ? 'Acquired' : 'Not available'}
+              A fresh token is acquired for every connection attempt.
             </p>
-            <button onClick={handleSignOut}>Sign Out</button>
+            <button onClick={signOut}>Sign Out</button>
           </div>
         )}
       </Section>
@@ -278,7 +190,7 @@ export default function FoundryAgentMSAL(): JSX.Element {
       <ControlGroup>
         <button
           onClick={handleStart}
-          disabled={isConnected || !accessToken || !agentConfigured}
+          disabled={isConnected || !signedIn || !agentConfigured}
         >
           Start Conversation
         </button>
@@ -286,6 +198,9 @@ export default function FoundryAgentMSAL(): JSX.Element {
           Stop
         </button>
       </ControlGroup>
+
+      <TextInput onSend={sendText} disabled={!isConnected} />
+      <TranscriptPanel transcripts={transcripts} />
 
       <audio ref={audioRef} autoPlay hidden />
     </SampleLayout>

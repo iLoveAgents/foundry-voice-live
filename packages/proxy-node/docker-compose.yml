@@ -3,31 +3,40 @@ version: "3.8"
 services:
   foundry-voice-live-proxy:
     build:
-      context: .
-      dockerfile: Dockerfile
+      # The image is built from the repository root: the Dockerfile installs with the pnpm
+      # workspace lockfile, which lives there. Run `docker compose up` from this directory —
+      # Compose resolves the context relative to this file.
+      context: ../..
+      dockerfile: packages/proxy-node/Dockerfile
     container_name: foundry-voice-live-proxy
     ports:
       - "${PORT:-8080}:8080"
     environment:
       # Server Configuration
       - PORT=8080
-      - API_VERSION=${API_VERSION:-2025-10-01}
+      # Voice Live API version. Leave unset for the built-in defaults (2026-07-15 GA for
+      # WebSocket, 2026-01-01-preview for ?transport=webrtc); pinning it here applies to both
+      # transports. Clients can override per connection with ?apiVersion=
+      - API_VERSION=${API_VERSION:-}
 
       # Foundry Configuration (Required)
       - FOUNDRY_RESOURCE_NAME=${FOUNDRY_RESOURCE_NAME}
 
-      # Standard Mode: Voice & Avatar (Optional)
+      # Standard Mode: Voice & Avatar (Optional - falls back to DefaultAzureCredential when unset)
       - FOUNDRY_API_KEY=${FOUNDRY_API_KEY}
 
-      # Agent Service Mode (Optional)
-      - AGENT_ID=${AGENT_ID}
-      - PROJECT_NAME=${PROJECT_NAME}
+      # Foundry Agents (Optional - .env fallback for agentName/projectName URL params)
+      - FOUNDRY_AGENT_NAME=${FOUNDRY_AGENT_NAME}
+      - FOUNDRY_PROJECT_NAME=${FOUNDRY_PROJECT_NAME}
 
       # Security Configuration
       - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-http://localhost:3000}
       - RATE_LIMIT_WINDOW_MS=${RATE_LIMIT_WINDOW_MS:-60000}
       - RATE_LIMIT_MAX_REQUESTS=${RATE_LIMIT_MAX_REQUESTS:-100}
       - MAX_CONNECTIONS=${MAX_CONNECTIONS:-1000}
+
+      # Telemetry (Optional)
+      - APPLICATIONINSIGHTS_CONNECTION_STRING=${APPLICATIONINSIGHTS_CONNECTION_STRING}
     restart: unless-stopped
     healthcheck:
       test:
