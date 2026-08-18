@@ -205,6 +205,19 @@ describe('ResponseGate', () => {
     expect(gate.outstandingEventId).toBe('evt_1');
   });
 
+  it('hands a queued request over to whoever will satisfy it', () => {
+    const gate = new ResponseGate();
+    gate.request();
+    gate.onResponseCreated();
+    expect(gate.request()).toBe(false); // a user turn queues behind the running response
+    expect(gate.consumeQueuedRequest()).toBe(true);
+    expect(gate.hasQueuedRequest).toBe(false);
+    // the handover is idempotent, and response.done no longer emits the taken-over request
+    expect(gate.consumeQueuedRequest()).toBe(false);
+    expect(gate.onResponseDone()).toBe(false);
+    expect(gate.currentState).toBe('idle');
+  });
+
   it('reset() forgets state for a new session', () => {
     const gate = new ResponseGate();
     gate.request();

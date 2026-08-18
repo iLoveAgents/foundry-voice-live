@@ -174,6 +174,19 @@ export class ResponseGate {
     }
   }
 
+  /**
+   * Take the queued request, if any, so a *different* mechanism can satisfy it — specifically a
+   * tool batch that will send one `response.create` after its outputs. The user's message itself
+   * is already in the conversation, so that single response answers both.
+   *
+   * @returns true when a queued request was handed over
+   */
+  consumeQueuedRequest(): boolean {
+    if (!this.queued) return false;
+    this.queued = false;
+    return true;
+  }
+
   /** New session: forget everything */
   reset(): void {
     this.state = 'idle';

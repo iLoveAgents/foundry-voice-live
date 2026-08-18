@@ -29,6 +29,11 @@ export class SeenEventIds {
 
   constructor(private readonly maxSize: number = 500) {}
 
+  /** Whether `id` is currently remembered, without recording it */
+  has(id: string): boolean {
+    return this.ids.has(id);
+  }
+
   /** Returns true when `id` was already seen (and records it otherwise) */
   seenBefore(id: string): boolean {
     if (this.ids.has(id)) return true;

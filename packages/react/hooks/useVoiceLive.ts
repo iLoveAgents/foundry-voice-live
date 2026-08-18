@@ -74,6 +74,7 @@ import { OutputAudioGraph, PcmPlayer } from '../core/audioOutput';
 import { AvatarConnection } from '../core/avatarConnection';
 import { WebRtcMicrophone } from '../core/microphone';
 import { resolveReconnectOptions, computeBackoffDelay, isReconnectableClose } from '../core/reconnect';
+import { SeenEventIds } from '../core/serverEvents';
 import { Scope } from '../core/lifecycle';
 import { ResponseGate } from '../core/responseGate';
 import { useAudioCapture } from './useAudioCapture';
@@ -130,6 +131,11 @@ interface ToolBatch {
   sentOutput: boolean;
   /** `response.done` was observed, i.e. no further tool calls can arrive for this response */
   responseDone: boolean;
+  /**
+   * A user turn was queued while this batch was running and handed over to it: the follow-up must
+   * happen even if every executor returned void, otherwise that turn would never be answered.
+   */
+  followUpOwed: boolean;
 }
 
 /**
@@ -222,10 +228,19 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
   const videoStreamRef = useRef<MediaStream | null>(null);
   const greetingSentRef = useRef<boolean>(false);
   /**
-   * In-flight automatic tool executors, keyed by `<connectId>:<response_id>` so a batch can never
-   * be adopted by a later session (executors are user code and may settle at any time).
+   * In-flight automatic tool executors, keyed by response id and scoped to the session record, so
+   * a batch can never be adopted by a later session (executors are user code and may settle at
+   * any time).
    */
   const toolBatchesRef = useRef<Map<string, ToolBatch>>(new Map());
+  /**
+   * Response ids whose `response.done` has been seen. Over WebRTC the lifecycle events (data
+   * channel) and function-call events (control channel) are independent, so `response.done` can
+   * arrive *before* a tool call of that response — a batch created afterwards would otherwise wait
+   * forever for a completion signal that already happened.
+   */
+  const completedResponsesRef = useRef<SeenEventIds | null>(null);
+  if (!completedResponsesRef.current) completedResponsesRef.current = new SeenEventIds(64);
 
   // ===== Lifetimes (see `core/lifecycle.ts`) =====
   /**
@@ -336,7 +351,7 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
       if (toolBatchesRef.current.get(key) === batch) {
         toolBatchesRef.current.delete(key);
       }
-      if (batch.sentOutput && sessionRef.current === session && session.scope.isActive) {
+      if ((batch.sentOutput || batch.followUpOwed) && sessionRef.current === session && session.scope.isActive) {
         // Every output of this response is on the wire — ask for the answer. This goes through
         // the same deferral as sendText(), so a user turn and a tool batch completing in the
         // same tick produce ONE response.create (the service rejects overlapping responses).
@@ -753,9 +768,17 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
           // running, so the request is queued into the single flush below instead of racing it.
           const doneSession = sessionRef.current;
           const doneKey = `${data.response?.id ?? currentResponseIdRef.current ?? ''}`;
+          (completedResponsesRef.current as SeenEventIds).seenBefore(doneKey);
           const doneBatch = toolBatchesRef.current.get(doneKey);
           if (doneBatch && doneSession) {
             doneBatch.responseDone = true;
+            if (doneBatch.pending > 0) {
+              // Tool executors are still running: a queued user turn must NOT be sent now — the
+              // service would answer before the required function_call_output exists. Hand it to
+              // the batch, whose single follow-up answers the tool result and that turn together.
+              doneBatch.followUpOwed =
+                (responseGateRef.current as ResponseGate).consumeQueuedRequest() || doneBatch.followUpOwed;
+            }
             finishToolBatchIfReady(doneKey, doneBatch, doneSession);
           }
           // Exactly one response.create for everything requested while this response ran
@@ -806,7 +829,14 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
             const session = sessionRef.current;
             const batchKey = `${data.response_id ?? currentResponseIdRef.current ?? ''}`;
             const batch =
-              toolBatchesRef.current.get(batchKey) ?? { pending: 0, sentOutput: false, responseDone: false };
+              toolBatchesRef.current.get(batchKey) ??
+              ({
+                pending: 0,
+                sentOutput: false,
+                // The response may already be finished when its tool call reaches us (WebRTC)
+                responseDone: (completedResponsesRef.current as SeenEventIds).has(batchKey),
+                followUpOwed: false,
+              } satisfies ToolBatch);
             batch.pending += 1;
             toolBatchesRef.current.set(batchKey, batch);
             Promise.resolve()
@@ -979,6 +1009,7 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
     currentResponseIdRef.current = null;
     (responseGateRef.current as ResponseGate).reset();
     toolBatchesRef.current.clear();
+    completedResponsesRef.current?.clear();
     assistantTranscriptRef.current = '';
     userTranscriptRef.current = '';
     // The expiry belonged to the session that just ended; the next session.created brings a new one

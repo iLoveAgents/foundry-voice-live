@@ -516,4 +516,98 @@ describe('useVoiceLive (websocket)', () => {
     expect(creates[0].event_id).not.toBe(creates[1].event_id);
     hook.unmount();
   });
+
+  it('answers a tool call whose response.done arrived first (WebRTC channel ordering)', async () => {
+    // Over WebRTC the lifecycle events (data channel) and function-call events (control channel)
+    // are independent, so response.done can precede the tool call it belongs to
+    const toolExecutor = vi.fn(async () => ({ temp: 21 }));
+    const { hook, ws } = await connectAndOpen({ ...baseConfig, toolExecutor });
+    await deliver(ws, { type: 'session.created', session: {} });
+    await deliver(ws, { type: 'session.updated', session: {} });
+    await deliver(ws, { type: 'response.created', response: { id: 'resp-1' } });
+    await deliver(ws, { type: 'response.done', response: { id: 'resp-1' } });
+    // ...the tool event arrives afterwards
+    await deliver(ws, {
+      type: 'response.function_call_arguments.done',
+      response_id: 'resp-1',
+      call_id: 'call-1',
+      name: 'get_weather',
+      arguments: '{}',
+    });
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    const output = ws.lastSent('conversation.item.create');
+    expect(output.item.call_id).toBe('call-1');
+    // without remembering the completed response the batch would wait forever and the assistant
+    // would never speak the result
+    expect(ws.sent.filter((e) => e.type === 'response.create')).toHaveLength(1);
+    hook.unmount();
+  });
+
+  it('holds a user turn submitted mid-tool-call until the output is on the wire', async () => {
+    let resolveTool: (v: object) => void = () => undefined;
+    const toolExecutor = vi.fn(
+      () =>
+        new Promise<object>((r) => {
+          resolveTool = r;
+        })
+    );
+    const { hook, ws } = await connectAndOpen({ ...baseConfig, toolExecutor });
+    await deliver(ws, { type: 'session.created', session: {} });
+    await deliver(ws, { type: 'session.updated', session: {} });
+    await deliver(ws, { type: 'response.created', response: { id: 'resp-1' } });
+    await deliver(ws, {
+      type: 'response.function_call_arguments.done',
+      response_id: 'resp-1',
+      call_id: 'call-1',
+      name: 'slow',
+      arguments: '{}',
+    });
+
+    // the user types while the tool is still running
+    await act(async () => {
+      hook.result.current.sendText('and what about tomorrow?');
+    });
+    await deliver(ws, { type: 'response.done', response: { id: 'resp-1' } });
+    // the turn must NOT be answered yet: the function_call_output does not exist
+    expect(ws.sent.filter((e) => e.type === 'response.create')).toHaveLength(0);
+
+    await act(async () => {
+      resolveTool({ ok: true });
+    });
+    const items = ws.sent.filter((e) => e.type === 'conversation.item.create');
+    expect(items.map((e) => e.item.type)).toEqual(['message', 'function_call_output']);
+    // one response answers the tool result and the user's message together
+    expect(ws.sent.filter((e) => e.type === 'response.create')).toHaveLength(1);
+    hook.unmount();
+  });
+
+  it('still answers a queued turn when every executor returns void', async () => {
+    const toolExecutor = vi.fn(async () => undefined);
+    const { hook, ws } = await connectAndOpen({ ...baseConfig, toolExecutor });
+    await deliver(ws, { type: 'session.created', session: {} });
+    await deliver(ws, { type: 'session.updated', session: {} });
+    await deliver(ws, { type: 'response.created', response: { id: 'resp-1' } });
+    await deliver(ws, {
+      type: 'response.function_call_arguments.done',
+      response_id: 'resp-1',
+      call_id: 'call-1',
+      name: 'fire_and_forget',
+      arguments: '{}',
+    });
+    await act(async () => {
+      hook.result.current.sendText('meanwhile...');
+    });
+    await deliver(ws, { type: 'response.done', response: { id: 'resp-1' } });
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    // no tool output was produced, but the user's turn must still get its answer
+    expect(ws.sent.filter((e) => e.type === 'response.create')).toHaveLength(1);
+    hook.unmount();
+  });
 });

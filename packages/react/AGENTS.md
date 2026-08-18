@@ -97,10 +97,17 @@ Tests: `core/*.test.ts` (transports, audio, avatar, mic, reconnect), `hooks/useV
   the gate un-bypassable and every request correlatable.
 - **Every consumer callback can end the session**: call it through `safeCall`, which returns
   whether the session survived, and stop applying the event when it returns false.
+- **Event order is not guaranteed across WebRTC channels**: lifecycle events arrive on the data
+  channel while function-call events arrive on the control WebSocket, so `response.done` can
+  precede a tool call of that response. Completed response ids are remembered
+  (`completedResponsesRef`) so a batch created afterwards knows it is already complete.
 - **Automatic tool results are batched per response** (`toolBatchesRef`, keyed by `response_id`
   and scoped to the session record): outputs are sent with `triggerResponse: false`; the single
   `response.create` waits for **both** `response.done` *and* the last executor, and goes through
-  `ResponseGate` like every other turn. A late result belongs to the live conversation only if
+  `ResponseGate` like every other turn. A user turn submitted while executors are running is
+  *handed over* to the batch (`consumeQueuedRequest()` → `followUpOwed`), because answering it
+  before the `function_call_output` exists would make the model reply to a conversation with an
+  unanswered tool call — one follow-up covers both. A late result belongs to the live conversation only if
   `sessionRef.current === session && session.scope.isActive`.
 - **`onError` is advisory, `onClose` decides the lifecycle** (stated in
   `core/transports/types.ts`): a transport that cannot continue must close itself, because
