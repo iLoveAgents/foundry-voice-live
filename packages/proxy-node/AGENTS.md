@@ -7,9 +7,10 @@ Package: `@iloveagents/foundry-voice-live-proxy-node`
 Secure WebSocket proxy between browser clients and Voice Live API.
 
 - Transparent message pass-through (does not parse or modify WebSocket payloads)
-- Handles authentication: API key, MSAL token passthrough, or DefaultAzureCredential
-- Supports Standard (Voice/Avatar), Foundry Agent Service, and Agent Service (classic) modes
-- Mode is auto-detected from URL query parameters
+- Handles authentication: browser token passthrough, API key, or DefaultAzureCredential
+- Supports Standard (Voice/Avatar) and Foundry Agents modes
+- Supports the WebSocket (default) and WebRTC (preview) transports
+- Mode and transport are auto-detected from URL query parameters
 
 ## Commands
 
@@ -23,23 +24,37 @@ just dev-proxy        # Start dev server (port 8080)
 
 ```text
 src/
-  index.ts            # Express + WebSocket server, buildAzureUrl, token acquisition
-  types.ts            # TypeScript type definitions (QueryParams, ProxyConfig, etc.)
-  __tests__/          # Unit tests
+  index.ts            # Express + WebSocket server, logging, telemetry, DefaultAzureCredential, relay
+  url.ts              # Pure: buildAzureUrl, resolveMode/Transport/ApiVersion, redactUrl, defaults
+  packageInfo.ts      # Reads name/version from package.json (GET / info endpoint, banner)
+  types.ts            # TypeScript type definitions (QueryParams, ProxyConfig, ProxyMode, ...)
+  __tests__/          # Unit tests (url.test.ts, packageInfo.test.ts)
 Dockerfile
 docker-compose.yml
 ```
 
 ## Key Concepts
 
-- `buildAzureUrl()` is async — resolves auth (API key, MSAL token, or DefaultAzureCredential)
-- Token from URL `?token=` is moved to `Authorization: Bearer` header (browser WebSocket limitation)
+- `url.ts` is a pure module (no express / applicationinsights / @azure/identity) — all upstream
+  URL, mode, transport, API-version and auth resolution lives there and is unit-tested. `index.ts`
+  only injects `getEntraToken` and adds logging/telemetry.
+- `buildAzureUrl(query, cfg, { getEntraToken })` is async — resolves auth in this order:
+  browser `?token=` > `FOUNDRY_API_KEY` (standard mode only) > `DefaultAzureCredential` (both modes)
+- Token from URL `?token=` is moved to `Authorization: Bearer` header (browser WebSocket limitation);
+  tokens never appear in the upstream URL, and `redactUrl()` masks `token`/`api-key`/`Authorization` in logs
+- Transport: `?transport=webrtc` → upstream `/voice-live/realtime/calls` (WebRTC control channel,
+  default api-version `2026-01-01-preview`); default → `/voice-live/realtime` (`2026-07-15`).
+  The relay is identical for both — `rtc.call.*` are plain JSON text frames.
+- API version precedence: `?apiVersion=` > `API_VERSION` env > built-in default per transport
+- Foundry Agents params forwarded upstream: `agent-name`, `agent-project-name`, `conversation-id`,
+  `agent-version`, `agent-authentication-identity-client-id`, `foundry-resource-override`
+- `.env` agent fallback (`FOUNDRY_AGENT_NAME`/`FOUNDRY_PROJECT_NAME`) applies only when the URL has no `model` param
 - `@azure/identity` `DefaultAzureCredential` handles token caching/refresh internally
 - Environment vars in `.env` configure defaults; URL params can override
 
 ## Design
 
-- ES Modules (`"type": "module"`)
+- ES Modules (`"type": "module"`, `.js` import suffixes)
 - Express with express-ws for WebSocket support
 - Docker-ready with health checks
 - Environment-based configuration

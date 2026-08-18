@@ -3,38 +3,71 @@
  */
 
 /**
+ * Connection mode, inferred from the client query parameters (with .env fallback)
+ * - `foundry-agent`: Foundry Agents (agentName + projectName)
+ * - `standard`: Voice / Avatar with a model
+ */
+export type ProxyMode = "foundry-agent" | "standard";
+
+/**
+ * How the upstream connection is authenticated
+ * - `msal-token`: Bearer token passed by the browser (`?token=`), moved to the Authorization header
+ * - `api-key`: `FOUNDRY_API_KEY` from the proxy environment (standard mode only)
+ * - `entra-credential`: server-side `DefaultAzureCredential` (az login, managed identity, ...)
+ */
+export type AuthMethod = "msal-token" | "entra-credential" | "api-key";
+
+/**
+ * Transport requested by the client
+ * - `websocket`: audio and events over the WebSocket (default)
+ * - `webrtc`: WebSocket is the WebRTC control channel (`/voice-live/realtime/calls`, preview)
+ */
+export type Transport = "websocket" | "webrtc";
+
+/**
  * Query parameters from WebSocket connection URL
  *
  * Mode is automatically inferred:
- * - Foundry Agent Service: If agentName is provided (URL or .env fallback)
- * - Agent Service (classic): If agentId is provided
+ * - Foundry Agents: If agentName is provided (URL or .env fallback)
  * - Standard mode: Otherwise (or if model param is present)
  */
 export interface QueryParams {
   /** Model name for standard mode (default: gpt-realtime) */
   model?: string;
-  /** MSAL Bearer token for authentication (or auto-acquired via Azure CLI) */
+  /** MSAL Bearer token for authentication (or auto-acquired via DefaultAzureCredential) */
   token?: string;
-  /** Agent ID for Agent Service v1 (classic) - triggers agent mode when present */
-  agentId?: string;
-  /** Agent name for Foundry Agents v2 - triggers agent mode when present */
+  /** Agent name for Foundry Agents - triggers agent mode when present */
   agentName?: string;
-  /** Project name - required alongside agentId or agentName */
+  /** Project name - required alongside agentName */
   projectName?: string;
-  /** Resume conversation (Foundry Agents v2) */
+  /** Resume conversation (Foundry Agents) */
   conversationId?: string;
-  /** Pin agent version (Foundry Agents v2) */
+  /** Pin agent version (Foundry Agents) */
   agentVersion?: string;
-  /** Override API version (default: from proxy config) */
+  /** Client ID of the user-assigned managed identity used for agent authentication (Foundry Agents) */
+  agentAuthenticationIdentityClientId?: string;
+  /** Override the Foundry resource used by the agent (Foundry Agents) */
+  foundryResourceOverride?: string;
+  /** Override API version (default: API_VERSION env or built-in default) */
   apiVersion?: string;
+  /** Transport: `websocket` (default) or `webrtc` (preview, WebRTC control channel) */
+  transport?: string;
 }
 
 /**
- * Azure WebSocket connection configuration
+ * Azure WebSocket connection configuration (resolved upstream connection)
  */
 export interface AzureConnectionConfig {
+  /** Upstream wss:// URL (may contain `api-key`; redact before logging) */
   url: string;
+  /** Upstream headers (e.g. `Authorization: Bearer ...`) */
   headers: Record<string, string>;
+  /** Resolved connection mode */
+  mode: ProxyMode;
+  /** Resolved authentication method */
+  authMethod: AuthMethod;
+  /** Resolved transport */
+  transport: Transport;
 }
 
 /**
@@ -42,7 +75,7 @@ export interface AzureConnectionConfig {
  */
 export interface ProxyConfig {
   port: number;
-  apiVersion: string;
+  apiVersion?: string; // Optional: API_VERSION env; undefined = built-in default per transport
   azureResourceName: string;
   foundryApiKey?: string; // Optional: for anonymous API key auth
   foundryAgentName?: string; // Optional: default agent name from .env

@@ -4,9 +4,9 @@
 [![CI](https://github.com/iLoveAgents/foundry-voice-live/actions/workflows/ci.yml/badge.svg)](https://github.com/iLoveAgents/foundry-voice-live/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-Secure WebSocket proxy for Azure AI Foundry Voice Live API. Supports Voice, Avatar, and Agent modes.
+Secure WebSocket proxy for Azure AI Foundry Voice Live API. Supports Voice, Avatar, and Foundry Agents over the WebSocket or WebRTC (preview) transport.
 
-**Why use this proxy?** Browser WebSockets cannot send Authorization headers, and Azure AI Foundry endpoints require them. This proxy injects credentials server-side and forwards messages transparently.
+**Why use this proxy?** Browser WebSockets cannot send Authorization headers, and API keys must never ship to the browser. This proxy keeps credentials server-side (API key or `DefaultAzureCredential`), moves per-user tokens into the `Authorization` header, and forwards messages transparently.
 
 ## Installation
 
@@ -34,6 +34,8 @@ docker pull ghcr.io/iloveagents/foundry-voice-live-proxy:latest
    EOF
    ```
 
+   No API key? Skip `FOUNDRY_API_KEY` and run `az login` — the proxy falls back to `DefaultAzureCredential`.
+
 2. **Run the proxy**
 
    ```bash
@@ -56,6 +58,8 @@ docker pull ghcr.io/iloveagents/foundry-voice-live-proxy:latest
    const ws = new WebSocket("ws://localhost:8080/ws");
    ```
 
+   With the React SDK: `useVoiceLive({ connection: { proxyUrl: "ws://localhost:8080/ws" } })`.
+
 ## Configuration
 
 > **Region Availability:** The default model (`gpt-realtime`) is only available in **East US 2** and **Sweden Central** regions. Make sure your Azure AI Foundry resource is deployed in one of these regions. See [Microsoft docs](https://learn.microsoft.com/azure/ai-foundry/openai/concepts/models#global-standard-model-availability) for current availability.
@@ -66,13 +70,17 @@ Copy `.env.example` to `.env` and configure:
 # Required
 FOUNDRY_RESOURCE_NAME=your-resource-name
 
-# Authentication (one of these)
-FOUNDRY_API_KEY=your-api-key          # Option 1: API key (simpler)
-# Or let clients pass MSAL tokens     # Option 2: Per-user auth (enterprise)
+# Authentication (optional - see priority below)
+FOUNDRY_API_KEY=your-api-key          # Shared API key (standard mode)
+# Unset: clients pass ?token= (per-user) or the proxy uses DefaultAzureCredential (az login)
 
 # Server (optional)
 PORT=8080
-API_VERSION=2025-10-01
+# API_VERSION=2026-07-15              # Default when unset (GA); ?apiVersion= overrides per connection
+
+# Foundry Agents (optional .env fallback for agentName/projectName)
+# FOUNDRY_AGENT_NAME=MyAgent
+# FOUNDRY_PROJECT_NAME=my-project
 
 # Security (optional)
 ALLOWED_ORIGINS=http://localhost:3000,https://your-app.com
@@ -84,7 +92,19 @@ MAX_CONNECTIONS=1000
 # APPLICATIONINSIGHTS_CONNECTION_STRING=InstrumentationKey=...
 ```
 
-## Authentication Modes
+## Authentication
+
+For every connection the proxy resolves credentials in this order (both modes):
+
+| Priority | Source                                           | Standard mode | Foundry Agents |
+| -------- | ------------------------------------------------ | ------------- | -------------- |
+| 1        | `?token=` query param (per-user Entra ID / MSAL) | ✅            | ✅             |
+| 2        | `FOUNDRY_API_KEY` env (shared key)               | ✅            | –              |
+| 3        | `DefaultAzureCredential` (server-side, keyless)  | ✅            | ✅             |
+
+Tokens are always sent upstream as an `Authorization: Bearer` header — they never appear in the upstream URL, and `token` / `api-key` / `Authorization` values are redacted from logs.
+
+> **Trust boundary.** With a shared API key or `DefaultAzureCredential`, every client that can reach `/ws` acts with the proxy's credentials — for any model and any agent the key/identity can access, in either mode. Restrict who can reach the proxy (`ALLOWED_ORIGINS`, network rules, your own auth in front of it) or use per-user `?token=` auth so each user is authorized and audited individually.
 
 ### 1. API Key (Shared Access)
 
@@ -101,7 +121,7 @@ FOUNDRY_RESOURCE_NAME=your-resource
 FOUNDRY_API_KEY=your-api-key  # Secured server-side
 ```
 
-### 2. MSAL Token (Per-User Auth)
+### 2. Token (Per-User Auth)
 
 Best for: enterprise apps, per-user auditing, SSO.
 
@@ -116,7 +136,7 @@ const ws = new WebSocket(`ws://localhost:8080/ws?token=${token.accessToken}`);
 ```bash
 # Backend .env
 FOUNDRY_RESOURCE_NAME=your-resource
-# No API key - uses client's MSAL token
+# No API key - uses the client's token
 ```
 
 **Setup:**
@@ -125,7 +145,23 @@ FOUNDRY_RESOURCE_NAME=your-resource
 2. Assign "Cognitive Services User" role on your AI Foundry resource
 3. Configure MSAL in your frontend app
 
-### 3. Foundry Agent Service (Recommended)
+### 3. Keyless (DefaultAzureCredential)
+
+Best for: local development without keys, managed identity in production.
+
+```typescript
+// Frontend - nothing to pass
+const ws = new WebSocket("ws://localhost:8080/ws");
+```
+
+```bash
+# Backend .env - no FOUNDRY_API_KEY
+FOUNDRY_RESOURCE_NAME=your-resource
+```
+
+For local dev, run `az login` (the identity needs the "Cognitive Services User" role on the Foundry resource). In production, use managed identity or a service principal — [`DefaultAzureCredential`](https://learn.microsoft.com/javascript/api/@azure/identity/defaultazurecredential) picks it up automatically.
+
+### 4. Foundry Agents
 
 Best for: agents built in [Azure AI Foundry](https://learn.microsoft.com/azure/ai-services/speech-service/voice-live-agents-quickstart).
 
@@ -133,23 +169,17 @@ Best for: agents built in [Azure AI Foundry](https://learn.microsoft.com/azure/a
 
 ```typescript
 // Frontend - pass agent config, proxy handles auth
-const ws = new WebSocket(
-  "ws://localhost:8080/ws?agentName=MyAgent&projectName=myProject"
-);
+const ws = new WebSocket("ws://localhost:8080/ws?agentName=MyAgent&projectName=myProject");
 ```
 
 ```bash
 # Backend .env
 FOUNDRY_RESOURCE_NAME=your-resource
-API_VERSION=2026-01-01-preview
 ```
 
-For local dev, run `az login`. In production, use managed identity or a service principal.
-
-**MSAL auth** — per-user Entra ID tokens:
+**Per-user auth** — pass an Entra ID token alongside the agent params:
 
 ```typescript
-// Frontend - pass agent config + MSAL token
 const token = await msalInstance.acquireTokenSilent({
   scopes: ["https://ai.azure.com/.default"],
 });
@@ -158,17 +188,18 @@ const ws = new WebSocket(
 );
 ```
 
-**Mode detection is automatic:** Foundry Agent mode activates when `agentName` is present in the URL.
+**Mode detection is automatic:** Foundry Agent mode activates when `agentName` is present in the URL, or when `FOUNDRY_AGENT_NAME` / `FOUNDRY_PROJECT_NAME` are set in `.env` and the URL has no `model` param. Optional agent params (`conversationId`, `agentVersion`, `agentAuthenticationIdentityClientId`, `foundryResourceOverride`) are forwarded upstream as-is.
 
-### 4. Agent Service (Classic v1)
+## Transports
 
-Legacy mode for agents using `agentId`:
+| Transport           | Client URL                                    | Upstream path                | Default API version                   |
+| ------------------- | --------------------------------------------- | ---------------------------- | ------------------------------------- |
+| WebSocket (default) | `ws://localhost:8080/ws?...`                  | `/voice-live/realtime`       | `API_VERSION` or `2026-07-15`         |
+| WebRTC (preview)    | `ws://localhost:8080/ws?...&transport=webrtc` | `/voice-live/realtime/calls` | `API_VERSION` or `2026-01-01-preview` |
 
-```typescript
-const ws = new WebSocket(
-  `ws://localhost:8080/ws?agentId=asst_abc123&projectName=my-project&token=${token.accessToken}`
-);
-```
+With `transport=webrtc` the proxied WebSocket becomes the WebRTC control channel (`rtc.call.*` events for SDP offer/answer plus the usual session events); audio flows directly between the browser and Azure over the WebRTC peer connection, not through the proxy. The React SDK appends `transport=webrtc` (and `apiVersion` when configured) automatically when you set `connection.transport: 'webrtc'`.
+
+> **Live-verified (August 2026):** the WebRTC control channel is only served on api-version `2026-01-01-preview` (`2026-04-10` → 404, `2026-06-01-preview` → 401); all three auth methods (token, API key, `DefaultAzureCredential`) work with it. If you pin `API_VERSION` to a GA version, WebRTC clients must pass `?apiVersion=2026-01-01-preview`.
 
 ## Deployment
 
@@ -218,43 +249,50 @@ az containerapp create \
   --env-vars FOUNDRY_RESOURCE_NAME=your-resource FOUNDRY_API_KEY=your-key
 ```
 
+Prefer keyless: assign a managed identity to the container app with the "Cognitive Services User" role and drop `FOUNDRY_API_KEY`.
+
 ## API Reference
 
 ### Endpoints
 
-| Endpoint  | Method | Description                |
-| --------- | ------ | -------------------------- |
-| `/`       | GET    | API info and version       |
-| `/health` | GET    | Health check (for probes)  |
-| `/ws`     | WS     | WebSocket proxy connection |
+| Endpoint  | Method | Description                                       |
+| --------- | ------ | ------------------------------------------------- |
+| `/`       | GET    | API info: version, supported params, API versions |
+| `/health` | GET    | Health check (for probes)                         |
+| `/ws`     | WS     | WebSocket proxy connection                        |
 
 ### WebSocket Query Parameters
 
-| Parameter        | Required    | Description                                  | Example           |
-| ---------------- | ----------- | -------------------------------------------- | ------------------ |
-| `agentName`      | Conditional | Foundry Agent name (enables v2 mode)         | `MyAgent`          |
-| `projectName`    | Conditional | Foundry project name (with agentName/agentId)| `my-project`       |
-| `token`          | Conditional | MSAL access token                            | `eyJ0eXAi...`      |
-| `conversationId` | No          | Resume a previous conversation               | `conv_abc123`      |
-| `agentVersion`   | No          | Pin a specific agent version                 | `1.0`              |
-| `apiVersion`     | No          | Override API version                         | `2026-01-01-preview` |
-| `model`          | No          | Model override (standard mode)               | `gpt-realtime`     |
-| `agentId`        | Conditional | Agent ID (classic v1 mode)                   | `asst_123xyz`      |
+| Parameter                             | Required    | Description                                                        | Example                                |
+| ------------------------------------- | ----------- | ------------------------------------------------------------------ | -------------------------------------- |
+| `model`                               | No          | Model for standard mode (default `gpt-realtime`)                   | `gpt-realtime`                         |
+| `token`                               | No          | Entra ID / MSAL access token (moved to the `Authorization` header) | `eyJ0eXAi...`                          |
+| `agentName`                           | Conditional | Foundry Agent name (enables agent mode; `.env` fallback)           | `MyAgent`                              |
+| `projectName`                         | Conditional | Foundry project name (with `agentName`; `.env` fallback)           | `my-project`                           |
+| `conversationId`                      | No          | Resume a previous conversation (agent mode)                        | `conv_abc123`                          |
+| `agentVersion`                        | No          | Pin a specific agent version (agent mode)                          | `1.0`                                  |
+| `agentAuthenticationIdentityClientId` | No          | Client ID of the user-assigned managed identity the agent runs as  | `00000000-0000-0000-0000-000000000000` |
+| `foundryResourceOverride`             | No          | Override the Foundry resource used by the agent                    | `other-resource`                       |
+| `transport`                           | No          | `websocket` (default) or `webrtc` (preview)                        | `webrtc`                               |
+| `apiVersion`                          | No          | Override the API version for this connection                       | `2026-01-01-preview`                   |
+
+Upstream parameter names: `agentName` → `agent-name`, `projectName` → `agent-project-name`, `conversationId` → `conversation-id`, `agentVersion` → `agent-version`, `agentAuthenticationIdentityClientId` → `agent-authentication-identity-client-id`, `foundryResourceOverride` → `foundry-resource-override`. `token` and `transport` are consumed by the proxy and not forwarded.
 
 ### Environment Variables
 
-| Variable | Required | Default | Description |
-| --- | --- | --- | --- |
-| `FOUNDRY_RESOURCE_NAME` | Yes | - | Azure AI Foundry resource |
-| `FOUNDRY_API_KEY` | Conditional | - | API key (if not using MSAL) |
-| `FOUNDRY_AGENT_NAME` | No | - | Default agent name (fallback) |
-| `FOUNDRY_PROJECT_NAME` | No | - | Default project name (fallback) |
-| `PORT` | No | `8080` | Server port |
-| `API_VERSION` | No | `2025-10-01` | Azure API version (`2026-01-01-preview` for Foundry Agent Service) |
-| `ALLOWED_ORIGINS` | No | `http://localhost:3000` | CORS origins (comma-sep) |
-| `RATE_LIMIT_MAX_REQUESTS` | No | `100` | Max requests per window |
-| `RATE_LIMIT_WINDOW_MS` | No | `60000` | Rate limit window (ms) |
-| `MAX_CONNECTIONS` | No | `1000` | Max concurrent connections |
+| Variable                                | Required | Default                 | Description                                                                 |
+| --------------------------------------- | -------- | ----------------------- | --------------------------------------------------------------------------- |
+| `FOUNDRY_RESOURCE_NAME`                 | Yes      | -                       | Azure AI Foundry resource                                                   |
+| `FOUNDRY_API_KEY`                       | No       | -                       | Shared API key (standard mode); unset = token or `DefaultAzureCredential`   |
+| `FOUNDRY_AGENT_NAME`                    | No       | -                       | Default agent name (fallback when the URL has no `agentName`/`model`)       |
+| `FOUNDRY_PROJECT_NAME`                  | No       | -                       | Default project name (fallback)                                             |
+| `PORT`                                  | No       | `8080`                  | Server port                                                                 |
+| `API_VERSION`                           | No       | `2026-07-15`            | Voice Live API version (WebRTC defaults to `2026-01-01-preview` when unset) |
+| `ALLOWED_ORIGINS`                       | No       | `http://localhost:3000` | CORS origins (comma-sep)                                                    |
+| `RATE_LIMIT_MAX_REQUESTS`               | No       | `100`                   | Max requests per window                                                     |
+| `RATE_LIMIT_WINDOW_MS`                  | No       | `60000`                 | Rate limit window (ms)                                                      |
+| `MAX_CONNECTIONS`                       | No       | `1000`                  | Max concurrent connections                                                  |
+| `APPLICATIONINSIGHTS_CONNECTION_STRING` | No       | -                       | Enable Application Insights telemetry                                       |
 
 ### Health Check Response
 
@@ -263,20 +301,21 @@ az containerapp create \
   "status": "ok",
   "activeConnections": 5,
   "maxConnections": 1000,
-  "timestamp": "2025-01-15T10:30:00.000Z"
+  "timestamp": "2026-08-18T10:30:00.000Z"
 }
 ```
 
 ## Troubleshooting
 
-| Error | Solution |
-| ----- | -------- |
-| Connection fails | Check `.env` values, verify with `curl http://localhost:8080/health` |
-| "Blocked by CORS" | Add your origin to `ALLOWED_ORIGINS` |
-| "Too many requests" | Rate limit hit - wait or increase `RATE_LIMIT_MAX_REQUESTS` |
-| "Missing token" | Classic agent mode (v1) requires MSAL token. Foundry Agent Service can use DefaultAzureCredential instead |
-| "API key required" | Standard mode needs `FOUNDRY_API_KEY` or client MSAL token |
-| "Failed to acquire Entra ID token" | Run `az login` for local dev, or configure managed identity/service principal |
+| Error                                     | Solution                                                                                                         |
+| ----------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| Connection fails                          | Check `.env` values, verify with `curl http://localhost:8080/health`                                             |
+| "Blocked by CORS"                         | Add your origin to `ALLOWED_ORIGINS`                                                                             |
+| "Too many requests"                       | Rate limit hit - wait or increase `RATE_LIMIT_MAX_REQUESTS`                                                      |
+| "Entra ID token acquisition failed"       | No `token`/`FOUNDRY_API_KEY` → proxy used `DefaultAzureCredential`: run `az login` or configure managed identity |
+| "requires both agentName and projectName" | Pass both URL params, or set `FOUNDRY_AGENT_NAME` + `FOUNDRY_PROJECT_NAME` in `.env`                             |
+| "Unsupported transport"                   | `transport` must be `websocket` or `webrtc`                                                                      |
+| WebRTC connection rejected upstream       | Ensure the API version is a preview that supports WebRTC (`?apiVersion=2026-01-01-preview`)                      |
 
 ## Support
 

@@ -1,52 +1,59 @@
 # Unit Tests
 
-Professional, focused unit tests for Microsoft Foundry Voice Live Proxy core functionality.
+Focused unit tests for the Microsoft Foundry Voice Live Proxy. The tests import the real
+modules under test (`src/url.ts`, `src/packageInfo.ts`) — no server is started and no
+network connections are made.
 
 ## Running Tests
 
 ```bash
 # Run all tests
-npm test
+pnpm test
 
 # Run tests in watch mode
-npm run test:watch
+pnpm run test:watch
 
 # Run tests with coverage report
-npm run test:coverage
+pnpm run test:coverage
 ```
 
 ## Test Coverage
 
-The test suite covers:
+`url.test.ts` — upstream URL / auth resolution (`buildAzureUrl` and helpers):
 
-- **URL Building** - Standard and Agent mode URL construction with different auth methods
-- **Configuration Validation** - Environment variable parsing and validation
-- **Message Filtering** - High-frequency message type identification
-- **CORS Validation** - Origin validation and security checks
-- **Connection Tracking** - Connection lifecycle and limits
-- **Health Checks** - Server status and metrics
-- **API Endpoints** - Server metadata and documentation
+- **Standard mode** — API key in URL (empty headers), browser token moved to the
+  `Authorization` header (never in the URL, beats API key), keyless fallback to the injected
+  `getEntraToken` (DefaultAzureCredential), default model, URL encoding
+- **Foundry Agents** — all agent params (`agent-name`, `agent-project-name`, `conversation-id`,
+  `agent-version`, `agent-authentication-identity-client-id`, `foundry-resource-override`),
+  token header vs. DefaultAzureCredential, missing `projectName` error, `.env` fallback only when
+  the `model` param is absent, URL params overriding `.env` values
+- **API version precedence** — `?apiVersion=` > `API_VERSION` > built-in default
+- **WebRTC transport** — `transport=webrtc` routes to `/voice-live/realtime/calls` with the
+  `2026-01-01-preview` default (explicit/env versions respected), unknown transports rejected
+- **`redactUrl`** — masks `token`, `api-key`, `Authorization` values for logging
+- **`resolveTransport` / `resolveMode` / `resolveAgent` / `resolveApiVersion`** — helpers in isolation
+
+`packageInfo.test.ts` — `readPackageInfo()` resolves `../package.json` (same path from `src/`
+and `dist/`) and falls back to `unknown` instead of throwing.
 
 ## Test Framework
 
-- **Vitest** - Fast, TypeScript-native testing framework
-- **Coverage** - V8 coverage provider for accurate reporting
+- **Vitest** (v2, `environment: node`) — fast, TypeScript-native testing framework
+- **Coverage** — V8 coverage provider for accurate reporting
 
 ## Writing Tests
 
-Tests follow professional best practices:
-
-- Focused and specific test cases
-- Clear test names describing behavior
-- Minimal mocking (unit-level testing)
-- Fast execution (no real WebSocket connections)
-- Type-safe with TypeScript
+- Import the real functions from `../url.js` / `../packageInfo.js` (ESM `.js` suffix)
+- Inject I/O via `deps` (e.g. `getEntraToken: vi.fn().mockResolvedValue("token")`)
+- Assert on parsed URLs (`new URL(url).searchParams`) rather than string layout
+- Keep tests fast: no real WebSocket connections, no environment variables
 
 ## CI/CD Integration
 
 Add to your CI pipeline:
 
 ```yaml
-- run: npm test
-- run: npm run test:coverage
+- run: pnpm test
+- run: pnpm run test:coverage
 ```
