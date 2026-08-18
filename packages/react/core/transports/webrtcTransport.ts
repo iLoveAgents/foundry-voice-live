@@ -42,6 +42,9 @@ export const RTC_CALL_ERROR_CLOSE_CODE = 4010;
 /** Close code reported when the peer connection fails (ICE death, network change, NAT rebind) */
 export const RTC_MEDIA_FAILED_CLOSE_CODE = 4011;
 
+/** Close code reported when the control channel could not even be constructed (bad URL) */
+export const CONTROL_CHANNEL_SETUP_FAILED_CLOSE_CODE = 4012;
+
 export interface WebRtcTransportOptions {
   rtcConfiguration?: RTCConfiguration;
   negotiationTimeoutMs?: number;
@@ -146,7 +149,24 @@ export class WebRtcTransport implements VoiceLiveTransport {
 
     // 2. Control channel
     const create = this.options.createWebSocket ?? ((u: string): WebSocket => new WebSocket(u));
-    const ws = create(url);
+    let ws: WebSocket;
+    try {
+      ws = create(url);
+    } catch (err) {
+      // A malformed URL (or a throwing factory) means no socket, no handlers and no terminal
+      // callback — the offer already in flight would leak its peer connection, and `this.ws`
+      // staying null would let a retry start a second one.
+      this.generation += 1;
+      offerPromise.then((o) => closeWebRtc(o.handle, null)).catch(() => undefined);
+      this.offerPromise = null;
+      this.currentState = 'closed';
+      const message =
+        err instanceof Error ? `Failed to open the control channel: ${err.message}` : 'Failed to open the control channel';
+      log?.error(message);
+      this.callbacks.onError(message, err);
+      this.callbacks.onClose({ code: CONTROL_CHANNEL_SETUP_FAILED_CLOSE_CODE, reason: message, wasClean: false });
+      return;
+    }
     this.ws = ws;
     this.currentState = 'connecting';
 

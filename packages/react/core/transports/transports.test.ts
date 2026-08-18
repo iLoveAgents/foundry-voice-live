@@ -7,6 +7,7 @@ import {
   RTC_SDP_ANSWER_FAILED_CLOSE_CODE,
   RTC_CALL_ERROR_CLOSE_CODE,
   RTC_MEDIA_FAILED_CLOSE_CODE,
+  CONTROL_CHANNEL_SETUP_FAILED_CLOSE_CODE,
 } from './webrtcTransport';
 import type { TransportCallbacks } from './types';
 import { FakeWebSocket, FakePeerConnection, installBrowserFakes } from '../../hooks/testFakes';
@@ -32,6 +33,24 @@ afterEach(() => {
 });
 
 describe('WebSocketTransport', () => {
+  it('reports terminally when the socket cannot be constructed', () => {
+    const cb = makeCallbacks();
+    const t = new WebSocketTransport(cb, {
+      createWebSocket: () => {
+        throw new SyntaxError('bad url');
+      },
+    });
+    t.connect('not a url');
+    // no handlers will ever fire, so a silent return would hang the caller forever
+    expect(cb.onError).toHaveBeenCalledWith(expect.stringMatching(/Failed to open the WebSocket/), expect.anything());
+    expect(cb.onClose).toHaveBeenCalledWith({
+      code: CONTROL_CHANNEL_SETUP_FAILED_CLOSE_CODE,
+      reason: expect.stringMatching(/Failed to open the WebSocket/),
+      wasClean: false,
+    });
+    expect(t.state).toBe('closed');
+  });
+
   it('reports open, parsed events and close', () => {
     const cb = makeCallbacks();
     const t = new WebSocketTransport(cb);
@@ -323,6 +342,31 @@ describe('WebRtcTransport', () => {
       expect.stringMatching(/Failed to create WebRTC offer/),
       expect.anything()
     );
+  });
+
+  it('reports terminally and releases the offer when the socket cannot be constructed', async () => {
+    const cb = makeCallbacks();
+    let pc: FakePeerConnection | null = null;
+    const t = new WebRtcTransport(cb, {
+      createWebSocket: () => {
+        throw new SyntaxError("The URL 'not a url' is invalid");
+      },
+      createPeerConnection: () => {
+        pc = new FakePeerConnection();
+        return pc as unknown as RTCPeerConnection;
+      },
+    });
+    t.connect('not a url', {});
+
+    expect(cb.onError).toHaveBeenCalledWith(expect.stringMatching(/Failed to open the control channel/), expect.anything());
+    expect(cb.onClose).toHaveBeenCalledWith({
+      code: CONTROL_CHANNEL_SETUP_FAILED_CLOSE_CODE,
+      reason: expect.stringMatching(/Failed to open the control channel/),
+      wasClean: false,
+    });
+    expect(t.state).toBe('closed');
+    // the offer started before the socket: it must not leave a peer connection behind
+    await vi.waitFor(() => expect(pc!.closed).toBe(true));
   });
 
   it('reports offer failures as errors and closes the control channel', async () => {

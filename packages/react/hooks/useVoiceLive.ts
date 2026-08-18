@@ -309,6 +309,8 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
   const sendGatedResponseCreateRef = useRef<(event?: VoiceLiveClientEvent) => void>();
   /** Monotonic id for client events we need to correlate errors with */
   const clientEventSeqRef = useRef<number>(0);
+  /** Payload of a queued `response.create`, so a custom request survives being deferred */
+  const queuedResponseEventRef = useRef<VoiceLiveClientEvent | null>(null);
   const endConnectionRef = useRef<(options: { resetMute: boolean }) => void>();
   const finishToolBatchIfReadyRef = useRef<(key: string, batch: ToolBatch, session: LiveSession) => void>();
 
@@ -352,7 +354,8 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
   /**
    * Send an event to the Voice Live API (WebSocket / WebRTC control channel)
    */
-  const sendEvent = useCallback(
+  /** Put an event on the wire as-is. Internal: bypasses the response gate by design. */
+  const sendRaw = useCallback(
     (event: VoiceLiveClientEvent | VoiceLiveEvent): boolean => {
       const active = sessionRef.current?.transport;
       if (!active || active.state !== 'open') {
@@ -366,6 +369,21 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
     },
     [log]
   );
+
+  const sendEvent = useCallback(
+    (event: VoiceLiveClientEvent | VoiceLiveEvent): boolean => {
+      if (event.type === 'response.create') {
+        // A raw `response.create` would bypass the serialization every other turn goes through and
+        // could overlap a running response, which the service rejects. The consumer's payload is
+        // kept — only the timing is taken over, so it may be sent after the current response.
+        log.debug('Routing a raw response.create through the response gate');
+        requestResponseRef.current?.({ event: event as VoiceLiveClientEvent });
+        return true;
+      }
+      return sendRaw(event);
+    },
+    [sendRaw, log]
+  );
   sendEventRef.current = sendEvent;
 
   /**
@@ -373,6 +391,9 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
    */
   const finishToolBatchIfReady = useCallback(
     (key: string, batch: ToolBatch, session: LiveSession): void => {
+      // Nothing a batch from a dead or superseded session does may touch live state — its own
+      // teardown already cleared the map and its timers
+      if (sessionRef.current !== session || !session.scope.isActive) return;
       // Not finished until: every executor settled, the response is known to be complete, and
       // every tool call that response contains has actually arrived
       if (!batch.responseDone || batchOwesOutputs(batch)) return;
@@ -389,7 +410,7 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
       if (toolBatchesRef.current.get(key) === batch) {
         toolBatchesRef.current.delete(key);
       }
-      if ((batch.sentOutput || batch.followUpOwed) && sessionRef.current === session && session.scope.isActive) {
+      if (batch.sentOutput || batch.followUpOwed) {
         // Every output of this response is on the wire — ask for the answer. This goes through
         // the same deferral as sendText(), so a user turn and a tool batch completing in the
         // same tick produce ONE response.create (the service rejects overlapping responses).
@@ -410,16 +431,22 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
    * bypassed and every request carries an id the service can name in an `error`.
    */
   const sendGatedResponseCreate = useCallback(
-    (event: VoiceLiveClientEvent = { type: 'response.create' }): void => {
+    (requested?: VoiceLiveClientEvent): void => {
       const gate = responseGateRef.current as ResponseGate;
+      // A queued request may carry a custom payload (a consumer's raw `response.create`, or the
+      // greeting): flushing it as a bare request would silently drop what they asked for
+      const event = requested ?? queuedResponseEventRef.current ?? { type: 'response.create' };
+      queuedResponseEventRef.current = null;
       const eventId = `evt_${++clientEventSeqRef.current}`;
       gate.trackRequest(eventId);
-      if (!sendEvent({ ...event, event_id: eventId })) {
+      // `sendRaw`, not `sendEvent`: this IS the gated path, and going through the public wrapper
+      // would route it straight back into the gate
+      if (!sendRaw({ ...event, event_id: eventId })) {
         // Nothing reached the service (disconnected, or mid-reconnect): the gate must not stay busy
         gate.onRequestNotSent();
       }
     },
-    [sendEvent]
+    [sendRaw]
   );
 
   /**
@@ -469,6 +496,10 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
         return;
       }
       if (!gate.request()) {
+        // Keep the first custom payload; later plain requests collapse into it
+        if (options.event && !queuedResponseEventRef.current) {
+          queuedResponseEventRef.current = options.event;
+        }
         log.debug(`Response ${gate.currentState} — queued one response.create for response.done`);
         return;
       }
@@ -1114,6 +1145,7 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
     }
     currentResponseIdRef.current = null;
     (responseGateRef.current as ResponseGate).reset();
+    queuedResponseEventRef.current = null;
     for (const batch of toolBatchesRef.current.values()) {
       if (batch.lateCallTimer) clearTimeout(batch.lateCallTimer);
     }

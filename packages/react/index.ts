@@ -129,6 +129,7 @@ export {
   RTC_SDP_ANSWER_FAILED_CLOSE_CODE,
   RTC_CALL_ERROR_CLOSE_CODE,
   RTC_MEDIA_FAILED_CLOSE_CODE,
+  CONTROL_CHANNEL_SETUP_FAILED_CLOSE_CODE,
 } from './core/transports/webrtcTransport';
 export type {
   VoiceLiveTransport as VoiceLiveTransportInstance,

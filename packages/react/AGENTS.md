@@ -94,7 +94,9 @@ Tests: `core/*.test.ts` (transports, audio, avatar, mic, reconnect), `hooks/useV
   `event_id` so an unrelated failure does not release it.
   `sendGatedResponseCreate()` is the **only** place a `response.create` reaches the wire (user
   turns, greeting, tool follow-ups and queued flushes all route through it), which is what keeps
-  the gate un-bypassable and every request correlatable.
+  the gate un-bypassable and every request correlatable. The public `sendEvent()` routes a raw
+  `response.create` through the gate too — a consumer's custom payload is preserved even when the
+  request has to be deferred. Internal senders use `sendRaw()`; anything else must not.
 - **Every consumer callback can end the session**: call it through `safeCall`, which returns
   whether the session survived, and stop applying the event when it returns false.
 - **Event order is not guaranteed across WebRTC channels**: lifecycle events arrive on the data

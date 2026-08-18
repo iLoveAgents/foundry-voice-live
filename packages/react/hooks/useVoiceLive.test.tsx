@@ -926,4 +926,31 @@ describe('useVoiceLive (websocket)', () => {
     expect(ws.sent.filter((e) => e.type === 'response.create')).toHaveLength(1);
     hook.unmount();
   });
+
+  it('serializes a raw response.create sent through the public sendEvent()', async () => {
+    const { hook, ws } = await connectAndOpen(baseConfig);
+    await deliver(ws, { type: 'session.created', session: {} });
+    await deliver(ws, { type: 'session.updated', session: {} });
+
+    await act(async () => {
+      hook.result.current.sendText('first');
+      // a consumer sending the raw event with a custom payload must not overlap the turn above
+      hook.result.current.sendEvent({
+        type: 'response.create',
+        response: { instructions: 'Answer in French' },
+      });
+    });
+    const creates = ws.sent.filter((e) => e.type === 'response.create');
+    expect(creates).toHaveLength(1);
+    expect(creates[0].response?.instructions).toBeUndefined(); // the queued one is still waiting
+
+    await deliver(ws, { type: 'response.created', response: { id: 'r1' } });
+    await deliver(ws, { type: 'response.done', response: { id: 'r1' } });
+    const after = ws.sent.filter((e) => e.type === 'response.create');
+    expect(after).toHaveLength(2);
+    // ...and the consumer's payload survives being deferred instead of being flushed as a bare one
+    expect(after[1].response?.instructions).toBe('Answer in French');
+    expect(after[1].event_id).toMatch(/^evt_\d+$/);
+    hook.unmount();
+  });
 });
