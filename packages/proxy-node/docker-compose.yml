@@ -3,8 +3,11 @@ version: "3.8"
 services:
   foundry-voice-live-proxy:
     build:
-      context: .
-      dockerfile: Dockerfile
+      # The image is built from the repository root: the Dockerfile installs with the pnpm
+      # workspace lockfile, which lives there. Run `docker compose up` from this directory —
+      # Compose resolves the context relative to this file.
+      context: ../..
+      dockerfile: packages/proxy-node/Dockerfile
     container_name: foundry-voice-live-proxy
     ports:
       - "${PORT:-8080}:8080"

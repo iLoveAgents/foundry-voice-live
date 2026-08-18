@@ -156,6 +156,7 @@ Targets Voice Live API **`2026-07-15` (GA)**. This release contains breaking cha
 #### Changed
 - Default `API_VERSION` is `2026-07-15` (was `2025-10-01`); no `API_VERSION` override needed for Foundry agents anymore.
 - `engines.node` is `>=20.0.0` (was `>=18.0.0`, which no install could satisfy — `@azure/identity` requires Node 20+); the Docker image is built on `node:22-alpine`, and the published tarball no longer contains the compiled tests (`tsconfig.build.json`).
+- The Docker image builds from the **repository root** so it can install with the workspace lockfile (`docker build -f packages/proxy-node/Dockerfile .`); `docker-compose.yml` sets that context itself. The previous image built with `corepack prepare pnpm@latest`, which now installs pnpm 10 and fails the install outright.
 - `GET /` reports the real package version.
 - `docker-compose.yml` uses `FOUNDRY_AGENT_NAME` / `FOUNDRY_PROJECT_NAME` and no longer pins `API_VERSION` by default (so `transport=webrtc` gets its preview default).
 

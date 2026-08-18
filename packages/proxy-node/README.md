@@ -221,9 +221,15 @@ docker-compose up -d
 
 ### Docker
 
+Build from the **repository root** (the image installs with the workspace lockfile, so the build
+context has to include it):
+
 ```bash
-docker build -t foundry-voice-live-proxy .
-docker run -p 8080:8080 --env-file .env foundry-voice-live-proxy
+docker build -f packages/proxy-node/Dockerfile -t foundry-voice-live-proxy .
+```
+
+```bash
+docker run -p 8080:8080 --env-file packages/proxy-node/.env foundry-voice-live-proxy
 ```
 
 ### GitHub Container Registry
