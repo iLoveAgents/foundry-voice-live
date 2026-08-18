@@ -824,8 +824,9 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
           // Reserving the slot keeps a turn submitted in this window from overlapping it; the
           // reservation is speculative and self-heals if no `response.created` follows.
           // Read what the *service* reports (session.updated), because updateSession() can change
-          // this at runtime — local config would go stale
-          if (autoCreateResponseRef.current && !isAgentModeRef.current) {
+          // this at runtime — local config would go stale. Agent sessions are included: they use
+          // server VAD as well, and their echo corrects the default if the agent disables it.
+          if (autoCreateResponseRef.current) {
             const gate = responseGateRef.current as ResponseGate;
             gate.reserveAutomatic();
             if (gate.isSpeculative) {

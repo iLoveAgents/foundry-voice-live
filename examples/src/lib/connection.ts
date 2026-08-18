@@ -4,9 +4,14 @@ import type { VoiceLiveConnectionConfig } from '@iloveagents/foundry-voice-live-
 /** Proxy origin used when `VITE_BACKEND_PROXY_URL` is not set (see packages/proxy-node) */
 export const DEFAULT_PROXY_BASE = 'ws://localhost:8080';
 
-/** Proxy origin from `VITE_BACKEND_PROXY_URL`, falling back to `DEFAULT_PROXY_BASE` */
+/**
+ * Proxy origin from `VITE_BACKEND_PROXY_URL`, falling back to `DEFAULT_PROXY_BASE`.
+ * Trailing slashes are stripped: `ws://proxy.example/` would otherwise produce `//ws`, which the
+ * proxy does not serve (it registers `/ws`).
+ */
 export function getProxyBaseUrl(): string {
-  return import.meta.env.VITE_BACKEND_PROXY_URL || DEFAULT_PROXY_BASE;
+  const base = import.meta.env.VITE_BACKEND_PROXY_URL || DEFAULT_PROXY_BASE;
+  return base.replace(/\/+$/, '');
 }
 
 /**

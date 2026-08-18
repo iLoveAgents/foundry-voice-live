@@ -1357,4 +1357,27 @@ describe('useVoiceLive (reconnect)', () => {
       restoreFakes();
     }
   });
+
+  it('reserves the response slot for agent sessions too', async () => {
+    const { hook, ws } = await connectAndReady({
+      ...baseConfig,
+      connection: { proxyUrl: 'ws://localhost:8080/ws?agentName=support&projectName=cs' },
+    });
+    expect(hook.result.current.connectionState).toBe('connected');
+    await act(async () => {
+      ws.receive({ type: 'input_audio_buffer.speech_stopped' });
+    });
+    // agents use server VAD as well: a turn submitted before response.created must not overlap
+    // the response the service is already starting
+    await act(async () => {
+      hook.result.current.sendText('typed while the agent was answering');
+    });
+    expect(ws.sent.filter((e) => e.type === 'response.create')).toHaveLength(0);
+
+    await act(async () => {
+      ws.receive({ type: 'response.created', response: { id: 'auto-1' } });
+      ws.receive({ type: 'response.done', response: { id: 'auto-1' } });
+    });
+    expect(ws.sent.filter((e) => e.type === 'response.create')).toHaveLength(1);
+  });
 });

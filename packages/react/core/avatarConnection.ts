@@ -88,7 +88,9 @@ export class AvatarConnection {
   /** Wire the media/state handlers of a freshly created avatar peer connection */
   private wireHandlers(pc: RTCPeerConnection, log: Logger | undefined): void {
     pc.ontrack = (event: RTCTrackEvent): void => {
-      const stream = event.streams[0] ?? null;
+      // Some browsers deliver a track without an associated stream — the media is still there, so
+      // wrap it rather than reporting nothing (a blank avatar on a session that looks ready)
+      const stream = event.streams[0] ?? (event.track ? new MediaStream([event.track]) : null);
       if (event.track.kind === 'video') {
         log?.debug('Avatar video stream connected');
         this.callbacks.onVideoStream(stream);

@@ -225,6 +225,11 @@ describe('AvatarConnection', () => {
     expect(onVideoStream).toHaveBeenCalledWith(video);
     expect(onAudioStream).toHaveBeenCalledWith(audio);
 
+    // some browsers deliver a track with no stream attached — the media is still there
+    const lonelyTrack = { kind: 'video' };
+    pc.ontrack?.({ track: lonelyTrack, streams: [] });
+    expect(onVideoStream).toHaveBeenLastCalledWith(expect.objectContaining({ tracks: [lonelyTrack] }));
+
     pc.setConnectionState('failed');
     expect(onError).toHaveBeenCalledWith('WebRTC connection failed');
 
