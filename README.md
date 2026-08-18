@@ -212,7 +212,7 @@ Open <http://localhost:3001> to explore the examples.
 
 ### Prerequisites
 
-- Node.js >= 22.0.0 (development; the protocol contract test's `@azure/ai-voicelive` dev dependency requires it. The published packages themselves run on older runtimes — the proxy declares Node >= 18.)
+- Node.js >= 22.0.0 (development; the protocol contract test's `@azure/ai-voicelive` dev dependency requires it. The published proxy runs on Node >= 20 — its `@azure/identity` dependency's floor.)
 - pnpm >= 9.0.0
 - [just](https://github.com/casey/just) command runner
 
@@ -281,7 +281,9 @@ just publish-dry  # Preview npm publish
 
 ```typescript
 const {
-  connectionState,  // 'disconnected' | 'connecting' | 'connected' | 'error'
+  connectionState,  // 'disconnected' | 'connecting' | 'reconnecting' | 'connected' | 'error'
+  reconnectAttempt, // number - 1-based while reconnecting, else 0
+  isReady,          // boolean - the session is configured and can be spoken to
   sessionState,     // 'idle' | 'listening' | 'thinking' | 'speaking'
   transport,        // 'websocket' | 'webrtc'
   videoStream,      // MediaStream | null (avatar video)
@@ -290,13 +292,20 @@ const {
   sessionExpiresAt, // number | null (epoch ms)
   isMicActive,      // boolean - whether microphone is capturing
   isMuted,          // boolean - microphone mute state
+  audioContext,     // AudioContext | null (shared with your own audio graph)
   connect,          // () => Promise<void>
   disconnect,       // () => void
+  startMic,         // () => Promise<void>
+  stopMic,          // () => void
   toggleMute,       // () => void - instant mute/unmute
   sendText,         // (text) => void - user text message
   sendToolResult,   // (callId, output) => void
   cancelResponse,   // () => void
   approveMcpCall,   // (approvalRequestId, approve) => void
+  createResponse,   // () => void - ask for a response (serialized by the response gate)
+  commitInputAudio, // () => void - manual turn mode
+  clearInputAudio,  // () => void
+  getAudioPlaybackTime, // () => number | null (websocket transport only)
   sendEvent,        // (event: VoiceLiveClientEvent | VoiceLiveEvent) => void
   updateSession,    // (config) => void
   error,            // string | null
@@ -309,6 +318,8 @@ const {
     transport?: 'websocket' | 'webrtc',
     agentName?, projectName?,   // Foundry Agents
   },
+  reconnect: true,              // auto-reconnect after unexpected closes (default false)
+  connectTimeoutMs: 15000,      // give up on a connect that never opens
   session: sessionConfig()
     .instructions('You are a helpful assistant.')
     .hdVoice('en-US-Ava:DragonHDLatestNeural')

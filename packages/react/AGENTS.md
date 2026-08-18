@@ -135,7 +135,7 @@ Tests: `core/*.test.ts` (transports, audio, avatar, mic, reconnect), `hooks/useV
 - **Terminal failures must close the transport**, not just report `onError`: state `'open'` blocks
   both `connect()` and the reconnect policy. Close codes: `4001` reconnect setup, `4002` connect
   timeout, `4008` negotiation timeout, `4009` SDP answer, `4010` `rtc.call.error`, `4011` peer
-  connection `failed`. (`'disconnected'` is *not* terminal — it can recover.)
+  connection `failed`, `4012` control-channel setup. All are exported. (`'disconnected'` is *not* terminal — it can recover.)
 - **Consumer callbacks go through `safeCall`**: a throwing `onEvent`/`onTranscript`/`onReconnecting`
   must never abort our own handling or strand the state machine.
 - `validateConfig()` returns warnings (never throws); the hook logs them before connecting.

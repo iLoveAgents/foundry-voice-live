@@ -554,6 +554,8 @@ Working examples for all features:
 | [Voice MSAL](https://github.com/iLoveAgents/foundry-voice-live/blob/main/examples/src/pages/VoiceProxyMSAL.tsx) | Entra ID auth |
 | [Avatar Basic](https://github.com/iLoveAgents/foundry-voice-live/blob/main/examples/src/pages/AvatarBasic.tsx) | Avatar video |
 | [Avatar Advanced](https://github.com/iLoveAgents/foundry-voice-live/blob/main/examples/src/pages/AvatarAdvanced.tsx) | Chroma key, 1080p |
+| [Avatar via Proxy](https://github.com/iLoveAgents/foundry-voice-live/blob/main/examples/src/pages/AvatarProxy.tsx) | Avatar through the proxy (no key in the browser) |
+| [Avatar via Proxy (MSAL)](https://github.com/iLoveAgents/foundry-voice-live/blob/main/examples/src/pages/AvatarProxyMSAL.tsx) | Avatar through the proxy with per-user Entra auth |
 | [Function Calling](https://github.com/iLoveAgents/foundry-voice-live/blob/main/examples/src/pages/FunctionCalling.tsx) | Tools with auto-sent results |
 | [Interim Responses](https://github.com/iLoveAgents/foundry-voice-live/blob/main/examples/src/pages/InterimResponse.tsx) | Filler messages during slow tools |
 | [MCP Server Tools](https://github.com/iLoveAgents/foundry-voice-live/blob/main/examples/src/pages/McpTools.tsx) | Server-side MCP tools + approval flow |
