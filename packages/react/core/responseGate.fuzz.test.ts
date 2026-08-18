@@ -67,9 +67,9 @@ describe('ResponseGate (fuzz)', () => {
         } else if (roll < 0.32) {
           // `input_audio_buffer.speech_stopped`: server VAD committed a turn, so the service is
           // about to start a response of its own — whether or not one is running right now
-          // The gate remembers up to MAX_DEFERRED_AUTOMATIC announcements; going beyond that
-          // models a state it deliberately does not represent (a VAD burst is bounded on purpose)
-          if (announcedCount < 3) {
+          // The gate remembers up to MAX_DEFERRED_AUTOMATIC announcements; beyond that it
+          // deliberately forgets, which the model must not exercise as if it were a defect
+          if (announcedCount < 8) {
             announcedCount += 1;
             gate.reserveAutomatic();
           }
@@ -111,8 +111,10 @@ describe('ResponseGate (fuzz)', () => {
           }
         } else if (roll < 0.9) {
           // The speculative watchdog fires after the service dropped the announced response
+          // The watchdog only fires because the service dropped what it announced; the gate
+          // treats everything announced behind that as stale too, so the model abandons all of it
           if (announcedCount > 0 && !running) {
-            announcedCount -= 1;
+            announcedCount = 0;
             if (gate.releaseSpeculative()) send();
           }
         } else {
@@ -138,7 +140,7 @@ describe('ResponseGate (fuzz)', () => {
           continue;
         }
         if (announcedCount > 0 || gate.isSpeculative) {
-          if (announcedCount > 0) announcedCount -= 1;
+          announcedCount = 0;
           if (gate.releaseSpeculative()) send();
           continue;
         }

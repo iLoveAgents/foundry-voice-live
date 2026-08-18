@@ -909,6 +909,59 @@ describe('useVoiceLive (websocket)', () => {
     }
   });
 
+  it('answers a turn only once, however many late tool calls arrive', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const toolExecutor = vi.fn(async () => ({ ok: true }));
+      const { hook, ws } = await connectAndOpen({ ...baseConfig, toolExecutor });
+      await deliver(ws, { type: 'session.created', session: {} });
+      await deliver(ws, { type: 'session.updated', session: {} });
+      await deliver(ws, { type: 'response.created', response: { id: 'resp-1' } });
+      await deliver(ws, {
+        type: 'response.done',
+        response: {
+          id: 'resp-1',
+          output: ['a', 'b', 'c'].map((id) => ({ type: 'function_call', call_id: id, name: id })),
+        },
+      });
+      await deliver(ws, {
+        type: 'response.function_call_arguments.done',
+        response_id: 'resp-1',
+        call_id: 'a',
+        name: 'a',
+        arguments: '{}',
+      });
+      // only call a arrived: the batch is abandoned and answers with what it has
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(5000);
+      });
+      expect(ws.sent.filter((e) => e.type === 'response.create')).toHaveLength(1);
+
+      // let that follow-up run to completion, so the gate is idle and cannot mask a second
+      // request by queueing it
+      await deliver(ws, { type: 'response.created', response: { id: 'resp-2' } });
+      await deliver(ws, { type: 'response.done', response: { id: 'resp-2', output: [] } });
+
+      // b and c trickle in afterwards — each sends its output, neither may answer again
+      for (const callId of ['b', 'c']) {
+        await deliver(ws, {
+          type: 'response.function_call_arguments.done',
+          response_id: 'resp-1',
+          call_id: callId,
+          name: callId,
+          arguments: '{}',
+        });
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(5000);
+        });
+      }
+      expect(ws.sent.filter((e) => e.type === 'response.create')).toHaveLength(1);
+      hook.unmount();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('does not block later turns when an abandoned tool call finally arrives', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     try {

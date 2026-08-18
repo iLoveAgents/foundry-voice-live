@@ -128,29 +128,54 @@ export function useAudioCapture({
     onAudioData(output.buffer);
   }, [onAudioData]);
 
-  /** Undo a half-built capture graph (a failed attempt owns everything it created) */
-  const releasePartialCapture = useCallback((): void => {
-    sourceRef.current?.disconnect();
-    sourceRef.current = null;
-    if (audioWorkletNodeRef.current) {
-      audioWorkletNodeRef.current.disconnect();
-      audioWorkletNodeRef.current.port.onmessage = null;
-      audioWorkletNodeRef.current = null;
-    }
-    streamRef.current?.getTracks().forEach((track) => track.stop());
-    streamRef.current = null;
-    audioContextRef.current?.close().catch(() => undefined);
-    audioContextRef.current = null;
-    if (blobUrlRef.current) {
-      URL.revokeObjectURL(blobUrlRef.current);
-      blobUrlRef.current = null;
-    }
-  }, []);
+  /**
+   * Undo a half-built capture graph after a failed attempt.
+   *
+   * Only what *this* attempt published is released: a slow failure (a worklet module that rejects
+   * seconds later) must never tear down the capture a newer attempt has meanwhile started, which
+   * would leave `isCapturing` true with no stream behind it.
+   */
+  const releasePartialCapture = useCallback(
+    (owned: {
+      stream: MediaStream | null;
+      audioContext: AudioContext | null;
+      blobUrl: string | null;
+    }): void => {
+      if (owned.stream) {
+        owned.stream.getTracks().forEach((track) => track.stop());
+        if (streamRef.current === owned.stream) streamRef.current = null;
+      }
+      if (owned.audioContext) {
+        if (audioContextRef.current === owned.audioContext) {
+          sourceRef.current?.disconnect();
+          sourceRef.current = null;
+          if (audioWorkletNodeRef.current) {
+            audioWorkletNodeRef.current.disconnect();
+            audioWorkletNodeRef.current.port.onmessage = null;
+            audioWorkletNodeRef.current = null;
+          }
+          audioContextRef.current = null;
+        }
+        owned.audioContext.close().catch(() => undefined);
+      }
+      if (owned.blobUrl) {
+        URL.revokeObjectURL(owned.blobUrl);
+        if (blobUrlRef.current === owned.blobUrl) blobUrlRef.current = null;
+      }
+    },
+    []
+  );
 
   /**
    * Start capturing audio from the microphone
    */
   const runCapture = useCallback(async () => {
+    // What this attempt created, so a failure releases its own resources and nothing else
+    const owned: { stream: MediaStream | null; audioContext: AudioContext | null; blobUrl: string | null } = {
+      stream: null,
+      audioContext: null,
+      blobUrl: null,
+    };
     try {
       setError(null);
 
@@ -165,10 +190,12 @@ export function useAudioCapture({
         stream.getTracks().forEach((track) => track.stop());
         return;
       }
+      owned.stream = stream;
       streamRef.current = stream;
 
       // Create AudioContext with specified sample rate
       const audioContext = new AudioContext({ sampleRate });
+      owned.audioContext = audioContext;
       audioContextRef.current = audioContext;
 
       // Determine processor path: use inline processor if no custom path provided
@@ -179,6 +206,7 @@ export function useAudioCapture({
       } else {
         // Use inline processor (default - zero config!)
         processorUrl = createProcessorBlobUrl();
+        owned.blobUrl = processorUrl;
         blobUrlRef.current = processorUrl;
       }
 
@@ -227,7 +255,7 @@ export function useAudioCapture({
       // Release whatever this attempt managed to create. Leaving `streamRef` set would keep the
       // microphone live *and* make every later startCapture() return early as "already
       // capturing" — capture could never be retried.
-      releasePartialCapture();
+      releasePartialCapture(owned);
       const errorMessage = err instanceof Error ? err.message : 'Failed to start audio capture';
       setError(errorMessage);
       console.error('Audio capture error:', err);

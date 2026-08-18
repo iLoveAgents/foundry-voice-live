@@ -43,7 +43,11 @@ import {
 import { readPackageInfo } from "./packageInfo.js";
 import { PendingMessageQueue } from "./pendingQueue.js";
 import { isOriginAllowed, readPositiveInt } from "./security.js";
-import { connectFailureCloseFrame, toClientCloseFrame } from "./closeFrame.js";
+import {
+  connectFailureCloseFrame,
+  SERVER_AT_CAPACITY_CLOSE,
+  toClientCloseFrame,
+} from "./closeFrame.js";
 
 dotenv.config();
 
@@ -422,9 +426,7 @@ app.ws("/ws", async (ws, req) => {
     logger.warn("[Security] Max connections reached", {
       maxConnections: securityConfig.maxConnections,
     });
-    // 1013 "Try Again Later", not 1008: the SDK treats 1008 as a rejection of the request itself
-    // and stops reconnecting, but capacity frees up — this is exactly a case worth retrying
-    ws.close(1013, "Server at capacity");
+    ws.close(SERVER_AT_CAPACITY_CLOSE.code, SERVER_AT_CAPACITY_CLOSE.reason);
     return;
   }
 

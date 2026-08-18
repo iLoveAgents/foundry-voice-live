@@ -468,9 +468,12 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
       // actually happened, not merely that the batch finished.
       const answerRequested =
         (batch.sentOutput || batch.followUpOwed) && !(batch.followUpSuppressed && !batch.followUpOwed);
-      completedResponsesRef.current?.set(key, {
+      const completions = completedResponsesRef.current as BoundedMap<string, ResponseCompletion>;
+      completions.set(key, {
         outstandingToolCalls: 0,
-        answered: answerRequested,
+        // Sticky: a suppressed late batch asks for nothing *because* the response was already
+        // answered — recording that as `answered: false` would let the next late call ask again
+        answered: answerRequested || completions.get(key)?.answered === true,
       });
       if (batch.followUpSuppressed && !batch.followUpOwed) {
         // This response was already answered: the late call's output is on the wire, and a second

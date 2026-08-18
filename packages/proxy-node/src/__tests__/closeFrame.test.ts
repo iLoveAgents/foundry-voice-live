@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { connectFailureCloseFrame, toClientCloseFrame } from "../closeFrame.js";
+import { connectFailureCloseFrame, SERVER_AT_CAPACITY_CLOSE, toClientCloseFrame } from "../closeFrame.js";
 
 describe("toClientCloseFrame", () => {
   it("passes a normal upstream close through unchanged", () => {
@@ -74,11 +74,11 @@ describe("connectFailureCloseFrame", () => {
 });
 
 describe("close codes the proxy sends itself", () => {
-  it("forwards 1013 (try again later) unchanged — capacity is transient and worth retrying", () => {
-    // the SDK stops reconnecting on 1003/1008/1010, so a capacity rejection must not use those
-    expect(toClientCloseFrame(1013, "Server at capacity")).toEqual({
-      code: 1013,
-      reason: "Server at capacity",
-    });
+  it("rejects on capacity with a code the client is allowed to retry", () => {
+    // the SDK stops reconnecting on 1003/1008/1010 (a request that cannot succeed on retry);
+    // capacity frees up, so it must not be one of those
+    expect(SERVER_AT_CAPACITY_CLOSE.code).toBe(1013);
+    expect([1003, 1008, 1010]).not.toContain(SERVER_AT_CAPACITY_CLOSE.code);
+    expect(SERVER_AT_CAPACITY_CLOSE.reason).toBeTruthy();
   });
 });

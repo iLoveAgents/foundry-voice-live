@@ -19,11 +19,15 @@
 export type ResponseGateState = 'idle' | 'requested' | 'active';
 
 /**
- * Upper bound on automatic responses remembered while the gate is busy. Each one is released
- * after at most one watchdog interval if it never arrives, so the bound caps how long a burst of
- * server-VAD commits can defer a consumer turn.
+ * Upper bound on automatic responses remembered while the gate is busy.
+ *
+ * Reservations are cheap: the watchdog drops *all* of them at once (see `releaseSpeculative`), so
+ * a burst of server-VAD commits costs one interval, not one per commit. The bound only exists so
+ * a pathological stream of commits cannot grow the counter without limit; beyond it an
+ * announcement is forgotten, and a queued turn may overlap that response — the service rejects
+ * that with an `error`, which the gate recovers from.
  */
-const MAX_DEFERRED_AUTOMATIC = 3;
+const MAX_DEFERRED_AUTOMATIC = 8;
 
 export class ResponseGate {
   private state: ResponseGateState = 'idle';
@@ -143,11 +147,11 @@ export class ResponseGate {
     if (!this.speculative || this.state !== 'requested') return false;
     this.speculative = false;
     this.state = 'idle';
-    // A second turn was committed while this reservation was held (VAD fired again inside the
-    // window): that announcement is still outstanding, so the slot passes to it rather than
-    // being dropped — a phantom `automaticPending` would otherwise hold a later turn for the
-    // full watchdog interval.
-    if (this.takeDeferredAutomatic()) return false;
+    // The service did not start the response it announced. Anything it announced *behind* that one
+    // is equally stale, so every deferred reservation is dropped together: holding them would
+    // defer the consumer's turn by one more watchdog interval each, and the conversation would
+    // stall for as long as the VAD kept misfiring.
+    this.automaticPending = 0;
     if (this.queued) {
       this.queued = false;
       this.state = 'requested';

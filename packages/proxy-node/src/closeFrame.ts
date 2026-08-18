@@ -55,3 +55,12 @@ export function connectFailureCloseFrame(isClientRequestError: boolean): ClientC
     ? { code: 1008, reason: "Invalid connection request" }
     : { code: 1011, reason: "Upstream connection failed" };
 }
+
+/**
+ * Capacity rejection. `1013 Try Again Later` is deliberate: the SDK stops reconnecting on `1008`
+ * (a request that would be rejected identically), but capacity frees up on its own.
+ */
+export const SERVER_AT_CAPACITY_CLOSE: ClientCloseFrame = {
+  code: 1013,
+  reason: "Server at capacity",
+};

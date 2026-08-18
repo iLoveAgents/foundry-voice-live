@@ -79,7 +79,6 @@ export function FoundryAgentAvatarMSAL(): JSX.Element {
     error: sessionError,
   } = useVoiceLive(config);
 
-
   const handleStart = async (): Promise<void> => {
     try {
       setError(null);

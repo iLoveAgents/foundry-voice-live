@@ -286,19 +286,18 @@ describe('ResponseGate', () => {
     expect(gate.onResponseDone()).toBe(true); // now the queued turn goes out
   });
 
-  it('passes the reservation to a second announcement instead of dropping it', () => {
+  it('drops every stale reservation at once when the watchdog fires', () => {
     const gate = new ResponseGate();
     gate.reserveAutomatic(); // first speech_stopped
-    gate.reserveAutomatic(); // VAD fired again inside the window — still outstanding
+    gate.reserveAutomatic(); // VAD fired again inside the window
+    gate.reserveAutomatic();
 
-    // the watchdog frees the first reservation; the second one takes the slot
-    expect(gate.releaseSpeculative()).toBe(false);
-    expect(gate.isSpeculative).toBe(true);
-    // ...and once that one is released too, the gate is genuinely idle
+    // The service started none of them. Holding the rest would cost one watchdog interval each,
+    // so a single expiry frees the gate completely.
     expect(gate.releaseSpeculative()).toBe(false);
     expect(gate.isSpeculative).toBe(false);
     expect(gate.currentState).toBe('idle');
-    // no phantom reservation is left to hold the next turn
+    // and no phantom reservation is left to hold the next turn
     expect(gate.request()).toBe(true);
     gate.onResponseCreated();
     expect(gate.onResponseDone()).toBe(false);
