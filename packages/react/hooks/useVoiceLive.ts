@@ -951,7 +951,7 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
           : new WebSocketTransport(callbacks, { log });
       return created;
     },
-    [log, ensureGraph, announceReady, handleUnexpectedClose]
+    [log, ensureGraph, announceReady, handleUnexpectedClose, clearConnectTimer]
   );
 
   /**
