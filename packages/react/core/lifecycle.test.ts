@@ -150,6 +150,58 @@ describe('ResponseGate', () => {
     expect(gate.currentState).toBe('active');
   });
 
+  it('ignores errors caused by a different client event', () => {
+    const gate = new ResponseGate();
+    gate.request('evt_7');
+    // an invalid session.update fails while our response.create is still unacknowledged
+    expect(gate.onError('evt_3')).toBe(false);
+    expect(gate.currentState).toBe('requested'); // our request may still be accepted
+    // the rejection of our own request does release it
+    expect(gate.onError('evt_7')).toBe(false);
+    expect(gate.currentState).toBe('idle');
+  });
+
+  it('treats an error without an event id as possibly ours (a stuck gate is worse)', () => {
+    const gate = new ResponseGate();
+    gate.request('evt_1');
+    expect(gate.onError(null)).toBe(false);
+    expect(gate.currentState).toBe('idle');
+  });
+
+  it('reserves a slot for a service-initiated response and self-heals if none arrives', () => {
+    const gate = new ResponseGate();
+    gate.reserveAutomatic();
+    expect(gate.isBusy).toBe(true);
+    expect(gate.isSpeculative).toBe(true);
+    // a consumer turn in this window is queued instead of overlapping the automatic response
+    expect(gate.request('evt_1')).toBe(false);
+    expect(gate.hasQueuedRequest).toBe(true);
+
+    // the automatic response never arrives → release, and the queued turn goes out
+    expect(gate.releaseSpeculative()).toBe(true);
+    expect(gate.isSpeculative).toBe(false);
+    expect(gate.currentState).toBe('requested');
+  });
+
+  it('clears the speculative flag once the service acknowledges its response', () => {
+    const gate = new ResponseGate();
+    gate.reserveAutomatic();
+    gate.onResponseCreated();
+    expect(gate.isSpeculative).toBe(false);
+    expect(gate.currentState).toBe('active');
+    // a late release must not disturb a running response
+    expect(gate.releaseSpeculative()).toBe(false);
+    expect(gate.currentState).toBe('active');
+  });
+
+  it('does not reserve automatically while a response is already busy', () => {
+    const gate = new ResponseGate();
+    gate.request('evt_1');
+    gate.reserveAutomatic();
+    expect(gate.isSpeculative).toBe(false);
+    expect(gate.outstandingEventId).toBe('evt_1');
+  });
+
   it('reset() forgets state for a new session', () => {
     const gate = new ResponseGate();
     gate.request();

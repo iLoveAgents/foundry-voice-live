@@ -1031,4 +1031,139 @@ describe('useVoiceLive (reconnect)', () => {
     });
     expect(ws.sent.filter((e) => e.type === 'response.create')).toHaveLength(2);
   });
+
+  it('releases the microphone when the initial connect fails during setup', async () => {
+    const { stream, track } = makeFakeMicStream();
+    const restoreFakes = installBrowserFakes({ getUserMedia: async () => stream as unknown as MediaStream });
+    try {
+      const hook = renderHook(() =>
+        useVoiceLive({
+          ...baseConfig,
+          connection: {
+            resourceName: 'my-res',
+            transport: 'webrtc',
+            getToken: async () => {
+              throw new Error('token endpoint down');
+            },
+          },
+          autoStartMic: false,
+        })
+      );
+      // documented pattern: arm the microphone from a user gesture, then connect
+      await act(async () => {
+        await hook.result.current.startMic();
+      });
+      expect(hook.result.current.isMicActive).toBe(true);
+
+      await act(async () => {
+        await hook.result.current.connect();
+      });
+      expect(hook.result.current.connectionState).toBe('error');
+      expect(hook.result.current.error).toMatch(/token endpoint down/);
+      // nothing will follow a failed connect: the microphone must not keep recording
+      expect(track.stop).toHaveBeenCalled();
+      expect(hook.result.current.isMicActive).toBe(false);
+    } finally {
+      restoreFakes();
+    }
+  });
+
+  it('sends the greeting through the gate and drops it if a turn is already running', async () => {
+    const config = {
+      ...baseConfig,
+      session: { instructions: 'Be nice.', greeting: { type: 'pregenerated' as const, text: 'Hello!' } },
+    };
+    // 1) normal case: the greeting is the first turn
+    const first = await connectAndReady(config);
+    expect(first.ws.sent.filter((e) => e.type === 'response.create')).toHaveLength(1);
+    expect(first.ws.lastSent('response.create').response.pre_generated_assistant_message).toBeTruthy();
+    expect(first.ws.lastSent('response.create').event_id).toMatch(/^evt_\d+$/);
+    first.hook.unmount();
+
+    // 2) a consumer turn submitted from onSessionUpdated occupies the gate: the greeting is
+    //    dropped rather than overlapping it (a greeting after the user spoke is not a greeting)
+    FakeWebSocket.reset();
+    let api: ReturnType<typeof useVoiceLive> | null = null;
+    const hook = renderHook(() =>
+      useVoiceLive({
+        ...config,
+        onSessionUpdated: () => api?.sendText('I speak first'),
+      })
+    );
+    api = hook.result.current;
+    await act(async () => {
+      await hook.result.current.connect();
+    });
+    const ws = FakeWebSocket.instances.at(-1)!;
+    await act(async () => {
+      ws.open();
+      ws.receive({ type: 'session.created', session: { id: 's1' } });
+      ws.receive({ type: 'session.updated', session: { id: 's1' } });
+    });
+    const creates = ws.sent.filter((e) => e.type === 'response.create');
+    expect(creates).toHaveLength(1);
+    expect(creates[0].response?.pre_generated_assistant_message).toBeUndefined();
+  });
+
+  it('reserves the response slot while server VAD is starting one, and self-heals', async () => {
+    const { hook, ws } = await connectAndReady(baseConfig);
+    await act(async () => {
+      ws.receive({ type: 'input_audio_buffer.speech_started' });
+      ws.receive({ type: 'input_audio_buffer.speech_stopped' });
+    });
+    // a consumer turn in the acknowledgement window must not overlap the automatic response
+    await act(async () => {
+      hook.result.current.sendText('typed while VAD was committing');
+    });
+    expect(ws.sent.filter((e) => e.type === 'response.create')).toHaveLength(0);
+
+    // the automatic response arrives and completes: the queued turn follows it
+    await act(async () => {
+      ws.receive({ type: 'response.created', response: { id: 'auto-1' } });
+      ws.receive({ type: 'response.done', response: { id: 'auto-1' } });
+    });
+    expect(ws.sent.filter((e) => e.type === 'response.create')).toHaveLength(1);
+
+    // ...and if the service never answers a committed turn, the reservation is released
+    await act(async () => {
+      ws.receive({ type: 'response.created', response: { id: 'r2' } });
+      ws.receive({ type: 'response.done', response: { id: 'r2' } });
+      ws.receive({ type: 'input_audio_buffer.speech_stopped' });
+    });
+    await act(async () => {
+      hook.result.current.sendText('queued behind a response that never starts');
+    });
+    expect(ws.sent.filter((e) => e.type === 'response.create')).toHaveLength(1);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5000);
+    });
+    expect(ws.sent.filter((e) => e.type === 'response.create')).toHaveLength(2);
+  });
+
+  it('stops applying an event when onSessionUpdated ends the session', async () => {
+    let api: ReturnType<typeof useVoiceLive> | null = null;
+    const hook = renderHook(() =>
+      useVoiceLive({
+        ...baseConfig,
+        session: { instructions: 'Be nice.', avatar: { character: 'lisa', style: 'casual-sitting' } },
+        onSessionUpdated: () => api?.disconnect(),
+      })
+    );
+    api = hook.result.current;
+    await act(async () => {
+      await hook.result.current.connect();
+    });
+    const ws = FakeWebSocket.instances.at(-1)!;
+    await act(async () => {
+      ws.open();
+      ws.receive({ type: 'session.created', session: { id: 's1' } });
+      ws.receive({
+        type: 'session.updated',
+        session: { id: 's1', avatar: { ice_servers: [{ urls: 'turn:relay.example' }] } },
+      });
+    });
+    // no avatar peer connection may be created for a session the consumer just ended
+    expect(FakePeerConnection.instances).toHaveLength(0);
+    expect(hook.result.current.connectionState).toBe('disconnected');
+  });
 });

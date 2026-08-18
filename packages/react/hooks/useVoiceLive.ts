@@ -112,6 +112,13 @@ const RECONNECT_SETUP_FAILED_CLOSE_CODE = 4001;
 const CONNECT_TIMEOUT_CLOSE_CODE = 4002;
 
 /**
+ * How long a speculative response reservation (server VAD is about to create a response) may wait
+ * for `response.created` before it is released, so a service that decides not to answer cannot
+ * block later turns.
+ */
+const SPECULATIVE_RESPONSE_TIMEOUT_MS = 5000;
+
+/**
  * Automatic tool executors of one response. The follow-up `response.create` may only be sent
  * once the response has emitted **all** its tool calls (`response.done`) *and* every executor
  * has settled — otherwise a fast first result would answer without the pending ones.
@@ -157,13 +164,26 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
    * not leave the reconnect state machine half-updated.
    */
   const safeCall = useCallback(
-    <TArgs extends unknown[]>(name: string, fn: ((...args: TArgs) => void) | undefined, ...args: TArgs): void => {
-      if (!fn) return;
-      try {
-        fn(...args);
-      } catch (err) {
-        log.error(`${name} callback threw:`, err);
+    <TArgs extends unknown[]>(
+      name: string,
+      fn: ((...args: TArgs) => void) | undefined,
+      ...args: TArgs
+    ): boolean => {
+      const sessionBefore = sessionRef.current;
+      if (fn) {
+        try {
+          fn(...args);
+        } catch (err) {
+          log.error(`${name} callback threw:`, err);
+        }
       }
+      // A consumer may call disconnect()/connect() from its callback: the caller must not keep
+      // applying an event to a session that no longer exists
+      const stillCurrent = sessionRef.current === sessionBefore && sessionBefore?.scope.isActive !== false;
+      if (!stillCurrent) {
+        log.debug(`Session changed inside ${name} — stopping work for this event`);
+      }
+      return stillCurrent;
     },
     [log]
   );
@@ -220,6 +240,14 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
   const reconnectAttemptRef = useRef<number>(0);
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const connectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const speculativeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const clearSpeculativeTimer = useCallback((): void => {
+    if (speculativeTimerRef.current) {
+      clearTimeout(speculativeTimerRef.current);
+      speculativeTimerRef.current = null;
+    }
+  }, []);
 
   const clearConnectTimer = useCallback((): void => {
     if (connectTimerRef.current) {
@@ -233,7 +261,9 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
   const handleServerEventRef = useRef<(event: VoiceLiveServerEvent) => void>();
   const openConnectionRef = useRef<(connectionScope: Scope, mode: 'initial' | 'reconnect') => Promise<void>>();
   const handleUnexpectedCloseRef = useRef<(connectionScope: Scope, info: TransportCloseInfo) => void>();
-  const requestResponseRef = useRef<() => void>();
+  const requestResponseRef = useRef<typeof requestResponse>();
+  /** Monotonic id for client events we need to correlate errors with */
+  const clientEventSeqRef = useRef<number>(0);
   const endConnectionRef = useRef<(options: { resetMute: boolean }) => void>();
 
   /**
@@ -317,17 +347,28 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
    * Ask the model for a response. If a response is still in progress the request is deferred
    * until `response.done` (Voice Live rejects overlapping responses).
    */
-  const requestResponse = useCallback((): void => {
-    const gate = responseGateRef.current as ResponseGate;
-    if (!gate.request()) {
-      log.debug(`Response ${gate.currentState} — queued one response.create for response.done`);
-      return;
-    }
-    if (!sendEvent({ type: 'response.create' })) {
-      // Nothing reached the service (disconnected, or mid-reconnect): the gate must not stay busy
-      gate.onRequestNotSent();
-    }
-  }, [sendEvent, log]);
+  const requestResponse = useCallback(
+    (options: { event?: VoiceLiveClientEvent; dropIfBusy?: boolean } = {}): void => {
+      const gate = responseGateRef.current as ResponseGate;
+      if (options.dropIfBusy && gate.isBusy) {
+        // A proactive greeting only makes sense as the first turn: if the conversation already
+        // started, dropping it is right — queueing would greet after the user has spoken
+        log.debug('Response already in progress — dropping the proactive request');
+        return;
+      }
+      const eventId = `evt_${++clientEventSeqRef.current}`;
+      if (!gate.request(eventId)) {
+        log.debug(`Response ${gate.currentState} — queued one response.create for response.done`);
+        return;
+      }
+      const event = options.event ?? { type: 'response.create' };
+      if (!sendEvent({ ...event, event_id: eventId })) {
+        // Nothing reached the service (disconnected, or mid-reconnect): the gate must not stay busy
+        gate.onRequestNotSent();
+      }
+    },
+    [sendEvent, log]
+  );
   requestResponseRef.current = requestResponse;
 
   /**
@@ -512,15 +553,9 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
       const { onEvent, onTranscript, onWarning, onMcpApprovalRequest, onSessionUpdated, toolExecutor } =
         configRef.current;
 
-      // Call custom event handler first (never let it abort our own handling)
-      const sessionAtEntry = sessionRef.current;
-      safeCall('onEvent', onEvent, data);
-      if (sessionRef.current !== sessionAtEntry || !sessionAtEntry?.scope.isActive) {
-        // The consumer called disconnect()/connect() from onEvent: this event belongs to a session
-        // that no longer exists, so applying it would resurrect state for it
-        log.debug(`Dropping ${data.type}: the session changed inside onEvent`);
-        return;
-      }
+      // Call custom event handler first (never let it abort our own handling). If it ends or
+      // replaces the session, this event belongs to a session that no longer exists.
+      if (!safeCall('onEvent', onEvent, data)) return;
 
       const isWebRtc = transportKindRef.current === 'webrtc';
 
@@ -545,7 +580,10 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
           if (data.session?.expires_at) {
             setSessionExpiresAt(data.session.expires_at * 1000);
           }
-          safeCall('onSessionUpdated', onSessionUpdated, data.session as Record<string, unknown>);
+          if (!safeCall('onSessionUpdated', onSessionUpdated, data.session as Record<string, unknown>)) {
+            // The consumer disconnected/reconnected: do not set up an avatar for a dead session
+            break;
+          }
 
           if (isWebRtc) {
             // Readiness is driven by the peer connection + data channel state in WebRTC mode
@@ -600,6 +638,7 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
           break;
 
         case 'response.created':
+          clearSpeculativeTimer();
           (responseGateRef.current as ResponseGate).onResponseCreated();
           setSessionState('speaking');
           // Reset transcript accumulator for new response
@@ -622,10 +661,29 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
           }
           break;
 
-        case 'input_audio_buffer.speech_stopped':
+        case 'input_audio_buffer.speech_stopped': {
           log.debug('User stopped speaking');
           setSessionState('thinking');
+          // With server VAD creating responses (the default), the service is about to start one.
+          // Reserving the slot keeps a turn submitted in this window from overlapping it; the
+          // reservation is speculative and self-heals if no `response.created` follows.
+          const autoCreates = configRef.current.session?.turnDetection?.createResponse !== false;
+          if (autoCreates && !isAgentModeRef.current) {
+            const gate = responseGateRef.current as ResponseGate;
+            gate.reserveAutomatic();
+            if (gate.isSpeculative) {
+              clearSpeculativeTimer();
+              speculativeTimerRef.current = setTimeout(() => {
+                speculativeTimerRef.current = null;
+                if (gate.releaseSpeculative()) {
+                  log.debug('No automatic response arrived — sending the queued response.create');
+                  if (!sendEvent({ type: 'response.create' })) gate.onRequestNotSent();
+                }
+              }, SPECULATIVE_RESPONSE_TIMEOUT_MS);
+            }
+          }
           break;
+        }
 
         case 'conversation.item.input_audio_transcription.delta':
           if (onTranscript && data.delta) {
@@ -784,7 +842,7 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
           log.error('API Error:', data.error);
           // The error may be the rejection of a response.create we are waiting on: no response.done
           // will follow, so the gate falls back to idle and any queued turn is sent now
-          if ((responseGateRef.current as ResponseGate).onError()) {
+          if ((responseGateRef.current as ResponseGate).onError(data.event_id as string | undefined)) {
             log.debug('Sending queued response.create after an API error');
             if (!sendEvent({ type: 'response.create' })) {
               (responseGateRef.current as ResponseGate).onRequestNotSent();
@@ -872,6 +930,7 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
    */
   const releaseConnection = useCallback((options: { keepAudio: boolean }): void => {
     clearConnectTimer();
+    clearSpeculativeTimer();
     // Aborting the session scope is the single teardown signal: every in-flight continuation that
     // captured it (tool executors, avatar negotiation, mic attachment) discards itself
     const session = sessionRef.current;
@@ -900,7 +959,7 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
     userTranscriptRef.current = '';
     // The expiry belonged to the session that just ended; the next session.created brings a new one
     setSessionExpiresAt(null);
-  }, [clearConnectTimer]);
+  }, [clearConnectTimer, clearSpeculativeTimer]);
 
   /**
    * Schedule a reconnect attempt after an unexpected close, or settle into
@@ -1112,6 +1171,9 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
           });
           return;
         }
+        // Nothing will follow a failed initial connect either: end the connection so a
+        // pre-connect `startMic()` microphone is released instead of recording into nothing
+        endConnectionRef.current?.({ resetMute: false });
         setError(errorMessage);
         setConnectionState('error');
       }
@@ -1213,7 +1275,16 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
     if (!isReady || !session?.greeting || greetingSentRef.current) return;
     greetingSentRef.current = true;
     log.debug(`Sending proactive greeting (${session.greeting.type})...`);
-    buildGreetingEvents(session.greeting).forEach((event) => sendEvent(event));
+    // The greeting's own `response.create` carries a payload (the pre-generated message), so it is
+    // sent through the gate rather than replaced by a bare one — otherwise a turn submitted in the
+    // same tick and the greeting would overlap and the service would reject one of them.
+    buildGreetingEvents(session.greeting).forEach((event) => {
+      if (event.type === 'response.create') {
+        requestResponse({ event, dropIfBusy: true });
+      } else {
+        sendEvent(event);
+      }
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isReady]);
 

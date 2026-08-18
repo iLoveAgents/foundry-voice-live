@@ -212,7 +212,7 @@ describe('useVoiceLive (websocket)', () => {
         type: 'conversation.item.create',
         item: { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'Hello' }] },
       },
-      { type: 'response.create' },
+      { type: 'response.create', event_id: expect.stringMatching(/^evt_\d+$/) },
       { type: 'conversation.item.create', item: { type: 'function_call_output', call_id: 'call_9', output: 'done' } },
       {
         type: 'conversation.item.create',

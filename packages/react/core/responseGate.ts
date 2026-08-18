@@ -21,6 +21,13 @@ export type ResponseGateState = 'idle' | 'requested' | 'active';
 export class ResponseGate {
   private state: ResponseGateState = 'idle';
   private queued = false;
+  /** `event_id` of the `response.create` we are waiting to be acknowledged (for error correlation) */
+  private pendingEventId: string | null = null;
+  /**
+   * True while the reservation is *speculative*: the service told us it will start a response by
+   * itself (server VAD with `create_response: true`), but has not acknowledged one yet.
+   */
+  private speculative = false;
 
   /** Current lifecycle state (for logging/tests) */
   get currentState(): ResponseGateState {
@@ -32,6 +39,16 @@ export class ResponseGate {
     return this.state !== 'idle';
   }
 
+  /** True while waiting for the service to acknowledge a response it starts on its own */
+  get isSpeculative(): boolean {
+    return this.speculative;
+  }
+
+  /** The `event_id` of the outstanding request, if it was sent with one */
+  get outstandingEventId(): string | null {
+    return this.pendingEventId;
+  }
+
   /** True when a follow-up request is waiting for the running response to finish */
   get hasQueuedRequest(): boolean {
     return this.queued;
@@ -41,18 +58,53 @@ export class ResponseGate {
    * Ask for a response.
    * @returns true when the caller should send `response.create` now; false when it was queued.
    */
-  request(): boolean {
+  request(eventId?: string): boolean {
     if (this.isBusy) {
       this.queued = true;
       return false;
     }
     this.state = 'requested';
+    this.speculative = false;
+    this.pendingEventId = eventId ?? null;
     return true;
+  }
+
+  /**
+   * The service is about to start a response by itself (server VAD committed a user turn with
+   * `create_response: true`). Reserving the slot keeps a consumer turn submitted in the
+   * acknowledgement window from overlapping it — such a turn is queued instead.
+   *
+   * The reservation is speculative: `releaseSpeculative()` must undo it if no `response.created`
+   * follows, so a service that decides not to answer cannot block later turns.
+   */
+  reserveAutomatic(): void {
+    if (this.isBusy) return;
+    this.state = 'requested';
+    this.speculative = true;
+    this.pendingEventId = null;
+  }
+
+  /**
+   * Undo a speculative reservation that was never acknowledged.
+   * @returns true when a queued request should be sent now
+   */
+  releaseSpeculative(): boolean {
+    if (!this.speculative || this.state !== 'requested') return false;
+    this.speculative = false;
+    this.state = 'idle';
+    if (this.queued) {
+      this.queued = false;
+      this.state = 'requested';
+      return true;
+    }
+    return false;
   }
 
   /** The service acknowledged a response (`response.created`) */
   onResponseCreated(): void {
     this.state = 'active';
+    this.speculative = false;
+    this.pendingEventId = null;
   }
 
   /**
@@ -63,9 +115,13 @@ export class ResponseGate {
     if (this.queued) {
       this.queued = false;
       this.state = 'requested';
+      this.speculative = false;
+      this.pendingEventId = null;
       return true;
     }
     this.state = 'idle';
+    this.speculative = false;
+    this.pendingEventId = null;
     return false;
   }
 
@@ -76,8 +132,15 @@ export class ResponseGate {
    *
    * @returns true when a queued request should be sent now (it never reached the service)
    */
-  onError(): boolean {
+  onError(errorEventId?: string | null): boolean {
     if (this.state !== 'requested') return false; // an error during a running response is not ours
+    // Correlate when we can: an error caused by a *different* client event (say an invalid
+    // session.update) says nothing about the response.create we are waiting for. Errors without an
+    // `event_id` stay ambiguous and are treated as ours, because a stuck gate would block every
+    // later turn — a rare extra release is the safer failure.
+    if (errorEventId && this.pendingEventId && errorEventId !== this.pendingEventId) return false;
+    this.pendingEventId = null;
+    this.speculative = false;
     if (this.queued) {
       this.queued = false;
       return true; // stay 'requested': the caller sends the queued turn instead
@@ -94,6 +157,8 @@ export class ResponseGate {
   onRequestNotSent(): void {
     if (this.state === 'requested') {
       this.state = 'idle';
+      this.speculative = false;
+      this.pendingEventId = null;
     }
   }
 
@@ -101,5 +166,7 @@ export class ResponseGate {
   reset(): void {
     this.state = 'idle';
     this.queued = false;
+    this.speculative = false;
+    this.pendingEventId = null;
   }
 }

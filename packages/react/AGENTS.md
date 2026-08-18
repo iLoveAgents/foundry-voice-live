@@ -86,8 +86,14 @@ Tests: `core/*.test.ts` (transports, audio, avatar, mic, reconnect), `hooks/useV
   Identity checks go against the record (`sessionRef.current !== session`), not against numbers.
 - **`response.create` is serialized by `ResponseGate` (`core/responseGate.ts`)**, a three-state
   machine (`idle → requested → active`): the service rejects overlapping responses and
-  `response.created` alone cannot tell you a request is in flight. Never send `response.create`
-  outside the gate.
+  `response.created` alone cannot tell you a request is in flight. **Never send `response.create`
+  outside the gate** — including the greeting (it passes its payload through
+  `requestResponse({ event, dropIfBusy: true })`) and consumers (`createResponse()`).
+  The gate also reserves the slot when server VAD is about to create a response (speculative,
+  self-healing after `SPECULATIVE_RESPONSE_TIMEOUT_MS`) and correlates `error` events by
+  `event_id` so an unrelated failure does not release it.
+- **Every consumer callback can end the session**: call it through `safeCall`, which returns
+  whether the session survived, and stop applying the event when it returns false.
 - **Automatic tool results are batched per response** (`toolBatchesRef`, keyed by `response_id`
   and scoped to the session record): outputs are sent with `triggerResponse: false`; the single
   `response.create` waits for **both** `response.done` *and* the last executor, and goes through
