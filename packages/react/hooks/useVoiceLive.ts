@@ -126,6 +126,12 @@ const LATE_TOOL_CALL_TIMEOUT_MS = 5000;
 const SPECULATIVE_RESPONSE_TIMEOUT_MS = 5000;
 
 /**
+ * `code` on warnings the SDK raises itself (session options the chosen mode/model ignores), so a
+ * consumer can tell them apart from the service's `warning` events.
+ */
+export const CLIENT_CONFIG_WARNING_CODE = 'client_config';
+
+/**
  * Whether a batch still owes `function_call_output`s: executors are running, or the response
  * declared calls that have not arrived yet. A turn must not be answered while this is true.
  */
@@ -1419,9 +1425,15 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
 
         log.info(`${mode === 'reconnect' ? 'Reconnecting' : 'Connecting'} (${modeLabel}, ${kind}) → ${redactUrl(url)}`);
         if (mode === 'initial') {
-          validateConfig(currentSession ?? {}, isAgentMode, currentConnection.model).forEach((warning) =>
-            log.warn(warning)
-          );
+          // Local compatibility warnings reach `onWarning` like the service's own `warning`
+          // events, so an app can surface them in its UI instead of only in the console
+          validateConfig(currentSession ?? {}, isAgentMode, currentConnection.model).forEach((warning) => {
+            log.warn(warning);
+            safeCall('onWarning', configRef.current.onWarning, {
+              message: warning,
+              code: CLIENT_CONFIG_WARNING_CODE,
+            });
+          });
         }
         if (kind === 'webrtc') {
           validateTransport(resolvedConnection, currentSession);
@@ -1491,7 +1503,7 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
         setConnectionState('error');
       }
     },
-    [log, buildSession, createTransport, clearConnectTimer]
+    [log, safeCall, buildSession, createTransport, clearConnectTimer]
   );
   openConnectionRef.current = openConnection;
 

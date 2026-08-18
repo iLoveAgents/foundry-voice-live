@@ -59,6 +59,8 @@ Targets Voice Live API **`2026-07-15` (GA)**. This release contains breaking cha
 - Reconnect no longer retries closes that reject the request itself (`1003`, `1008`, `1010`) — the same URL and credentials would be rejected identically.
 - A protocol-relative `proxyUrl` (`//proxy.example/ws`) keeps its host when parameters are added; it used to collapse to a path, pointing the session (with the user's token) at the page's own origin.
 - `redactUrl()` decodes and lower-cases parameter names before matching, so `?to%6Ben=` / `?API-KEY=` are redacted like their plain spellings.
+- A consumer that ends the transport from its own `onError` no longer gets an `onClose` afterwards (and, on a reused instance, no longer has its replacement connection torn down): every terminal failure goes through one `failTerminally()` path that re-checks the generation after the callback.
+- `validateConfig()` warnings reach `onWarning` (`code: CLIENT_CONFIG_WARNING_CODE`), as the README always promised — they were console-only.
 - The microphone controls (`startMic` / `stopMic` / `toggleMute` / `isMicActive` / `isMuted`) act on the transport of the **live** session rather than the current `connection.transport` prop: changing the prop mid-session only takes effect on the next connect, and until then the controls kept operating on the wrong capture path.
 - Foundry agent sessions reserve the response slot on `speech_stopped` like every other session — they use server VAD too, so a turn submitted before `response.created` could overlap the response the agent was already starting.
 - Avatar tracks delivered without an associated stream (some browsers) are wrapped instead of dropped, which used to leave a blank avatar and no audio on a session that reported itself ready.

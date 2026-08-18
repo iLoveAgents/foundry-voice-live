@@ -181,13 +181,7 @@ export class WebRtcTransport implements VoiceLiveTransport {
           // media is dead while the control channel still looks 'open', blocking reconnect.
           const message =
             "WebRTC connection failed. UDP may be blocked on this network — configure rtcConfiguration (TURN) or use transport: 'websocket'.";
-          this.notify('onError', this.callbacks.onError, message);
-          this.close();
-          this.notify('onClose', this.callbacks.onClose, {
-            code: RTC_MEDIA_FAILED_CLOSE_CODE,
-            reason: message,
-            wasClean: false,
-          });
+          this.failTerminally(message, RTC_MEDIA_FAILED_CLOSE_CODE);
         }
       },
     });
@@ -279,14 +273,11 @@ export class WebRtcTransport implements VoiceLiveTransport {
       this.negotiationTimer = setTimeout(() => {
         this.negotiationTimer = null;
         log?.error('Timed out waiting for rtc.call.sdp.created');
-        this.notify('onError', this.callbacks.onError, 'Timed out waiting for the WebRTC SDP answer');
         // Tear down so a late answer cannot resurrect a session the caller reports as failed
-        this.close();
-        this.notify('onClose', this.callbacks.onClose, {
-          code: RTC_NEGOTIATION_TIMEOUT_CLOSE_CODE,
-          reason: 'WebRTC SDP negotiation timeout',
-          wasClean: false,
-        });
+        this.failTerminally(
+          'WebRTC SDP negotiation timeout: the service sent no answer',
+          RTC_NEGOTIATION_TIMEOUT_CLOSE_CODE
+        );
       }, this.options.negotiationTimeoutMs ?? DEFAULT_RTC_NEGOTIATION_TIMEOUT_MS);
     };
 
@@ -377,6 +368,29 @@ export class WebRtcTransport implements VoiceLiveTransport {
     this.seen.clear();
   }
 
+  /**
+   * Report a failure this transport cannot continue from, then end it.
+   *
+   * `onError` is advisory, so the close must follow — otherwise `state` stays `'open'` and the
+   * caller can neither reconnect nor `connect()` again. The consumer's handler may itself call
+   * `close()` (and even start a new connection on this instance), which bumps the generation:
+   * continuing then would fire `onClose` after a caller-initiated `close()` promised no further
+   * callbacks, and tear down the replacement connection.
+   */
+  private failTerminally(message: string, code: number, cause?: unknown): void {
+    const generation = this.generation;
+    // Don't hand consumers an explicit `undefined` cause: `onError(message)` and
+    // `onError(message, undefined)` are the same contract, and the first is what they see today
+    if (cause === undefined) {
+      this.notify('onError', this.callbacks.onError, message);
+    } else {
+      this.notify('onError', this.callbacks.onError, message, cause);
+    }
+    if (generation !== this.generation) return;
+    this.close();
+    this.notify('onClose', this.callbacks.onClose, { code, reason: message, wasClean: false });
+  }
+
   /** Fail a microphone attachment that can no longer happen, so the caller is never left waiting */
   private settlePendingTrack(reason: Error): void {
     const pending = this.pendingTrack;
@@ -426,28 +440,14 @@ export class WebRtcTransport implements VoiceLiveTransport {
         .then(() => this.options.log?.debug('WebRTC SDP answer applied'))
         .catch((err: unknown) => {
           if (generation !== this.generation) return;
-          this.notify('onError', this.callbacks.onError, 'Failed to apply WebRTC SDP answer', err);
-          // Terminal for this call: without closing, `state` would stay 'open', so the caller
-          // could neither reconnect nor connect() again
-          this.close();
-          this.notify('onClose', this.callbacks.onClose, {
-            code: RTC_SDP_ANSWER_FAILED_CLOSE_CODE,
-            reason: 'Failed to apply WebRTC SDP answer',
-            wasClean: false,
-          });
+          this.failTerminally('Failed to apply WebRTC SDP answer', RTC_SDP_ANSWER_FAILED_CLOSE_CODE, err);
         });
     } else if (event.type === 'rtc.call.error') {
       const message = formatRtcCallError(event as RtcCallErrorEvent);
       this.options.log?.error(message);
-      this.notify('onError', this.callbacks.onError, message, event);
       // The service rejected the call: there will be no answer and no media, so this is terminal.
       // Closing releases the control channel and lets the caller reconnect or connect() again.
-      this.close();
-      this.notify('onClose', this.callbacks.onClose, {
-        code: RTC_CALL_ERROR_CLOSE_CODE,
-        reason: message,
-        wasClean: false,
-      });
+      this.failTerminally(message, RTC_CALL_ERROR_CLOSE_CODE, event);
     }
   }
 

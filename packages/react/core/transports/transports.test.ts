@@ -241,7 +241,7 @@ describe('WebRtcTransport', () => {
     vi.useFakeTimers();
     const { t, ws, pc, cb } = await openNegotiated(makeCallbacks(), { negotiationTimeoutMs: 50 });
     vi.advanceTimersByTime(50);
-    expect(cb.onError).toHaveBeenCalledWith('Timed out waiting for the WebRTC SDP answer');
+    expect(cb.onError).toHaveBeenCalledWith(expect.stringMatching(/negotiation timeout/));
     expect(cb.onClose).toHaveBeenCalledWith({
       code: RTC_NEGOTIATION_TIMEOUT_CLOSE_CODE,
       reason: expect.stringMatching(/timeout/),
@@ -353,6 +353,22 @@ describe('WebRtcTransport', () => {
     await expect(attach).rejects.toThrow('device gone');
   });
 
+  it('stops terminal handling when the consumer closes the transport from onError', () => {
+    const cb = makeCallbacks();
+    const t = new WebRtcTransport(cb);
+    // an advanced consumer may treat onError as its signal to tear the transport down itself
+    (cb.onError as ReturnType<typeof vi.fn>).mockImplementation(() => t.close());
+    t.connect('wss://x/calls', {});
+    const ws = FakeWebSocket.instances.at(-1)!;
+    ws.open();
+    ws.receive({ type: 'rtc.call.error', error: { message: 'no capacity' } });
+
+    expect(cb.onError).toHaveBeenCalledTimes(1);
+    // close() promises no further callbacks — firing onClose afterwards would break that, and on a
+    // reused instance the follow-up close() would tear down the consumer's new connection
+    expect(cb.onClose).not.toHaveBeenCalled();
+  });
+
   it('rejects a microphone attachment requested after the transport closed', async () => {
     const t = new WebRtcTransport(makeCallbacks());
     t.connect('wss://x/calls', {});
@@ -447,7 +463,7 @@ describe('WebRtcTransport', () => {
     // the stale continuation must not send SDP on the dead socket, nor arm a negotiation timer
     expect(ws.lastSent('rtc.call.sdp.create')).toBeUndefined();
     expect(cb.onClose).toHaveBeenCalledTimes(1);
-    expect(cb.onError).not.toHaveBeenCalledWith('Timed out waiting for the WebRTC SDP answer');
+    expect(cb.onError).not.toHaveBeenCalledWith(expect.stringMatching(/negotiation timeout/));
   });
 
   it('stays silent when a pending offer rejects after the control socket closed', async () => {

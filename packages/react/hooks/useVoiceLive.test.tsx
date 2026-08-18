@@ -4,7 +4,7 @@
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
-import { useVoiceLive } from './useVoiceLive';
+import { useVoiceLive, CLIENT_CONFIG_WARNING_CODE } from './useVoiceLive';
 import { FakeWebSocket, installBrowserFakes } from './testFakes';
 import type { UseVoiceLiveConfig } from '../types/voiceLive';
 
@@ -223,6 +223,21 @@ describe('useVoiceLive (websocket)', () => {
       { type: 'input_audio_buffer.commit' },
     ]);
     hook.unmount();
+  });
+
+  it('reports SDK-side config warnings through onWarning, tagged apart from service warnings', async () => {
+    const onWarning = vi.fn();
+    // a native audio model does not support interim responses — a compatibility warning
+    await connectAndOpen({
+      ...baseConfig,
+      connection: { ...baseConfig.connection, model: 'gpt-realtime' },
+      session: { ...baseConfig.session, interimResponse: { type: 'llm_interim_response', triggers: ['latency'] } },
+      onWarning,
+    });
+
+    expect(onWarning).toHaveBeenCalledWith(
+      expect.objectContaining({ code: CLIENT_CONFIG_WARNING_CODE })
+    );
   });
 
   it('surfaces MCP approval requests, warnings and errors', async () => {

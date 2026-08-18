@@ -9,7 +9,7 @@
 
 // ==================== Hooks ====================
 export { useAudioCapture } from './hooks/useAudioCapture';
-export { useVoiceLive } from './hooks/useVoiceLive';
+export { useVoiceLive, CLIENT_CONFIG_WARNING_CODE } from './hooks/useVoiceLive';
 
 // ==================== Components ====================
 export { VoiceLiveAvatar } from './components/VoiceLiveAvatar';

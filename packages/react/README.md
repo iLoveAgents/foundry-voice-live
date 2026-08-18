@@ -208,7 +208,7 @@ function App() {
 
 The proxy authenticates with `DefaultAzureCredential` (or a browser `token` passed in the URL). Agents require Entra ID — API keys are not supported for agent sessions.
 
-In agent mode the SDK strips the agent-owned session fields (`AGENT_OWNED_FIELDS`: `instructions`, `temperature`, `tools`, `toolChoice`, `maxResponseOutputTokens`, `reasoningEffort`, `parallelToolCalls`) from `session.update`, sends no default voice so the agent's portal voice is used unless you set one, and warns (`onWarning` / log) when you pass any of the stripped fields.
+In agent mode the SDK strips the agent-owned session fields (`AGENT_OWNED_FIELDS`: `instructions`, `temperature`, `tools`, `toolChoice`, `maxResponseOutputTokens`, `reasoningEffort`, `parallelToolCalls`) from `session.update`, sends no default voice so the agent's portal voice is used unless you set one, and warns when you pass any of the stripped fields — logged, and delivered to `onWarning` with `code: CLIENT_CONFIG_WARNING_CODE` (`'client_config'`), which is how you tell an SDK-side compatibility warning from a `warning` event sent by the service.
 
 Optional URL / connection parameters: `conversationId` (resume a conversation), `agentVersion` (pin a version), `agentAuthenticationIdentityClientId` (user-assigned managed identity), `foundryResourceOverride` (cross-resource agents).
 
