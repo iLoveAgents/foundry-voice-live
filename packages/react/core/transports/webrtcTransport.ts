@@ -113,11 +113,20 @@ export class WebRtcTransport implements VoiceLiveTransport {
         if (state === 'open') {
           dataChannelOpen = true;
           if (mediaConnected) announceReady('media + data channel');
+        } else {
+          dataChannelOpen = false;
         }
       },
       onConnectionStateChange: (state) => {
         if (generation !== this.generation) return;
         log?.debug(`WebRTC connection state: ${state}`);
+        if (state !== 'connected' && !readyAnnounced) {
+          // The RTP path went away before the session ever started: readiness must not be
+          // announced off a stale flag (or by the fallback timer) while media is down.
+          // A disconnect *after* readiness is left alone — WebRTC recovers from it routinely.
+          mediaConnected = false;
+          this.clearDataChannelFallback();
+        }
         if (state === 'connected') {
           mediaConnected = true;
           if (dataChannelOpen) {
@@ -125,6 +134,7 @@ export class WebRtcTransport implements VoiceLiveTransport {
           } else {
             // Don't hang forever if the service never opens a data channel
             this.dataChannelFallbackTimer = setTimeout(() => {
+              if (!mediaConnected) return; // the media path dropped while we were waiting
               log?.warn(
                 `Data channel did not open within ${this.options.dataChannelFallbackMs ?? DEFAULT_DATA_CHANNEL_FALLBACK_MS} ms — continuing without it`
               );
@@ -305,8 +315,13 @@ export class WebRtcTransport implements VoiceLiveTransport {
       return;
     }
     // Report first, act second: `rtc.call.error` tears the session down, and a consumer that only
-    // sees events through `onEvent` would never learn why if the teardown ran first
-    this.callbacks.onEvent(event);
+    // sees events through `onEvent` would never learn why if the teardown ran first. The callback
+    // is consumer code, so it must not be able to strand the negotiation that follows.
+    try {
+      this.callbacks.onEvent(event);
+    } catch (err) {
+      this.options.log?.error('onEvent callback threw:', err);
+    }
     this.handleNegotiationEvent(event);
   }
 

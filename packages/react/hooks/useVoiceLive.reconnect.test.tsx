@@ -6,6 +6,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 import { useVoiceLive } from './useVoiceLive';
 import {
+  FakeAudioContext,
   FakeWebSocket,
   FakePeerConnection,
   FakeAudioWorkletNode,
@@ -1278,6 +1279,80 @@ describe('useVoiceLive (reconnect)', () => {
       });
       expect(hook.result.current.isReady).toBe(true);
       expect(hook.result.current.connectionState).toBe('connected');
+    } finally {
+      restoreFakes();
+    }
+  });
+
+  it('feeds avatar audio into the shared analyser', async () => {
+    const restoreFakes = installBrowserFakes();
+    try {
+      const hook = renderHook(() =>
+        useVoiceLive({
+          ...baseConfig,
+          session: { instructions: 'Be nice.', avatar: { character: 'lisa', style: 'casual-sitting' } },
+        })
+      );
+      await act(async () => {
+        await hook.result.current.connect();
+      });
+      const ws = FakeWebSocket.instances.at(-1)!;
+      await act(async () => {
+        ws.open();
+        ws.receive({ type: 'session.created', session: { id: 's1' } });
+        ws.receive({
+          type: 'session.updated',
+          session: { id: 's1', avatar: { ice_servers: [{ urls: 'turn:relay.example' }] } },
+        });
+      });
+      await vi.waitFor(() => expect(ws.lastSent('session.avatar.connect')).toBeTruthy());
+      const pc = FakePeerConnection.instances.at(-1)!;
+      const audio = { id: 'avatar-audio' };
+      await act(async () => {
+        pc.ontrack?.({ track: { kind: 'audio' }, streams: [audio] } as never);
+      });
+
+      // avatar sessions skip the MediaStreamDestination, so without this the public analyser
+      // would have no input at all and visualizers would read silence
+      const ctx = FakeAudioContext.instances.at(-1)!;
+      expect(ctx.mediaStreamSources.map((n) => n.stream)).toContainEqual(audio);
+      expect(hook.result.current.audioAnalyser).toBeTruthy();
+    } finally {
+      restoreFakes();
+    }
+  });
+
+  it('seeds the VAD setting from the session a WebRTC attempt opens with', async () => {
+    const restoreFakes = installBrowserFakes();
+    try {
+      const hook = renderHook(() =>
+        useVoiceLive({
+          ...baseConfig,
+          connection: { resourceName: 'my-res', apiKey: 'secret', transport: 'webrtc' },
+          session: { instructions: 'Be nice.', turnDetection: { type: 'azure_semantic_vad', createResponse: false } },
+          autoStartMic: false,
+        })
+      );
+      await act(async () => {
+        await hook.result.current.connect();
+      });
+      const ws = FakeWebSocket.instances.at(-1)!;
+      await act(async () => {
+        ws.open();
+      });
+      await vi.waitFor(() => expect(ws.lastSent('rtc.call.sdp.create')).toBeTruthy());
+      const pc = FakePeerConnection.instances.at(-1)!;
+      await act(async () => {
+        pc.setConnectionState('connected');
+        pc.dataChannels[0]!.open();
+      });
+      // WebRTC never receives a session.updated echo before readiness, so the local setting must
+      // seed it — otherwise this turn would be held for the 5 s speculative timeout
+      await act(async () => {
+        pc.dataChannels[0]!.receive({ type: 'input_audio_buffer.speech_stopped' });
+        hook.result.current.createResponse();
+      });
+      expect(ws.sent.filter((e) => e.type === 'response.create')).toHaveLength(1);
     } finally {
       restoreFakes();
     }

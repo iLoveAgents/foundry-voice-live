@@ -671,7 +671,12 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
             videoStreamRef.current = stream;
             setVideoStream(stream);
           },
-          onAudioStream: (stream) => setAudioStream(stream),
+          onAudioStream: (stream) => {
+            setAudioStream(stream);
+            // Avatar sessions skip the MediaStreamDestination, so without this the public
+            // `audioAnalyser` would have no input at all and visualizers would read silence
+            if (stream) ensureGraph().attachRemoteStream(stream);
+          },
           onError: (message) => {
             log.error(`Avatar: ${message}`);
             setError(message);
@@ -685,7 +690,7 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
       sendEvent({ type: 'session.avatar.connect', client_sdp: clientSdp });
       log.debug('Avatar connection request sent');
     },
-    [log, sendEvent]
+    [log, sendEvent, ensureGraph]
   );
 
   /**
@@ -1336,6 +1341,10 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
         sessionRef.current = null;
         previous?.scope.abort();
         connectionScope.pruneChildren();
+        // WebRTC embeds the session in `rtc.call.sdp.create` and is ready before any
+        // `session.updated`, so seed the effective VAD behaviour from what we send; later server
+        // echoes still correct it.
+        autoCreateResponseRef.current = currentSession?.turnDetection?.createResponse !== false;
         const session = createTransport(kind, connectionScope);
         sessionRef.current = session;
         // A new conversation has no outstanding requests, whatever happened before it

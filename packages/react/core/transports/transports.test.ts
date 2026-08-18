@@ -133,6 +133,35 @@ describe('WebRtcTransport', () => {
     expect(cb.onReady).toHaveBeenCalledTimes(1);
   });
 
+  it('does not announce readiness off a media path that dropped before it started', async () => {
+    vi.useFakeTimers();
+    const { pc, cb } = await openNegotiated(makeCallbacks(), { dataChannelFallbackMs: 100 });
+    pc.setConnectionState('connected');
+    // a transient outage before the events channel ever opened
+    pc.setConnectionState('disconnected');
+    await vi.advanceTimersByTimeAsync(200);
+    expect(cb.onReady).not.toHaveBeenCalled();
+
+    // a data channel opening while media is down must not announce readiness either
+    pc.dataChannels[0]!.open();
+    expect(cb.onReady).not.toHaveBeenCalled();
+
+    // ...and readiness follows once media is actually back
+    pc.setConnectionState('connected');
+    expect(cb.onReady).toHaveBeenCalledWith('media + data channel');
+  });
+
+  it('keeps a throwing onEvent from stranding the negotiation', async () => {
+    const cb = makeCallbacks();
+    (cb.onEvent as ReturnType<typeof vi.fn>).mockImplementation(() => {
+      throw new Error('consumer bug');
+    });
+    const { ws, pc } = await openNegotiated(cb);
+    ws.receive({ type: 'rtc.call.sdp.created', event_id: 'e1', sdp_answer: 'v=0 answer' });
+    // the answer must still be applied even though the consumer's handler threw
+    await vi.waitFor(() => expect(pc.remoteDescription).toEqual({ type: 'answer', sdp: 'v=0 answer' }));
+  });
+
   it('falls back to media-only readiness when the data channel never opens', async () => {
     vi.useFakeTimers();
     const { pc, cb } = await openNegotiated(makeCallbacks(), { dataChannelFallbackMs: 100 });
