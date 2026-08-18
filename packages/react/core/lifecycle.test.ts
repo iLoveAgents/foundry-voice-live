@@ -267,6 +267,25 @@ describe('ResponseGate', () => {
     expect(gate.request()).toBe(false);
   });
 
+  it('passes the reservation to a second announcement instead of dropping it', () => {
+    const gate = new ResponseGate();
+    gate.reserveAutomatic(); // first speech_stopped
+    gate.reserveAutomatic(); // VAD fired again inside the window — still outstanding
+
+    // the watchdog frees the first reservation; the second one takes the slot
+    expect(gate.releaseSpeculative()).toBe(false);
+    expect(gate.isSpeculative).toBe(true);
+    // ...and once that one is released too, the gate is genuinely idle
+    expect(gate.releaseSpeculative()).toBe(false);
+    expect(gate.isSpeculative).toBe(false);
+    expect(gate.currentState).toBe('idle');
+    // no phantom reservation is left to hold the next turn
+    expect(gate.request()).toBe(true);
+    gate.onResponseCreated();
+    expect(gate.onResponseDone()).toBe(false);
+    expect(gate.currentState).toBe('idle');
+  });
+
   it('reset() forgets state for a new session', () => {
     const gate = new ResponseGate();
     gate.request();

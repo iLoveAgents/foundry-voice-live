@@ -20,11 +20,10 @@ import { AudioVisualizer } from './pages/AudioVisualizer';
 import { VisemeExample } from './pages/VisemeExample';
 import { Live2DAvatarExample } from './pages/Live2DAvatarExample';
 import { Avatar3DExample } from './pages/Avatar3DExample';
-// TODO: Add Live2DUnicornExample and Live2DRobotExample when implemented
-import FoundryAgent from './pages/FoundryAgent';
-import FoundryAgentMSAL from './pages/FoundryAgentMSAL';
-import FoundryAgentAvatar from './pages/FoundryAgentAvatar';
-import FoundryAgentAvatarMSAL from './pages/FoundryAgentAvatarMSAL';
+import { FoundryAgent } from './pages/FoundryAgent';
+import { FoundryAgentMSAL } from './pages/FoundryAgentMSAL';
+import { FoundryAgentAvatar } from './pages/FoundryAgentAvatar';
+import { FoundryAgentAvatarMSAL } from './pages/FoundryAgentAvatarMSAL';
 
 // MSAL configuration for the Entra ID (MSAL) examples
 const msalConfig = {

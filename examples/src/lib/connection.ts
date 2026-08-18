@@ -50,8 +50,3 @@ export function directOrProxyConnection(
   // .env Foundry agent (if configured), which would turn a standard-mode page into an agent session.
   return { proxyUrl: proxyWsUrl({ model: model ?? DEFAULT_MODEL }), ...rest };
 }
-
-/** True when the page runs against the proxy (no `VITE_FOUNDRY_API_KEY`) */
-export function isProxyMode(): boolean {
-  return !(import.meta.env.VITE_FOUNDRY_API_KEY && import.meta.env.VITE_FOUNDRY_RESOURCE_NAME);
-}

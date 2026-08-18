@@ -341,6 +341,9 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
       speculativeTimerRef.current = null;
       if (gate.releaseSpeculative()) {
         sendGatedResponseCreateRef.current?.();
+      } else if (gate.isSpeculative) {
+        // The slot passed to another announced response — it needs its own watchdog
+        armSpeculativeReleaseRef.current?.();
       }
     }, SPECULATIVE_RESPONSE_TIMEOUT_MS);
   }, [clearSpeculativeTimer]);
@@ -454,19 +457,25 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
         clearTimeout(batch.lateCallTimer);
         batch.lateCallTimer = undefined;
       }
-      // This response has been answered: a call arriving afterwards (a very late control-channel
-      // event, or one abandoned by the timeout) must not resurrect a batch that waits for calls
-      // this one already accounted for — that would hold every later turn forever.
-      completedResponsesRef.current?.set(key, { outstandingToolCalls: 0, answered: true });
       // A stale executor must not evict the live session's batch stored under the same
       // (service-assigned, per-session) response id — delete only our own entry
       if (toolBatchesRef.current.get(key) === batch) {
         toolBatchesRef.current.delete(key);
       }
+      // A call arriving after this point must not resurrect a batch that waits for calls this one
+      // already accounted for (that would hold every later turn forever), but whether it may ask
+      // for an answer depends on whether *this* batch asked for one: `answered` records what
+      // actually happened, not merely that the batch finished.
+      const answerRequested =
+        (batch.sentOutput || batch.followUpOwed) && !(batch.followUpSuppressed && !batch.followUpOwed);
+      completedResponsesRef.current?.set(key, {
+        outstandingToolCalls: 0,
+        answered: answerRequested,
+      });
       if (batch.followUpSuppressed && !batch.followUpOwed) {
-        // This response was answered before the call arrived: its output is on the wire, and a
-        // second response.create would answer the same turn twice. A user turn handed to this
-        // batch (`followUpOwed`) still has to be answered, so it takes precedence.
+        // This response was already answered: the late call's output is on the wire, and a second
+        // response.create would answer the same turn twice. A user turn handed to this batch
+        // (`followUpOwed`) still has to be answered, so it takes precedence.
         log.debug(`Response ${key} was already answered — not asking again for a late tool call`);
         return;
       }
@@ -1443,6 +1452,13 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
               code: CLIENT_CONFIG_WARNING_CODE,
             });
           });
+          // A consumer may `disconnect()` from `onWarning`. Continuing would open a socket whose
+          // scope is already aborted — its close handler runs before `connect()` and the transport
+          // would be left open with nothing able to shut it down.
+          if (!connectionScope.isActive) {
+            log.debug('Connection ended while reporting configuration warnings');
+            return;
+          }
         }
         if (kind === 'webrtc') {
           validateTransport(resolvedConnection, currentSession);

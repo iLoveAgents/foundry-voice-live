@@ -21,6 +21,8 @@ interface VisemeData {
 
 export function VisemeExample(): JSX.Element {
   const [currentViseme, setCurrentViseme] = useState<number | null>(null);
+  /** Mirror of `currentViseme` for the animation loop (see the effect below) */
+  const currentVisemeRef = useRef<number | null>(null);
   const [visemeHistory, setVisemeHistory] = useState<
     Array<{ viseme: number; offset: number }>
   >([]);
@@ -101,7 +103,8 @@ export function VisemeExample(): JSX.Element {
           }
         }
 
-        if (activeViseme && activeViseme.viseme_id !== currentViseme) {
+        if (activeViseme && activeViseme.viseme_id !== currentVisemeRef.current) {
+          currentVisemeRef.current = activeViseme.viseme_id;
           setCurrentViseme(activeViseme.viseme_id);
         }
       }
@@ -116,7 +119,9 @@ export function VisemeExample(): JSX.Element {
         cancelAnimationFrame(animationFrameRef.current);
       }
     };
-  }, [getAudioPlaybackTime, currentViseme]);
+    // `currentViseme` is read through a ref on purpose: listing it here would cancel and restart
+    // the animation loop on every single viseme
+  }, [getAudioPlaybackTime]);
 
   const handleStart = async (): Promise<void> => {
     try {

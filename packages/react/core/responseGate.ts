@@ -132,6 +132,11 @@ export class ResponseGate {
     if (!this.speculative || this.state !== 'requested') return false;
     this.speculative = false;
     this.state = 'idle';
+    // A second turn was committed while this reservation was held (VAD fired again inside the
+    // window): that announcement is still outstanding, so the slot passes to it rather than
+    // being dropped — a phantom `automaticPending` would otherwise hold a later turn for the
+    // full watchdog interval.
+    if (this.takeDeferredAutomatic()) return false;
     if (this.queued) {
       this.queued = false;
       this.state = 'requested';

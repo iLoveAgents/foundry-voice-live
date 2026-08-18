@@ -72,3 +72,13 @@ describe("connectFailureCloseFrame", () => {
     }
   });
 });
+
+describe("close codes the proxy sends itself", () => {
+  it("forwards 1013 (try again later) unchanged — capacity is transient and worth retrying", () => {
+    // the SDK stops reconnecting on 1003/1008/1010, so a capacity rejection must not use those
+    expect(toClientCloseFrame(1013, "Server at capacity")).toEqual({
+      code: 1013,
+      reason: "Server at capacity",
+    });
+  });
+});

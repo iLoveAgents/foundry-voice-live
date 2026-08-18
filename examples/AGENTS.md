@@ -17,7 +17,7 @@ src/
   pages/            # Example implementations (one page per feature)
   components/       # Shared UI: SampleLayout, StatusBadge, Section, ControlGroup, ErrorPanel, AlertBox,
                     # ConfigPanel, TextInput ("type instead of talk"), TranscriptPanel
-  lib/              # connection.ts (directOrProxyConnection, proxyWsUrl, isProxyMode),
+  lib/              # connection.ts (directOrProxyConnection, proxyWsUrl), useEntraToken.ts,
                     # useTranscripts.ts (transcript accumulation), sessionState.ts (state labels)
   App.tsx           # Router
 ```

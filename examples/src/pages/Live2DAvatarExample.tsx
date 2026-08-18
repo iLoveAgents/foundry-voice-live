@@ -201,14 +201,16 @@ export function Live2DAvatarExample(): JSX.Element {
           antialias: true,
         });
 
-        // Append canvas to container element
-        containerRef.current!.appendChild(app.view as HTMLCanvasElement);
-
-        // Check if component unmounted during async operation
+        // Check for unmount BEFORE touching the DOM: under StrictMode the first init is aborted,
+        // and `app.destroy()` does not remove a view that was already appended — the container
+        // would keep a dead canvas for the lifetime of the page
         if (!mounted) {
           app.destroy();
           return;
         }
+
+        // Append canvas to container element
+        containerRef.current!.appendChild(app.view as HTMLCanvasElement);
 
         appRef.current = app;
 

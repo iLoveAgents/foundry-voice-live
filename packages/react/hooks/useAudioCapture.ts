@@ -128,6 +128,25 @@ export function useAudioCapture({
     onAudioData(output.buffer);
   }, [onAudioData]);
 
+  /** Undo a half-built capture graph (a failed attempt owns everything it created) */
+  const releasePartialCapture = useCallback((): void => {
+    sourceRef.current?.disconnect();
+    sourceRef.current = null;
+    if (audioWorkletNodeRef.current) {
+      audioWorkletNodeRef.current.disconnect();
+      audioWorkletNodeRef.current.port.onmessage = null;
+      audioWorkletNodeRef.current = null;
+    }
+    streamRef.current?.getTracks().forEach((track) => track.stop());
+    streamRef.current = null;
+    audioContextRef.current?.close().catch(() => undefined);
+    audioContextRef.current = null;
+    if (blobUrlRef.current) {
+      URL.revokeObjectURL(blobUrlRef.current);
+      blobUrlRef.current = null;
+    }
+  }, []);
+
   /**
    * Start capturing audio from the microphone
    */
@@ -205,12 +224,16 @@ export function useAudioCapture({
 
       setIsCapturing(true);
     } catch (err) {
+      // Release whatever this attempt managed to create. Leaving `streamRef` set would keep the
+      // microphone live *and* make every later startCapture() return early as "already
+      // capturing" — capture could never be retried.
+      releasePartialCapture();
       const errorMessage = err instanceof Error ? err.message : 'Failed to start audio capture';
       setError(errorMessage);
       console.error('Audio capture error:', err);
       throw err;
     }
-  }, [sampleRate, workletPath, audioConstraints, onAudioData, flushAudioBuffer]);
+  }, [sampleRate, workletPath, audioConstraints, onAudioData, flushAudioBuffer, releasePartialCapture]);
 
   /**
    * Start capturing, coalescing concurrent calls.

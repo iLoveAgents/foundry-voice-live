@@ -26,6 +26,28 @@ function emit(node: FakeAudioWorkletNode, samples: number, value = 1) {
 }
 
 describe('useAudioCapture', () => {
+  it('can be retried after a failure that happens once the microphone is already open', async () => {
+    const { result } = renderHook(() => useAudioCapture({ onAudioData: vi.fn() }));
+    // the worklet module fails to load (a CSP without blob:, a bad custom path) — after
+    // getUserMedia already handed us a live stream
+    FakeAudioContext.addModuleImpl = () => Promise.reject(new Error('blocked by CSP'));
+    await act(async () => {
+      await expect(result.current.startCapture()).rejects.toThrow(/blocked by CSP/);
+    });
+    expect(result.current.isCapturing).toBe(false);
+    expect(mic.track.stop).toHaveBeenCalled(); // the failed attempt released the microphone
+
+    // a retry must actually try again, not return early as "already capturing"
+    FakeAudioContext.addModuleImpl = null;
+    mic = makeFakeMicStream();
+    restore();
+    restore = installBrowserFakes({ getUserMedia: async () => mic.stream });
+    await act(async () => {
+      await result.current.startCapture();
+    });
+    expect(result.current.isCapturing).toBe(true);
+  });
+
   it('coalesces concurrent starts so a second stream cannot leak', async () => {
     const getUserMedia = vi.fn(async () => mic.stream);
     restore();

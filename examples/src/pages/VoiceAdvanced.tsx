@@ -1,6 +1,13 @@
 import { useRef, useEffect, useState } from 'react';
 import { useVoiceLive, sessionConfig } from '@iloveagents/foundry-voice-live-react';
-import { SampleLayout, StatusBadge, ControlGroup, ErrorPanel } from '../components';
+import {
+  SampleLayout,
+  StatusBadge,
+  ControlGroup,
+  ErrorPanel,
+  TranscriptPanel,
+  TextInput,
+} from '../components';
 import { sessionStateLabel } from '../lib/sessionState';
 import { useTranscripts } from '../lib/useTranscripts';
 import { directOrProxyConnection } from '../lib/connection';
@@ -20,6 +27,7 @@ export function VoiceAdvanced(): JSX.Element {
     audioStream,
     isMuted,
     toggleMute,
+    sendText,
   } = useVoiceLive({
     // Direct with the dev API key when configured, otherwise through the proxy (keyless)
     connection: directOrProxyConnection(),
@@ -95,23 +103,8 @@ export function VoiceAdvanced(): JSX.Element {
         )}
       </ControlGroup>
 
-      {transcripts.length > 0 && (
-        <div style={{ marginTop: '1rem', maxHeight: '300px', overflowY: 'auto' }}>
-          <h3>Transcript</h3>
-          {transcripts.map((entry, i) => (
-            <p
-              key={i}
-              style={{
-                color: entry.role === 'user' ? '#2196F3' : '#4CAF50',
-                opacity: entry.isFinal ? 1 : 0.6,
-                margin: '0.25rem 0',
-              }}
-            >
-              <strong>{entry.role === 'user' ? 'You' : 'Assistant'}:</strong> {entry.text}
-            </p>
-          ))}
-        </div>
-      )}
+      <TextInput onSend={sendText} disabled={!isConnected} />
+      <TranscriptPanel transcripts={transcripts} />
 
       <audio ref={audioRef} autoPlay hidden />
     </SampleLayout>

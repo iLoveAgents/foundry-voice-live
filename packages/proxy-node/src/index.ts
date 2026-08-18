@@ -134,7 +134,8 @@ const { app } = expressWs(express(), undefined, {
       }
       logger.warn(`[Security] Blocked WebSocket upgrade from origin: ${origin}`, {
         origin,
-        path: req.url,
+        // `req.url` carries ?token=/?api-key= — never log or export it raw
+        path: redactUrl(req.url ?? ""),
       });
       done(false, 403, "Origin not allowed");
     },
@@ -214,7 +215,24 @@ async function getEntraToken(): Promise<string> {
 if (process.env.TRUST_PROXY) {
   const raw = process.env.TRUST_PROXY.trim();
   const hops = Number(raw);
-  app.set("trust proxy", Number.isInteger(hops) && hops >= 0 ? hops : raw);
+  // Express compiles this setting immediately and throws on anything that is neither a hop count,
+  // a boolean, nor an IP/subnet list ("invalid IP address: true") — which would kill the process
+  // before it listens. Booleans are therefore converted, and the rest is left to Express.
+  if (Number.isInteger(hops) && hops >= 0) {
+    app.set("trust proxy", hops);
+  } else if (raw.toLowerCase() === "true" || raw.toLowerCase() === "false") {
+    app.set("trust proxy", raw.toLowerCase() === "true");
+  } else {
+    try {
+      app.set("trust proxy", raw);
+    } catch (err) {
+      console.warn(
+        `[Config] TRUST_PROXY="${raw}" is not a hop count, boolean or IP list — ignoring it ` +
+          `(${err instanceof Error ? err.message : String(err)})`
+      );
+      app.set("trust proxy", false);
+    }
+  }
 }
 
 app.use(helmet());
@@ -404,7 +422,9 @@ app.ws("/ws", async (ws, req) => {
     logger.warn("[Security] Max connections reached", {
       maxConnections: securityConfig.maxConnections,
     });
-    ws.close(1008, "Server at capacity");
+    // 1013 "Try Again Later", not 1008: the SDK treats 1008 as a rejection of the request itself
+    // and stops reconnecting, but capacity frees up — this is exactly a case worth retrying
+    ws.close(1013, "Server at capacity");
     return;
   }
 

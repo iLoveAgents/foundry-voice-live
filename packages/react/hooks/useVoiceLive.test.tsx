@@ -225,6 +225,27 @@ describe('useVoiceLive (websocket)', () => {
     hook.unmount();
   });
 
+  it('stops connecting when the consumer disconnects from onWarning', async () => {
+    const before = FakeWebSocket.instances.length;
+    const hook = renderHook(() =>
+      useVoiceLive({
+        ...baseConfig,
+        connection: { ...baseConfig.connection, model: 'gpt-realtime' },
+        session: { ...baseConfig.session, interimResponse: { type: 'llm_interim_response', triggers: ['latency'] } },
+        onWarning: () => hook.result.current.disconnect(),
+      })
+    );
+    await act(async () => {
+      await hook.result.current.connect();
+    });
+
+    // the warning fires before the transport is created: no socket may be opened afterwards,
+    // because its scope is already aborted and nothing would be able to close it
+    expect(FakeWebSocket.instances.length).toBe(before);
+    expect(hook.result.current.connectionState).toBe('disconnected');
+    hook.unmount();
+  });
+
   it('reports SDK-side config warnings through onWarning, tagged apart from service warnings', async () => {
     const onWarning = vi.fn();
     // a native audio model does not support interim responses — a compatibility warning
@@ -825,6 +846,62 @@ describe('useVoiceLive (websocket)', () => {
       await act(async () => {
         await vi.advanceTimersByTimeAsync(5000);
       });
+      expect(ws.sent.filter((e) => e.type === 'response.create')).toHaveLength(1);
+      hook.unmount();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('answers a late tool call when the abandoned batch never asked for a response', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      // the first call's executor returns void (no output for it), so the batch that times out
+      // sends nothing at all — the response was therefore never answered
+      const toolExecutor = vi.fn(async (name: string) => (name === 'b' ? { ok: true } : undefined));
+      const { hook, ws } = await connectAndOpen({ ...baseConfig, toolExecutor });
+      await deliver(ws, { type: 'session.created', session: {} });
+      await deliver(ws, { type: 'session.updated', session: {} });
+      await deliver(ws, { type: 'response.created', response: { id: 'resp-1' } });
+      await deliver(ws, {
+        type: 'response.done',
+        response: {
+          id: 'resp-1',
+          output: [
+            { type: 'function_call', call_id: 'call-a', name: 'a' },
+            { type: 'function_call', call_id: 'call-b', name: 'b' },
+          ],
+        },
+      });
+      await deliver(ws, {
+        type: 'response.function_call_arguments.done',
+        response_id: 'resp-1',
+        call_id: 'call-a',
+        name: 'a',
+        arguments: '{}',
+      });
+      // call-b is delayed past the watchdog: the batch completes having sent nothing
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(5000);
+      });
+      expect(ws.sent.filter((e) => e.type === 'response.create')).toHaveLength(0);
+
+      // ...and when call-b finally arrives, its output must still get an answer — otherwise the
+      // assistant stays silent for the rest of the turn
+      await deliver(ws, {
+        type: 'response.function_call_arguments.done',
+        response_id: 'resp-1',
+        call_id: 'call-b',
+        name: 'b',
+        arguments: '{}',
+      });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(5000);
+      });
+      const outputs = ws.sent.filter(
+        (e) => e.type === 'conversation.item.create' && e.item?.type === 'function_call_output'
+      );
+      expect(outputs).toHaveLength(1);
       expect(ws.sent.filter((e) => e.type === 'response.create')).toHaveLength(1);
       hook.unmount();
     } finally {
