@@ -66,7 +66,7 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "clean": "rm -rf dist",
-    "docker:build": "docker build -t foundry-voice-live-proxy .",
+    "docker:build": "docker build -f packages/proxy-node/Dockerfile -t foundry-voice-live-proxy ../..",
     "docker:run": "docker run -p 8080:8080 --env-file .env foundry-voice-live-proxy"
   },
   "engines": {

@@ -1442,6 +1442,15 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
 
         const { url, isAgentMode, modeLabel } = buildVoiceLiveUrl(resolvedConnection);
         isAgentModeRef.current = isAgentMode;
+        if (transportKindRef.current !== kind) {
+          // The consumer changed `connection.transport` and this attempt picks it up. The
+          // microphone belongs to the *connection* and survives reconnects, but each kind has its
+          // own capture (RTP track vs. PCM events) — carrying the old one over would leave it
+          // recording with nothing able to stop it, and the WebSocket capture would send
+          // input_audio_buffer.append over a WebRTC control channel that does not accept it.
+          if (transportKindRef.current === 'webrtc') stopRtcMic();
+          else stopWsMic();
+        }
         transportKindRef.current = kind;
 
         log.info(`${mode === 'reconnect' ? 'Reconnecting' : 'Connecting'} (${modeLabel}, ${kind}) → ${redactUrl(url)}`);
@@ -1531,7 +1540,7 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
         setConnectionState('error');
       }
     },
-    [log, safeCall, buildSession, createTransport, clearConnectTimer]
+    [log, safeCall, buildSession, createTransport, clearConnectTimer, stopRtcMic, stopWsMic]
   );
   openConnectionRef.current = openConnection;
 
@@ -1668,7 +1677,7 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
     connectionState,
     reconnectAttempt,
     sessionState,
-    transport,
+    transport: activeTransport,
     videoStream,
     audioStream,
     audioContext: graphRef.current?.context ?? null,
