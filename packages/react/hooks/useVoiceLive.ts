@@ -113,11 +113,25 @@ const RECONNECT_SETUP_FAILED_CLOSE_CODE = 4001;
 const CONNECT_TIMEOUT_CLOSE_CODE = 4002;
 
 /**
+ * How long to wait for a tool call that `response.done` declared but whose event has not arrived
+ * (WebRTC delivers them on a separate channel), before answering with what did arrive.
+ */
+const LATE_TOOL_CALL_TIMEOUT_MS = 5000;
+
+/**
  * How long a speculative response reservation (server VAD is about to create a response) may wait
  * for `response.created` before it is released, so a service that decides not to answer cannot
  * block later turns.
  */
 const SPECULATIVE_RESPONSE_TIMEOUT_MS = 5000;
+
+/**
+ * Whether a batch still owes `function_call_output`s: executors are running, or the response
+ * declared calls that have not arrived yet. A turn must not be answered while this is true.
+ */
+function batchOwesOutputs(batch: ToolBatch): boolean {
+  return batch.pending > 0 || batch.seenCalls < batch.expectedCalls;
+}
 
 /**
  * Automatic tool executors of one response. The follow-up `response.create` may only be sent
@@ -138,6 +152,11 @@ interface ToolBatch {
   followUpOwed: boolean;
   /** Tool calls seen for this response so far */
   seenCalls: number;
+  /**
+   * Guard for declared calls that never arrive: without it a dropped control-channel event would
+   * hold every later turn forever, which is worse than answering slightly early.
+   */
+  lateCallTimer?: ReturnType<typeof setTimeout>;
   /**
    * Tool calls the response actually contains, taken from `response.done`'s output list. Over
    * WebRTC the tool events can arrive *after* `response.done` and one at a time, so arrival order
@@ -291,6 +310,7 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
   /** Monotonic id for client events we need to correlate errors with */
   const clientEventSeqRef = useRef<number>(0);
   const endConnectionRef = useRef<(options: { resetMute: boolean }) => void>();
+  const finishToolBatchIfReadyRef = useRef<(key: string, batch: ToolBatch, session: LiveSession) => void>();
 
   /**
    * Handle audio data from microphone (WebSocket transport)
@@ -355,7 +375,11 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
     (key: string, batch: ToolBatch, session: LiveSession): void => {
       // Not finished until: every executor settled, the response is known to be complete, and
       // every tool call that response contains has actually arrived
-      if (batch.pending > 0 || !batch.responseDone || batch.seenCalls < batch.expectedCalls) return;
+      if (!batch.responseDone || batchOwesOutputs(batch)) return;
+      if (batch.lateCallTimer) {
+        clearTimeout(batch.lateCallTimer);
+        batch.lateCallTimer = undefined;
+      }
       // A stale executor must not evict the live session's batch stored under the same
       // (service-assigned, per-session) response id — delete only our own entry
       if (toolBatchesRef.current.get(key) === batch) {
@@ -370,6 +394,7 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
     },
     []
   );
+  finishToolBatchIfReadyRef.current = finishToolBatchIfReady;
 
   /**
    * Ask the model for a response. If a response is still in progress the request is deferred
@@ -393,10 +418,30 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
     [sendEvent]
   );
 
+  /**
+   * Stop waiting for declared tool calls that never arrive: finish the batch with what it has, so
+   * a dropped control-channel event cannot hold every later turn forever.
+   */
+  const armLateToolCallTimeout = useCallback(
+    (key: string, batch: ToolBatch, session: LiveSession): void => {
+      if (batch.lateCallTimer) clearTimeout(batch.lateCallTimer);
+      batch.lateCallTimer = setTimeout(() => {
+        batch.lateCallTimer = undefined;
+        if (toolBatchesRef.current.get(key) !== batch) return;
+        log.warn(
+          `Tool call(s) declared by response ${key} never arrived — answering with ${batch.seenCalls}/${batch.expectedCalls}`
+        );
+        batch.expectedCalls = batch.seenCalls;
+        finishToolBatchIfReadyRef.current?.(key, batch, session);
+      }, LATE_TOOL_CALL_TIMEOUT_MS);
+    },
+    [log]
+  );
+
   /** The tool batch of this session that still owes a follow-up, if any */
   const pendingToolBatch = useCallback((): ToolBatch | null => {
     for (const batch of toolBatchesRef.current.values()) {
-      if (batch.pending > 0 || batch.seenCalls < batch.expectedCalls) return batch;
+      if (batchOwesOutputs(batch)) return batch;
     }
     return null;
   }, []);
@@ -801,16 +846,32 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
             (item) => (item as { type?: string }).type === 'function_call'
           ).length;
           (completedResponsesRef.current as BoundedMap<string, number>).set(doneKey, toolCallCount);
-          const doneBatch = toolBatchesRef.current.get(doneKey);
+          let doneBatch = toolBatchesRef.current.get(doneKey);
+          if (!doneBatch && toolCallCount > 0 && doneSession) {
+            // The response declares tool calls whose events have not arrived yet (WebRTC delivers
+            // them on the other channel). Reserve the batch now, so turns submitted meanwhile are
+            // held instead of being answered without the outputs.
+            doneBatch = {
+              pending: 0,
+              sentOutput: false,
+              responseDone: true,
+              followUpOwed: false,
+              seenCalls: 0,
+              expectedCalls: toolCallCount,
+            };
+            toolBatchesRef.current.set(doneKey, doneBatch);
+          }
           if (doneBatch && doneSession) {
             doneBatch.responseDone = true;
             doneBatch.expectedCalls = Math.max(doneBatch.expectedCalls, toolCallCount);
-            if (doneBatch.pending > 0) {
-              // Tool executors are still running: a queued user turn must NOT be sent now — the
-              // service would answer before the required function_call_output exists. Hand it to
-              // the batch, whose single follow-up answers the tool result and that turn together.
+            if (batchOwesOutputs(doneBatch)) {
+              // A queued user turn must NOT be sent now — the service would answer before the
+              // required function_call_output exists. Hand it to the batch, whose single follow-up
+              // answers the tool result and that turn together.
               doneBatch.followUpOwed =
                 (responseGateRef.current as ResponseGate).consumeQueuedRequest() || doneBatch.followUpOwed;
+              // ...but never wait forever for a call that may never arrive
+              armLateToolCallTimeout(doneKey, doneBatch, doneSession);
             }
             finishToolBatchIfReady(doneKey, doneBatch, doneSession);
           }
@@ -1046,6 +1107,9 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
     }
     currentResponseIdRef.current = null;
     (responseGateRef.current as ResponseGate).reset();
+    for (const batch of toolBatchesRef.current.values()) {
+      if (batch.lateCallTimer) clearTimeout(batch.lateCallTimer);
+    }
     toolBatchesRef.current.clear();
     completedResponsesRef.current?.clear();
     assistantTranscriptRef.current = '';

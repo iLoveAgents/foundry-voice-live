@@ -731,4 +731,89 @@ describe('useVoiceLive (websocket)', () => {
     expect(ws.sent.filter((e) => e.type === 'response.create')).toHaveLength(1);
     hook.unmount();
   });
+
+  it('holds a turn submitted from response.done when it declared an unarrived tool call', async () => {
+    let settle: (v: object) => void = () => undefined;
+    const toolExecutor = vi.fn(
+      () =>
+        new Promise<object>((r) => {
+          settle = r;
+        })
+    );
+    let api: ReturnType<typeof useVoiceLive> | null = null;
+    const hook = renderHook(() =>
+      useVoiceLive({
+        ...baseConfig,
+        toolExecutor,
+        // a consumer submitting a turn exactly when the response finishes
+        onEvent: (event) => {
+          if (event.type === 'response.done') api?.sendText('meanwhile');
+        },
+      })
+    );
+    api = hook.result.current;
+    await act(async () => {
+      await hook.result.current.connect();
+    });
+    const ws = FakeWebSocket.instances.at(-1)!;
+    await act(async () => {
+      ws.open();
+      ws.receive({ type: 'session.created', session: {} });
+      ws.receive({ type: 'session.updated', session: {} });
+      ws.receive({ type: 'response.created', response: { id: 'resp-1' } });
+    });
+    // WebRTC ordering: response.done first, declaring a tool call whose event has not arrived
+    await act(async () => {
+      ws.receive({
+        type: 'response.done',
+        response: { id: 'resp-1', output: [{ type: 'function_call', call_id: 'call-a', name: 'a' }] },
+      });
+    });
+    // the turn must be held: no function_call_output exists yet
+    expect(ws.sent.filter((e) => e.type === 'response.create')).toHaveLength(0);
+
+    await act(async () => {
+      ws.receive({
+        type: 'response.function_call_arguments.done',
+        response_id: 'resp-1',
+        call_id: 'call-a',
+        name: 'a',
+        arguments: '{}',
+      });
+    });
+    await act(async () => {
+      settle({ ok: true });
+    });
+    const items = ws.sent.filter((e) => e.type === 'conversation.item.create');
+    expect(items.map((e) => e.item.type)).toEqual(['message', 'function_call_output']);
+    expect(ws.sent.filter((e) => e.type === 'response.create')).toHaveLength(1);
+    hook.unmount();
+  });
+
+  it('gives up on a declared tool call that never arrives instead of blocking every turn', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const { hook, ws } = await connectAndOpen({ ...baseConfig, toolExecutor: vi.fn() });
+      await deliver(ws, { type: 'session.created', session: {} });
+      await deliver(ws, { type: 'session.updated', session: {} });
+      await deliver(ws, { type: 'response.created', response: { id: 'resp-1' } });
+      await deliver(ws, {
+        type: 'response.done',
+        response: { id: 'resp-1', output: [{ type: 'function_call', call_id: 'lost', name: 'a' }] },
+      });
+      await act(async () => {
+        hook.result.current.sendText('held behind a call that never arrives');
+      });
+      expect(ws.sent.filter((e) => e.type === 'response.create')).toHaveLength(0);
+
+      // the control-channel event is never delivered — the batch must not hold turns forever
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(5000);
+      });
+      expect(ws.sent.filter((e) => e.type === 'response.create')).toHaveLength(1);
+      hook.unmount();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });

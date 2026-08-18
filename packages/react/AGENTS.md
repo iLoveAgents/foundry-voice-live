@@ -99,8 +99,13 @@ Tests: `core/*.test.ts` (transports, audio, avatar, mic, reconnect), `hooks/useV
   whether the session survived, and stop applying the event when it returns false.
 - **Event order is not guaranteed across WebRTC channels**: lifecycle events arrive on the data
   channel while function-call events arrive on the control WebSocket, so `response.done` can
-  precede a tool call of that response. Completed response ids are remembered
-  (`completedResponsesRef`) so a batch created afterwards knows it is already complete.
+  precede the tool calls of that response — several of them, one at a time. Arrival order therefore
+  cannot tell you whether more are coming; `response.done`'s own `output` list can, so it
+  **reserves a batch** for the calls it declares (and the count is remembered in
+  `completedResponsesRef` for services that omit the list). `batchOwesOutputs()` is the single
+  definition of "still owes outputs", used by the finish check *and* by `pendingToolBatch()`.
+  A declared call that never arrives is abandoned after `LATE_TOOL_CALL_TIMEOUT_MS`: holding every
+  later turn forever is the worse failure.
 - **Automatic tool results are batched per response** (`toolBatchesRef`, keyed by `response_id`
   and scoped to the session record): outputs are sent with `triggerResponse: false`; the single
   `response.create` waits for **both** `response.done` *and* the last executor, and goes through
