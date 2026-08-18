@@ -26,7 +26,7 @@ Targets Voice Live API **`2026-07-15` (GA)**. This release contains breaking cha
 - **`ResponseGate` (`core/responseGate.ts`)** — an explicit `idle → requested → active` state machine for `response.create`, replacing three cooperating booleans. The service rejects overlapping responses and `response.created` alone cannot tell you a request is already in flight.
 - **Core layer** (`core/`, exported as advanced building blocks): `WebSocketTransport`, `WebRtcTransport` (one `VoiceLiveTransport` interface: SDP negotiation, timeout, readiness gating, duplicate-event filter), `OutputAudioGraph` + `PcmPlayer`, `AvatarConnection`, `WebRtcMicrophone`, reconnect policy helpers, `parseServerEvent`. No React dependency; the hook is now a binding of React state + protocol semantics over these classes (~950 lines instead of ~1350) with the same public API.
 - **Protocol contract test** against Microsoft's official `@azure/ai-voicelive` SDK (dev dependency): wire format and event names are verified on every test run.
-- Tests: hook (websocket, webrtc, reconnect), core classes, `useAudioCapture`, `VoiceLiveAvatar` — 354 tests with fake browser APIs, plus a model-based fuzz test for the response gate.
+- Tests: hook (websocket, webrtc, reconnect), core classes, `useAudioCapture`, `VoiceLiveAvatar` — 356 tests with fake browser APIs, plus a model-based fuzz test for the response gate.
 
 #### Changed
 - Default API version is now **`2026-07-15`** for all direct connections (was `2025-10-01` / `2026-01-01-preview`). Pin via `connection.apiVersion` if needed.

@@ -27,7 +27,7 @@ export type ResponseGateState = 'idle' | 'requested' | 'active';
  * announcement is forgotten, and a queued turn may overlap that response — the service rejects
  * that with an `error`, which the gate recovers from.
  */
-const MAX_DEFERRED_AUTOMATIC = 8;
+export const MAX_DEFERRED_AUTOMATIC = 8;
 
 export class ResponseGate {
   private state: ResponseGateState = 'idle';
@@ -45,9 +45,10 @@ export class ResponseGate {
    * gate frees up, so they are counted and applied one after another — otherwise a queued turn
    * would be sent straight into the window where the service is starting one of them.
    *
-   * Counted rather than flagged because a user can commit several turns during one response, and
-   * bounded because every unclaimed reservation costs one watchdog interval to release: a burst
-   * of VAD false positives must not defer the conversation indefinitely.
+   * Counted rather than flagged because a user can commit several turns during one response. The
+   * bound (`MAX_DEFERRED_AUTOMATIC`) exists only so a pathological stream of commits cannot grow
+   * the counter without limit — the watchdog discards the whole set at once, so holding several
+   * costs no more time than holding one.
    */
   private automaticPending = 0;
 

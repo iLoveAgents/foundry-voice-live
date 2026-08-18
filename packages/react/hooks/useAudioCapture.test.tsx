@@ -35,6 +35,13 @@ describe('useAudioCapture', () => {
         failA = reject;
       });
     const attemptA = result.current.startCapture().catch(() => undefined);
+    // let A get past getUserMedia and into the module load, otherwise it returns at the
+    // superseded check and never reaches the failure path this test is about
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
 
     // ...the consumer restarts (disconnect → reconnect), and attempt B succeeds
     act(() => {

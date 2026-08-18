@@ -13,7 +13,7 @@
  * shape nobody wrote a test for.
  */
 import { describe, it, expect } from 'vitest';
-import { ResponseGate } from './responseGate';
+import { MAX_DEFERRED_AUTOMATIC, ResponseGate } from './responseGate';
 
 /** Deterministic PRNG so a failure is reproducible from its seed */
 function mulberry32(seed: number): () => number {
@@ -69,7 +69,7 @@ describe('ResponseGate (fuzz)', () => {
           // about to start a response of its own — whether or not one is running right now
           // The gate remembers up to MAX_DEFERRED_AUTOMATIC announcements; beyond that it
           // deliberately forgets, which the model must not exercise as if it were a defect
-          if (announcedCount < 8) {
+          if (announcedCount < MAX_DEFERRED_AUTOMATIC) {
             announcedCount += 1;
             gate.reserveAutomatic();
           }
@@ -111,9 +111,11 @@ describe('ResponseGate (fuzz)', () => {
           }
         } else if (roll < 0.9) {
           // The speculative watchdog fires after the service dropped the announced response
-          // The watchdog only fires because the service dropped what it announced; the gate
-          // treats everything announced behind that as stale too, so the model abandons all of it
-          if (announcedCount > 0 && !running) {
+          // The watchdog only fires while a reservation is actually held, and the gate then treats
+          // everything announced behind it as stale too — so the model abandons all of it. Without
+          // the `isSpeculative` guard the model would forget announcements the gate still holds,
+          // and the overlap assertion below would become trivially satisfiable.
+          if (announcedCount > 0 && !running && gate.isSpeculative) {
             announcedCount = 0;
             if (gate.releaseSpeculative()) send();
           }
@@ -139,9 +141,15 @@ describe('ResponseGate (fuzz)', () => {
           if (gate.onResponseDone()) send();
           continue;
         }
-        if (announcedCount > 0 || gate.isSpeculative) {
+        if (gate.isSpeculative) {
           announcedCount = 0;
           if (gate.releaseSpeculative()) send();
+          continue;
+        }
+        if (announcedCount > 0) {
+          // Announcements the gate is holding but has not claimed yet: the service abandoning them
+          // is invisible to the gate, so only the model forgets them
+          announcedCount = 0;
           continue;
         }
         break;
