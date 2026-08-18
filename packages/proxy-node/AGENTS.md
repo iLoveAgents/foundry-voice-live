@@ -43,14 +43,28 @@ docker-compose.yml
   only injects `getEntraToken` and adds logging/telemetry.
 - `buildAzureUrl(query, cfg, { getEntraToken })` is async — resolves auth in this order:
   browser `?token=` > `FOUNDRY_API_KEY` (standard mode only) > `DefaultAzureCredential` (both modes)
-- Token from URL `?token=` is moved to `Authorization: Bearer` header (browser WebSocket limitation);
-  tokens never appear in the upstream URL, and `redactUrl()` masks `token`/`api-key`/`Authorization` in logs
+- **Credentials travel as headers, never in the upstream URL**: `?token=` becomes
+  `Authorization: Bearer`, `FOUNDRY_API_KEY` becomes the `api-key` header. A URL is exported by
+  dependency tracing (Application Insights records the full URL of every outbound request), a
+  header is not. `redactUrl()` masks `token`/`api-key`/`Authorization` wherever a URL *is* logged —
+  it decodes parameter names first, because the server reads `?to%6Ben=` as `token` too. Any new
+  logging site that touches `req.url` must go through it.
 - Transport: `?transport=webrtc` → upstream `/voice-live/realtime/calls` (WebRTC control channel,
   default api-version `2026-01-01-preview`); default → `/voice-live/realtime` (`2026-07-15`).
   The relay is identical for both — `rtc.call.*` are plain JSON text frames.
 - API version precedence: `?apiVersion=` > `API_VERSION` env > built-in default per transport
-- Origin is validated in the `/ws` handler as well as in CORS: with `express-ws` the upgrade
-  completes before middleware runs, so a CORS rejection cannot prevent the connection
+- Origin is checked in three places, on purpose: `verifyClient` (rejects the *handshake* with HTTP
+  `403`, the only way the browser gets an unambiguous failure), the CORS middleware, and the `/ws`
+  handler as defence in depth. With `express-ws` the upgrade completes before middleware runs, so a
+  CORS rejection alone reaches the client as a close without a status code
+- **Close with a code that says what the client should do**: `1008` only for a request that would
+  be rejected identically on retry (the SDK stops reconnecting on it), `1011` for proxy/upstream
+  failures, `1013` for capacity. Never close bare — `1005` is indistinguishable from a network drop
+- Numeric limits come from `readPositiveInt()`: `parseInt("unlimited")` is `NaN`, and `NaN` removes
+  a limit instead of enforcing it (`active >= NaN` is false; `ws` reads `maxPayload: NaN` as
+  unlimited). `TRUST_PROXY` is parsed defensively too — Express compiles it eagerly and throws
+- The Docker image builds from the **repository root** (it installs with the workspace lockfile):
+  `docker build -f packages/proxy-node/Dockerfile .`; `docker-compose.yml` sets that context
 - Only `ProxyRequestError`s (bad client parameters) are echoed to the browser; every other failure
   is reported as a generic message and logged server-side
 - Foundry Agents params forwarded upstream: `agent-name`, `agent-project-name`, `conversation-id`,

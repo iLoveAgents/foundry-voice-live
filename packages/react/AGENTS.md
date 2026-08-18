@@ -29,6 +29,7 @@ just watch-react      # Watch mode
 core/           # Framework-agnostic (no React import):
   lifecycle.ts  #   Scope: the ONE staleness/teardown primitive (connection + session lifetimes)
   responseGate.ts#  ResponseGate: response.create serialization state machine
+                 #  (+ responseGate.fuzz.test.ts: model-based test of the overlap/stuck invariants)
   transports/   #   types.ts (VoiceLiveTransport interface), websocketTransport.ts, webrtcTransport.ts
   audioOutput.ts#   OutputAudioGraph (context/gain/analyser) + PcmPlayer (AudioWorklet playback)
   playbackWorklet.ts, avatarConnection.ts, microphone.ts (WebRtcMicrophone), reconnect.ts, serverEvents.ts
@@ -93,7 +94,12 @@ Tests: `core/*.test.ts` (transports, audio, avatar, mic, reconnect), `hooks/useV
   `requestResponse({ event, dropIfBusy: true })`) and consumers (`createResponse()`).
   The gate also reserves the slot when server VAD is about to create a response (speculative,
   self-healing after `SPECULATIVE_RESPONSE_TIMEOUT_MS`) and correlates `error` events by
-  `event_id` so an unrelated failure does not release it.
+  `event_id` so an unrelated failure does not release it. Announcements that arrive while the gate
+  is busy are **counted** (bounded by `MAX_DEFERRED_AUTOMATIC`) and taken by *every* path that
+  frees the gate — `response.done`, a rejection, a request that never reached the service, and the
+  watchdog. Missing one of those paths is how a queued turn ends up overlapping the service's own
+  response; that class of bug is guarded by `core/responseGate.fuzz.test.ts`, so **when you change
+  the gate, run it and check it still kills a mutation of your change**.
   `sendGatedResponseCreate()` is the **only** place a `response.create` reaches the wire (user
   turns, greeting, tool follow-ups and queued flushes all route through it), which is what keeps
   the gate un-bypassable and every request correlatable. The public `sendEvent()` routes a raw
@@ -136,9 +142,18 @@ Tests: `core/*.test.ts` (transports, audio, avatar, mic, reconnect), `hooks/useV
   both `connect()` and the reconnect policy. Close codes: `4001` reconnect setup, `4002` connect
   timeout, `4008` negotiation timeout, `4009` SDP answer, `4010` `rtc.call.error`, `4011` peer
   connection `failed`, `4012` control-channel setup. All are exported. (`'disconnected'` is *not* terminal — it can recover.)
+  In `WebRtcTransport` they all go through `failTerminally()`, which re-checks the generation after
+  `onError`: a consumer may close (or reconnect) the transport from that handler, and continuing
+  would fire `onClose` after `close()` promised no further callbacks.
+- **Consumer code can end the connection from any callback.** After calling into a consumer inside
+  an async setup path, re-check the scope (`connectionScope.isActive`) before continuing — e.g.
+  `onWarning` fires before the transport exists, and `disconnect()` there must not leave a socket
+  nobody can close.
 - **Consumer callbacks go through `safeCall`**: a throwing `onEvent`/`onTranscript`/`onReconnecting`
   must never abort our own handling or strand the state machine.
-- `validateConfig()` returns warnings (never throws); the hook logs them before connecting.
+- `validateConfig()` returns warnings (never throws); the hook logs them **and** reports them to
+  `onWarning` with `code: CLIENT_CONFIG_WARNING_CODE`, which is how a consumer tells an SDK-side
+  compatibility warning from the service's own `warning` events.
 - Logging goes through `createLogger(logLevel)`; default `'warn'` — never `console.log` directly.
 - `sessionConfig()` builder output works in both standard and agent modes.
 
@@ -157,7 +172,9 @@ Tests: `core/*.test.ts` (transports, audio, avatar, mic, reconnect), `hooks/useV
 1. Add types in `types/` (config in `voiceLive.ts`, wire events in `events.ts`)
 2. Implement in `core/` (transport/media), `hooks/`, `components/`, or `utils/` (keep protocol shaping in pure utils)
 3. Export from `index.ts`
-4. Add tests — and extend `protocolContract.test.ts` when touching wire format or event names
+4. Add tests — extend `protocolContract.test.ts` when touching wire format or event names, and
+   `core/responseGate.fuzz.test.ts` when changing how responses are serialized (it drives random
+   legal event sequences against a model of the service; a change it cannot fail is untested)
 5. Update README (+ CHANGELOG)
 
 ## Example
