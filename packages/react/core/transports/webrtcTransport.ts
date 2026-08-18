@@ -304,8 +304,10 @@ export class WebRtcTransport implements VoiceLiveTransport {
       this.options.log?.debug(`Duplicate event ignored: ${event.type}`);
       return;
     }
-    this.handleNegotiationEvent(event);
+    // Report first, act second: `rtc.call.error` tears the session down, and a consumer that only
+    // sees events through `onEvent` would never learn why if the teardown ran first
     this.callbacks.onEvent(event);
+    this.handleNegotiationEvent(event);
   }
 
   private handleNegotiationEvent(event: VoiceLiveServerEvent): void {

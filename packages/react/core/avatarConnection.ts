@@ -90,16 +90,23 @@ export class AvatarConnection {
     pc.addTransceiver('video', { direction: 'recvonly' });
     pc.addTransceiver('audio', { direction: 'recvonly' });
 
-    const offer = await pc.createOffer();
-    await pc.setLocalDescription(offer);
-    const gathered = await waitForIceGatheringComplete(
-      pc,
-      this.options.iceGatheringTimeoutMs ?? DEFAULT_AVATAR_ICE_GATHERING_TIMEOUT_MS
-    );
-    log?.debug(gathered ? 'Avatar ICE gathering complete' : 'Avatar ICE gathering timed out — sending offer anyway');
+    try {
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+      const gathered = await waitForIceGatheringComplete(
+        pc,
+        this.options.iceGatheringTimeoutMs ?? DEFAULT_AVATAR_ICE_GATHERING_TIMEOUT_MS
+      );
+      log?.debug(gathered ? 'Avatar ICE gathering complete' : 'Avatar ICE gathering timed out — sending offer anyway');
 
-    const localDescription = pc.localDescription ?? offer;
-    return encodeAvatarSdp(localDescription);
+      const localDescription = pc.localDescription ?? offer;
+      return encodeAvatarSdp(localDescription);
+    } catch (err) {
+      // The caller only learns about the failure, so it cannot clean up a connection it never
+      // received — a failed setup would otherwise stay alive until the session is disconnected
+      this.close();
+      throw err;
+    }
   }
 
   /** Apply the server SDP from `session.avatar.connecting` */

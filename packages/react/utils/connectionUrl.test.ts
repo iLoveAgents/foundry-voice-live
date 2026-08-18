@@ -137,6 +137,21 @@ describe('buildVoiceLiveUrl — proxy mode', () => {
     expect(buildVoiceLiveUrl({ proxyUrl: 'ws://x/ws?model=gpt-realtime' }).url).toBe('ws://x/ws?model=gpt-realtime');
   });
 
+  it('puts a per-user token on the proxy URL and replaces a stale one', () => {
+    // documented pattern: proxyUrl + getToken (the hook resolves it into connection.token)
+    expect(buildVoiceLiveUrl({ proxyUrl: 'ws://x/ws?model=gpt-realtime', token: 'tok-1' }).url).toBe(
+      'ws://x/ws?model=gpt-realtime&token=tok-1'
+    );
+    // a refreshed token must win over whatever the caller's URL carries
+    expect(buildVoiceLiveUrl({ proxyUrl: 'ws://x/ws?token=expired', token: 'tok-2' }).url).toBe(
+      'ws://x/ws?token=tok-2'
+    );
+    // ...and without a token the URL is untouched (the proxy uses its own identity)
+    expect(buildVoiceLiveUrl({ proxyUrl: 'ws://x/ws?token=given-by-the-app' }).url).toBe(
+      'ws://x/ws?token=given-by-the-app'
+    );
+  });
+
   it('supports relative proxy URLs and origin-only URLs', () => {
     expect(buildVoiceLiveUrl({ proxyUrl: '/voice-live?model=gpt-realtime', transport: 'webrtc' }).url).toBe(
       '/voice-live?model=gpt-realtime&transport=webrtc'

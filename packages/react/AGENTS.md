@@ -69,8 +69,10 @@ Tests: `core/*.test.ts` (transports, audio, avatar, mic, reconnect), `hooks/useV
   (`DEFAULT_WEBRTC_API_VERSION`); `isReady` waits for the data channel to open (some events arrive on both
   channels and are de-duplicated by `event_id`); the greeting is sent once `isReady`. Mic constraints for both
   transports come from `buildMicConstraints()` in `utils/audioHelpers.ts`.
-- **Auth**: direct connections use the documented query params (`api-key`, or `Authorization=Bearer <token>`);
-  proxy URLs are passed through untouched (`?token=` is lifted into a header by the proxy).
+- **Auth**: direct connections use the documented query params (`api-key`, or
+  `Authorization=Bearer <token>`); for proxy URLs the resolved token is written as `?token=`
+  (replacing a stale one) and the proxy lifts it into an `Authorization` header. `connection.token`
+  is resolved per attempt from `getToken`, so this must happen on every (re)connect.
 - **Wire format** lives in `utils/sessionBuilder.ts` (`convertToSessionUpdate`) and `utils/greeting.ts`;
   event names/shapes in `types/events.ts`. `utils/protocolContract.test.ts` verifies both against Microsoft's
   `@azure/ai-voicelive` (devDependency only; it declares `engines: node >=22`, hence Node 22 for dev/CI).

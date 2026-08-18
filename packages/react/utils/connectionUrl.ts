@@ -92,6 +92,12 @@ export function buildVoiceLiveUrl(connection: VoiceLiveConnectionConfig): Resolv
     // Explicit connection settings win over params already present in the proxy URL.
     // The proxy honours ?transport= and ?apiVersion= for both transports.
     const overrides: Record<string, string> = {};
+    // Per-user auth through a proxy travels as `?token=`. `getToken` refreshes it on every
+    // (re)connect, so it must replace whatever the caller's URL carries — otherwise the proxy
+    // silently falls back to its own identity, or keeps using an expired token.
+    if (connection.token) {
+      overrides.token = connection.token;
+    }
     if (transport === 'webrtc') {
       overrides.transport = 'webrtc';
     } else if (parsed.searchParams.get('transport') === 'webrtc') {

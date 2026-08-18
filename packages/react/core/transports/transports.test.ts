@@ -177,6 +177,9 @@ describe('WebRtcTransport', () => {
   it('treats rtc.call.error as terminal: reports it, tears down and closes so the caller can retry', async () => {
     const { t, ws, pc, cb } = await openNegotiated();
     ws.receive({ type: 'rtc.call.error', event_id: 'err', error: { code: 'session_error', message: 'bad sdp' } });
+    // the consumer must still receive the event itself (with operation/rtc_call_id/details),
+    // which means dispatching it before the teardown that follows
+    expect(cb.onEvent).toHaveBeenCalledWith(expect.objectContaining({ type: 'rtc.call.error' }));
     expect(cb.onError).toHaveBeenCalledWith(expect.stringMatching(/session_error: bad sdp/), expect.anything());
     expect(pc.closed).toBe(true);
     // The service rejected the call: leaving the transport 'open' would block both reconnect

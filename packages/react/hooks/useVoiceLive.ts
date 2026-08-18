@@ -482,10 +482,18 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
       const gate = responseGateRef.current as ResponseGate;
       // A response is owed by a tool batch that has not put all its outputs on the wire yet.
       // Answering now would make the model reply to a conversation with an unanswered tool call,
-      // so the turn is handed to that batch — its single follow-up covers both.
-      const batch = !options.event && pendingToolBatch();
+      // so the turn is handed to that batch — its single follow-up covers both, carrying a custom
+      // payload if one was given.
+      const batch = pendingToolBatch();
       if (batch) {
+        if (options.dropIfBusy) {
+          log.debug('Tool outputs still pending — dropping the proactive request');
+          return;
+        }
         batch.followUpOwed = true;
+        if (options.event && !queuedResponseEventRef.current) {
+          queuedResponseEventRef.current = options.event;
+        }
         log.debug('Tool outputs still pending — the follow-up will answer this turn too');
         return;
       }
@@ -1058,6 +1066,8 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
       stopAudioPlayback,
       connectAvatar,
       announceReady,
+      armLateToolCallTimeout,
+      clearSpeculativeTimer,
     ]
   );
   handleServerEventRef.current = handleServerEvent;

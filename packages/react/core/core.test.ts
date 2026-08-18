@@ -237,6 +237,24 @@ describe('WebRtcMicrophone', () => {
   });
 });
 
+describe('AvatarConnection failures', () => {
+  it('closes the peer connection when the offer cannot be created', async () => {
+    const avatar = new AvatarConnection({ onVideoStream: vi.fn(), onAudioStream: vi.fn(), onError: vi.fn() });
+    const original = FakePeerConnection.prototype.createOffer;
+    FakePeerConnection.prototype.createOffer = (): never => {
+      throw new Error('createOffer failed');
+    };
+    try {
+      await expect(avatar.createOffer([{ urls: 'turn:relay.example' }])).rejects.toThrow('createOffer failed');
+      // the caller never receives a handle for a failed setup, so it cannot clean up
+      expect(FakePeerConnection.instances.at(-1)!.closed).toBe(true);
+      expect(avatar.peerConnection).toBeNull();
+    } finally {
+      FakePeerConnection.prototype.createOffer = original;
+    }
+  });
+});
+
 describe('WebRtcMicrophone (stop during a pending start)', () => {
   it('coalesces concurrent start() calls into one acquisition', async () => {
     const first = makeFakeMicStream();

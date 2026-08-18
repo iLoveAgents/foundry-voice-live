@@ -953,4 +953,46 @@ describe('useVoiceLive (websocket)', () => {
     expect(after[1].event_id).toMatch(/^evt_\d+$/);
     hook.unmount();
   });
+
+  it('defers a custom response.create behind pending tool outputs, keeping its payload', async () => {
+    let settle: (v: object) => void = () => undefined;
+    const toolExecutor = vi.fn(
+      () =>
+        new Promise<object>((r) => {
+          settle = r;
+        })
+    );
+    const { hook, ws } = await connectAndOpen({ ...baseConfig, toolExecutor });
+    await deliver(ws, { type: 'session.created', session: {} });
+    await deliver(ws, { type: 'session.updated', session: {} });
+    await deliver(ws, { type: 'response.created', response: { id: 'resp-1' } });
+    await deliver(ws, {
+      type: 'response.function_call_arguments.done',
+      response_id: 'resp-1',
+      call_id: 'call-a',
+      name: 'a',
+      arguments: '{}',
+    });
+    // the response finishes (gate idle) while the executor is still running
+    await deliver(ws, {
+      type: 'response.done',
+      response: { id: 'resp-1', output: [{ type: 'function_call', call_id: 'call-a', name: 'a' }] },
+    });
+    await act(async () => {
+      hook.result.current.sendEvent({
+        type: 'response.create',
+        response: { instructions: 'Answer in French' },
+      });
+    });
+    // the tool output is not on the wire yet — a custom request must wait too
+    expect(ws.sent.filter((e) => e.type === 'response.create')).toHaveLength(0);
+
+    await act(async () => {
+      settle({ ok: true });
+    });
+    const creates = ws.sent.filter((e) => e.type === 'response.create');
+    expect(creates).toHaveLength(1);
+    expect(creates[0].response?.instructions).toBe('Answer in French');
+    hook.unmount();
+  });
 });
