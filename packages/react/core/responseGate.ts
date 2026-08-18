@@ -18,6 +18,13 @@
  */
 export type ResponseGateState = 'idle' | 'requested' | 'active';
 
+/**
+ * Upper bound on automatic responses remembered while the gate is busy. Each one is released
+ * after at most one watchdog interval if it never arrives, so the bound caps how long a burst of
+ * server-VAD commits can defer a consumer turn.
+ */
+const MAX_DEFERRED_AUTOMATIC = 3;
+
 export class ResponseGate {
   private state: ResponseGateState = 'idle';
   private queued = false;
@@ -29,12 +36,16 @@ export class ResponseGate {
    */
   private speculative = false;
   /**
-   * The service announced an automatic response (server VAD committed a turn) while another one
-   * was still running. The reservation cannot be taken yet, so it is remembered and applied when
-   * the running response finishes — otherwise a queued turn would be sent straight into the
-   * window where the service is starting its own response, and the two would overlap.
+   * How many automatic responses the service announced (server VAD committed a turn) while
+   * another one was already running or requested. Each reservation can only be taken once the
+   * gate frees up, so they are counted and applied one after another — otherwise a queued turn
+   * would be sent straight into the window where the service is starting one of them.
+   *
+   * Counted rather than flagged because a user can commit several turns during one response, and
+   * bounded because every unclaimed reservation costs one watchdog interval to release: a burst
+   * of VAD false positives must not defer the conversation indefinitely.
    */
-  private automaticPending = false;
+  private automaticPending = 0;
 
   /** Current lifecycle state (for logging/tests) */
   get currentState(): ResponseGateState {
@@ -98,7 +109,7 @@ export class ResponseGate {
    */
   reserveAutomatic(): void {
     if (this.isBusy) {
-      this.automaticPending = true;
+      if (this.automaticPending < MAX_DEFERRED_AUTOMATIC) this.automaticPending += 1;
       return;
     }
     this.state = 'requested';
@@ -116,8 +127,8 @@ export class ResponseGate {
    * @returns true when the reservation was taken (the gate stays busy, speculatively)
    */
   private takeDeferredAutomatic(): boolean {
-    if (!this.automaticPending) return false;
-    this.automaticPending = false;
+    if (this.automaticPending === 0) return false;
+    this.automaticPending -= 1;
     this.state = 'requested';
     this.speculative = true;
     this.pendingEventId = null;
@@ -238,7 +249,7 @@ export class ResponseGate {
     this.state = 'idle';
     this.queued = false;
     this.speculative = false;
-    this.automaticPending = false;
+    this.automaticPending = 0;
     this.pendingEventId = null;
   }
 }

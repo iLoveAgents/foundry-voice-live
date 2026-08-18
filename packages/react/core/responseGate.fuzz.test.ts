@@ -36,18 +36,21 @@ describe('ResponseGate (fuzz)', () => {
       // running response, and a response the service announced it will start by itself.
       let ourRequestPending = false;
       let running = false;
-      let announced = false;
+      // How many automatic responses the service has announced and not yet started. The gate
+      // remembers at most one deferred announcement, so two is the interesting bound: modelling
+      // this as a boolean hides reservations that are dropped or duplicated.
+      let announcedCount = 0;
       let sentEventId: string | null = null;
       let eventSeq = 0;
 
       const send = (): void => {
         // The property under test. Sending while any of these holds is an overlapping
         // `response.create`, which the service rejects — the turn is then never answered.
-        expect({ seed, ourRequestPending, running, announced }).toEqual({
+        expect({ seed, ourRequestPending, running, announcedCount }).toEqual({
           seed,
           ourRequestPending: false,
           running: false,
-          announced: false,
+          announcedCount: 0,
         });
         const id = `evt_${++eventSeq}`;
         gate.trackRequest(id);
@@ -64,8 +67,12 @@ describe('ResponseGate (fuzz)', () => {
         } else if (roll < 0.32) {
           // `input_audio_buffer.speech_stopped`: server VAD committed a turn, so the service is
           // about to start a response of its own — whether or not one is running right now
-          announced = true;
-          gate.reserveAutomatic();
+          // The gate remembers up to MAX_DEFERRED_AUTOMATIC announcements; going beyond that
+          // models a state it deliberately does not represent (a VAD burst is bounded on purpose)
+          if (announcedCount < 3) {
+            announcedCount += 1;
+            gate.reserveAutomatic();
+          }
         } else if (roll < 0.45) {
           // `response.created` — for our request, or for the announced automatic response
           if (ourRequestPending) {
@@ -73,8 +80,8 @@ describe('ResponseGate (fuzz)', () => {
             running = true;
             sentEventId = null;
             gate.onResponseCreated();
-          } else if (announced && !running) {
-            announced = false;
+          } else if (announcedCount > 0 && !running) {
+            announcedCount -= 1;
             running = true;
             gate.onResponseCreated();
           }
@@ -104,8 +111,8 @@ describe('ResponseGate (fuzz)', () => {
           }
         } else if (roll < 0.9) {
           // The speculative watchdog fires after the service dropped the announced response
-          if (announced && !running) {
-            announced = false;
+          if (announcedCount > 0 && !running) {
+            announcedCount -= 1;
             if (gate.releaseSpeculative()) send();
           }
         } else {
@@ -119,7 +126,7 @@ describe('ResponseGate (fuzz)', () => {
 
       // Liveness: settle everything the service still owes us. The gate must then be idle —
       // one that stays busy would silently swallow every later turn of the session.
-      for (let drain = 0; drain < 6; drain++) {
+      for (let drain = 0; drain < 8; drain++) {
         if (ourRequestPending) {
           ourRequestPending = false;
           if (gate.onError(sentEventId)) send();
@@ -130,8 +137,8 @@ describe('ResponseGate (fuzz)', () => {
           if (gate.onResponseDone()) send();
           continue;
         }
-        if (announced || gate.isSpeculative) {
-          announced = false;
+        if (announcedCount > 0 || gate.isSpeculative) {
+          if (announcedCount > 0) announcedCount -= 1;
           if (gate.releaseSpeculative()) send();
           continue;
         }

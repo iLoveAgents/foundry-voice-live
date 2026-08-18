@@ -267,6 +267,25 @@ describe('ResponseGate', () => {
     expect(gate.request()).toBe(false);
   });
 
+  it('keeps every announced automatic response, not just the first', () => {
+    const gate = new ResponseGate();
+    gate.request();
+    gate.onResponseCreated(); // a response is running
+    gate.reserveAutomatic(); // the user commits a turn...
+    gate.reserveAutomatic(); // ...and another one, both announced during that response
+    expect(gate.request()).toBe(false); // a consumer turn queues behind them
+
+    gate.onResponseDone();
+    expect(gate.isSpeculative).toBe(true); // first announced response
+    gate.onResponseCreated();
+    expect(gate.onResponseDone()).toBe(false); // the second is still outstanding...
+    expect(gate.isSpeculative).toBe(true); // ...so the queued turn keeps waiting
+    expect(gate.hasQueuedRequest).toBe(true);
+
+    gate.onResponseCreated();
+    expect(gate.onResponseDone()).toBe(true); // now the queued turn goes out
+  });
+
   it('passes the reservation to a second announcement instead of dropping it', () => {
     const gate = new ResponseGate();
     gate.reserveAutomatic(); // first speech_stopped
