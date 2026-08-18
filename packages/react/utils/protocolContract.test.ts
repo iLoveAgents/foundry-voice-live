@@ -9,6 +9,10 @@
  *
  * The SDK's serializers live in an internal module (not part of its `exports` map),
  * so we load `dist/esm/models/models.js` directly.
+ *
+ * `@azure/ai-voicelive` declares `engines: { node: '>=22' }`, which is why the repo's dev
+ * environment and CI run Node 22 (root `package.json` engines). The published packages are
+ * unaffected — this dependency is dev-only.
  */
 
 import { describe, it, expect, beforeAll } from 'vitest';

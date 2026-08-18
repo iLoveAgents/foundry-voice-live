@@ -71,7 +71,8 @@ Tests: `core/*.test.ts` (transports, audio, avatar, mic, reconnect), `hooks/useV
   proxy URLs are passed through untouched (`?token=` is lifted into a header by the proxy).
 - **Wire format** lives in `utils/sessionBuilder.ts` (`convertToSessionUpdate`) and `utils/greeting.ts`;
   event names/shapes in `types/events.ts`. `utils/protocolContract.test.ts` verifies both against Microsoft's
-  `@azure/ai-voicelive` (devDependency only). Update the allow-list there when Microsoft's enums catch up.
+  `@azure/ai-voicelive` (devDependency only; it declares `engines: node >=22`, hence Node 22 for dev/CI).
+  Update the allow-list there when Microsoft's enums catch up.
 - `validateConfig()` returns warnings (never throws); the hook logs them before connecting.
 - Logging goes through `createLogger(logLevel)`; default `'warn'` — never `console.log` directly.
 - `sessionConfig()` builder output works in both standard and agent modes.
