@@ -111,6 +111,7 @@ export {
   compose,
   sessionConfig,
   SessionConfigBuilder,
+  type VoiceOptions,
 } from './utils/configHelpers';
 
 // ==================== Core building blocks (advanced) ====================
@@ -144,8 +145,9 @@ export {
   decodeAvatarSdp,
   DEFAULT_AVATAR_ICE_GATHERING_TIMEOUT_MS,
   type AvatarConnectionCallbacks,
+  type AvatarConnectionOptions,
 } from './core/avatarConnection';
-export { WebRtcMicrophone } from './core/microphone';
+export { WebRtcMicrophone, type WebRtcMicrophoneOptions } from './core/microphone';
 export {
   resolveReconnectOptions,
   computeBackoffDelay,
@@ -201,6 +203,35 @@ export type {
   RtcCallSdpCreatedEvent,
   RtcCallErrorEvent,
   RtcCallSdpCreateClientEvent,
+  // Remaining typed protocol events (union members) so consumers can name any event they handle
+  ServerEventBase,
+  ClientEventBase,
+  ResponseScopedEvent,
+  OtherServerEvent,
+  ContentPartType,
+  ConversationItemType,
+  SessionAvatarConnectingEvent,
+  InputAudioTranscriptionFailedEvent,
+  ResponseOutputItemAddedEvent,
+  ResponseOutputItemDoneEvent,
+  ResponseTextDoneEvent,
+  ResponseAudioDoneEvent,
+  ResponseAudioTranscriptDoneEvent,
+  ResponseFunctionCallArgumentsDeltaEvent,
+  SessionUpdateClientEvent,
+  SessionAvatarConnectClientEvent,
+  InputAudioBufferAppendClientEvent,
+  InputAudioBufferCommitClientEvent,
+  InputAudioBufferClearClientEvent,
+  InputTextDeltaClientEvent,
+  InputTextDoneClientEvent,
+  ConversationItemCreateClientEvent,
+  ConversationItemRetrieveClientEvent,
+  ConversationItemTruncateClientEvent,
+  ConversationItemDeleteClientEvent,
+  ResponseCreateClientEvent,
+  ResponseCancelClientEvent,
+  OutputAudioBufferClearClientEvent,
 
   // Connection & transport
   VoiceLiveConnectionConfig,

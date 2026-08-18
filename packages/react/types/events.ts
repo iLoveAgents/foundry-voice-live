@@ -116,13 +116,13 @@ export interface WireSession {
 // SERVER EVENTS (server → client)
 // ============================================================================
 
-interface ServerEventBase {
+export interface ServerEventBase {
   event_id?: string;
   /** Forward-compatible: services add fields over time; keeps events assignable to `VoiceLiveEvent` */
   [key: string]: unknown;
 }
 
-interface ResponseScopedEvent extends ServerEventBase {
+export interface ResponseScopedEvent extends ServerEventBase {
   response_id: string;
   item_id: string;
   output_index: number;
@@ -489,7 +489,7 @@ export interface WireResponseCreateOptions {
   [key: string]: unknown;
 }
 
-interface ClientEventBase {
+export interface ClientEventBase {
   event_id?: string;
   [key: string]: unknown;
 }

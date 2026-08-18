@@ -61,6 +61,11 @@ Targets Voice Live API **`2026-07-15` (GA)**. This release contains breaking cha
 - Legacy types `VoiceLiveSession`, `VoiceLiveConfig`, `VoiceLiveReturn`, `IceServerConfig`, `ModalController`, `LoggerConfig`, `VoiceLiveEventHandler` and the legacy `AvatarConfig` shape (the full `AvatarConfig` is now exported).
 - Unused `AudioPlayer` / `createAudioPlayer` utilities.
 
+#### Packaging
+- **`LICENSE` is now shipped** with both packages (they declare MIT but no license file existed anywhere in the repo — the proxy's `files` list even referenced one).
+- `exports` map declares types per condition (`import` → `index.d.mts`, `require` → `index.d.ts`), which is what `moduleResolution: node16`/`bundler` expects.
+- Every type reachable from the public API is exported (previously `VoiceOptions`, `AvatarConnectionOptions`, `WebRtcMicrophoneOptions`, the event base interfaces and ~20 typed event members were declared but unreachable for consumers).
+
 ### `@iloveagents/foundry-voice-live-proxy-node` 0.5.0
 
 #### Added
