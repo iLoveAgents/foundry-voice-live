@@ -53,7 +53,7 @@
     "docker-compose.yml"
   ],
   "scripts": {
-    "build": "tsc",
+    "build": "tsc -p tsconfig.build.json",
     "start": "node dist/index.js",
     "dev": "tsc && node --watch dist/index.js",
     "dev:ts": "tsx watch src/index.ts",
@@ -70,7 +70,7 @@
     "docker:run": "docker run -p 8080:8080 --env-file .env foundry-voice-live-proxy"
   },
   "engines": {
-    "node": ">=18.0.0"
+    "node": ">=20.0.0"
   },
   "dependencies": {
     "@azure/identity": "^4.13.0",

@@ -10,6 +10,8 @@ Secure WebSocket proxy for Azure AI Foundry Voice Live API. Supports Voice, Avat
 
 ## Installation
 
+Requires **Node.js 20 or newer** (`@azure/identity` needs 20+); the Docker image and CI run on Node 22.
+
 **npm:**
 
 ```bash
