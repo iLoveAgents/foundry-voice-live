@@ -52,5 +52,10 @@ jobs:
           npm install --global "npm@^11.5.1"
           hash -r
           echo "node $(node --version), npm $(npm --version) at $(which npm)"
+          echo "registry: $(npm config get registry)"
+          # If either of these is empty the job never got an OIDC identity, and the problem is
+          # GitHub-side (permissions/context) rather than the npm trusted-publisher config
+          echo "OIDC request url set: ${ACTIONS_ID_TOKEN_REQUEST_URL:+yes}"
+          echo "OIDC request token set: ${ACTIONS_ID_TOKEN_REQUEST_TOKEN:+yes}"
           (cd packages/react && npm publish --provenance --access public)
           (cd packages/proxy-node && npm publish --provenance --access public)
