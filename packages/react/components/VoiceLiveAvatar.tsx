@@ -136,11 +136,7 @@ export const VoiceLiveAvatar: React.FC<VoiceLiveAvatarProps> = ({
       const handleLoadedMetadata = (): void => {
         // Start chroma key processing for transparent background
         if (transparentBackground && canvas) {
-          chromaKeyProcessorRef.current = createChromaKeyProcessor(
-            video,
-            canvas,
-            chromaKeyConfig
-          );
+          chromaKeyProcessorRef.current = createChromaKeyProcessor(video, canvas, chromaKeyConfig);
           chromaKeyProcessorRef.current?.start();
         }
 

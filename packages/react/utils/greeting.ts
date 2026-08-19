@@ -19,7 +19,10 @@ import type { VoiceLiveClientEvent } from '../types/events';
  * @param now - Timestamp used for the `event_id` (injectable for tests)
  * @returns Events to send, in order
  */
-export function buildGreetingEvents(greeting: GreetingConfig, now: number = Date.now()): VoiceLiveClientEvent[] {
+export function buildGreetingEvents(
+  greeting: GreetingConfig,
+  now: number = Date.now()
+): VoiceLiveClientEvent[] {
   if (greeting.type === 'llm') {
     return [
       {

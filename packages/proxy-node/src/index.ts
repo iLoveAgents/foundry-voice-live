@@ -161,9 +161,21 @@ const securityConfig: SecurityConfig = {
   allowedOrigins: process.env.ALLOWED_ORIGINS?.split(",").map((o) => o.trim()) || [
     "http://localhost:3000",
   ],
-  rateLimitWindowMs: readPositiveInt(process.env.RATE_LIMIT_WINDOW_MS, 60000, "RATE_LIMIT_WINDOW_MS", (m) => console.warn(m)),
-  rateLimitMax: readPositiveInt(process.env.RATE_LIMIT_MAX_REQUESTS, 100, "RATE_LIMIT_MAX_REQUESTS", (m) => console.warn(m)),
-  maxConnections: readPositiveInt(process.env.MAX_CONNECTIONS, 1000, "MAX_CONNECTIONS", (m) => console.warn(m)),
+  rateLimitWindowMs: readPositiveInt(
+    process.env.RATE_LIMIT_WINDOW_MS,
+    60000,
+    "RATE_LIMIT_WINDOW_MS",
+    (m) => console.warn(m)
+  ),
+  rateLimitMax: readPositiveInt(
+    process.env.RATE_LIMIT_MAX_REQUESTS,
+    100,
+    "RATE_LIMIT_MAX_REQUESTS",
+    (m) => console.warn(m)
+  ),
+  maxConnections: readPositiveInt(process.env.MAX_CONNECTIONS, 1000, "MAX_CONNECTIONS", (m) =>
+    console.warn(m)
+  ),
 };
 
 if (!config.azureResourceName) {

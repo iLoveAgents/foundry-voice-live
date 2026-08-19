@@ -75,7 +75,11 @@ function openSession(url, { onEvent, onOpen, timeoutMs = 45000 }) {
       const ev = JSON.parse(raw.toString());
       seen.push(ev.type);
       if (ev.type !== 'response.audio.delta' && ev.type !== 'response.audio_transcript.delta') {
-        console.log('   <-', ev.type, ev.type === 'error' || ev.type === 'rtc.call.error' ? JSON.stringify(ev.error) : '');
+        console.log(
+          '   <-',
+          ev.type,
+          ev.type === 'error' || ev.type === 'rtc.call.error' ? JSON.stringify(ev.error) : ''
+        );
       }
       try {
         onEvent(ev, api);
@@ -110,7 +114,11 @@ async function testStandardSession() {
         type: 'function',
         name: 'get_weather',
         description: 'Get the weather for a city',
-        parameters: { type: 'object', properties: { city: { type: 'string' } }, required: ['city'] },
+        parameters: {
+          type: 'object',
+          properties: { city: { type: 'string' } },
+          required: ['city'],
+        },
       },
     ],
     metadata: { smoke: 'foundry-voice-live' },
@@ -126,9 +134,14 @@ async function testStandardSession() {
         api.send({ type: 'session.update', session });
       }
       if (ev.type === 'session.updated' && phase === 'configure') {
-        record('standard: session.update accepted (interim_response, tools, transcription, metadata)', true);
+        record(
+          'standard: session.update accepted (interim_response, tools, transcription, metadata)',
+          true
+        );
         phase = 'greeting';
-        buildGreetingEvents({ type: 'pregenerated', text: 'Hello from the smoke test.' }).forEach(api.send);
+        buildGreetingEvents({ type: 'pregenerated', text: 'Hello from the smoke test.' }).forEach(
+          api.send
+        );
       }
       if (ev.type === 'response.audio.delta') audioBytes += ev.delta.length;
       if (ev.type === 'response.audio_transcript.done') transcripts.push(ev.transcript);
@@ -142,13 +155,21 @@ async function testStandardSession() {
         audioBytes = 0;
         api.send({
           type: 'conversation.item.create',
-          item: { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'What is the weather in Berlin?' }] },
+          item: {
+            type: 'message',
+            role: 'user',
+            content: [{ type: 'input_text', text: 'What is the weather in Berlin?' }],
+          },
         });
         api.send({ type: 'response.create' });
       }
       if (ev.type === 'response.function_call_arguments.done' && phase === 'tool') {
         const callId = ev.call_id;
-        record('standard: model called the tool', ev.name === 'get_weather', `${ev.name}(${ev.arguments})`);
+        record(
+          'standard: model called the tool',
+          ev.name === 'get_weather',
+          `${ev.name}(${ev.arguments})`
+        );
         setTimeout(() => {
           api.send({
             type: 'conversation.item.create',
@@ -162,9 +183,14 @@ async function testStandardSession() {
           phase = 'answer';
         }, 1500); // give the interim response a chance to fire
       }
-      if (ev.type === 'response.audio_transcript.done' && /one moment/i.test(ev.transcript || '')) sawInterim = true;
+      if (ev.type === 'response.audio_transcript.done' && /one moment/i.test(ev.transcript || ''))
+        sawInterim = true;
       if (ev.type === 'response.done' && phase === 'answer') {
-        record('standard: final answer after tool result', audioBytes > 0, `transcript="${transcripts.at(-1)}"`);
+        record(
+          'standard: final answer after tool result',
+          audioBytes > 0,
+          `transcript="${transcripts.at(-1)}"`
+        );
         record(
           'standard: static interim response fired during tool call',
           sawInterim,
@@ -181,12 +207,16 @@ async function testStandardSession() {
 // ---------------------------------------------------------------------------
 async function testAgentSession() {
   if (!agentName || !projectName || !token) {
-    console.log('\n[2] agent session skipped (needs FOUNDRY_AGENT_NAME, FOUNDRY_PROJECT_NAME and FOUNDRY_TOKEN)');
+    console.log(
+      '\n[2] agent session skipped (needs FOUNDRY_AGENT_NAME, FOUNDRY_PROJECT_NAME and FOUNDRY_TOKEN)'
+    );
     return;
   }
   const { url } = buildVoiceLiveUrl({ resourceName, token, agentName, projectName });
   console.log('\n[2] agent session', redactUrl(url));
-  const session = buildAgentSessionConfig({ voice: { name: 'en-US-AvaMultilingualNeural', type: 'azure-standard' } });
+  const session = buildAgentSessionConfig({
+    voice: { name: 'en-US-AvaMultilingualNeural', type: 'azure-standard' },
+  });
   let phase = 'configure';
   let audioBytes = 0;
   return openSession(url, {
@@ -199,7 +229,11 @@ async function testAgentSession() {
         phase = 'turn';
         api.send({
           type: 'conversation.item.create',
-          item: { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'Say hello in one short sentence.' }] },
+          item: {
+            type: 'message',
+            role: 'user',
+            content: [{ type: 'input_text', text: 'Say hello in one short sentence.' }],
+          },
         });
         api.send({ type: 'response.create' });
       }
@@ -245,7 +279,8 @@ async function testWebRtcProbe(apiVersion, { expectUnserved = false } = {}) {
     },
     onEvent: (ev, api) => {
       if (ev.type === 'rtc.call.error' || ev.type === 'rtc.call.sdp.created') {
-        const detail = ev.type === 'rtc.call.error' ? `${ev.error?.code}: ${ev.error?.message}` : 'SDP answer';
+        const detail =
+          ev.type === 'rtc.call.error' ? `${ev.error?.code}: ${ev.error?.message}` : 'SDP answer';
         record(
           expectUnserved
             ? `${label}: NOTE — this api-version now serves /calls; consider bumping DEFAULT_WEBRTC_API_VERSION`
@@ -262,7 +297,9 @@ async function testWebRtcProbe(apiVersion, { expectUnserved = false } = {}) {
     },
   }).catch((err) =>
     record(
-      expectUnserved ? `${label}: /calls not served on this api-version (documented quirk)` : `${label}: /calls endpoint`,
+      expectUnserved
+        ? `${label}: /calls not served on this api-version (documented quirk)`
+        : `${label}: /calls endpoint`,
       expectUnserved,
       err.message
     )
@@ -275,12 +312,19 @@ async function testWebRtcProbe(apiVersion, { expectUnserved = false } = {}) {
 async function testAzureRealtime() {
   const { url } = buildVoiceLiveUrl({ resourceName, ...auth, model: 'azure-realtime' });
   console.log('\n[4] azure-realtime session', redactUrl(url));
-  const session = buildSessionConfig({ instructions: 'Be brief.', voice: { name: 'ava', type: 'azure-realtime-native' } });
+  const session = buildSessionConfig({
+    instructions: 'Be brief.',
+    voice: { name: 'ava', type: 'azure-realtime-native' },
+  });
   return openSession(url, {
     timeoutMs: 20000,
     onEvent: (ev, api) => {
       if (ev.type === 'error') {
-        record('azure-realtime: session.update with azure-realtime-native voice', false, JSON.stringify(ev.error));
+        record(
+          'azure-realtime: session.update with azure-realtime-native voice',
+          false,
+          JSON.stringify(ev.error)
+        );
         api.done();
       }
       if (ev.type === 'session.created') api.send({ type: 'session.update', session });
@@ -312,5 +356,6 @@ await testWebRtcProbe('2026-07-15', { expectUnserved: true });
 await testAzureRealtime();
 
 console.log('\n==== SUMMARY ====');
-for (const r of results) console.log(`${r.ok ? 'PASS' : 'FAIL'}  ${r.name}${r.detail ? ' — ' + r.detail : ''}`);
+for (const r of results)
+  console.log(`${r.ok ? 'PASS' : 'FAIL'}  ${r.name}${r.detail ? ' — ' + r.detail : ''}`);
 process.exit(results.some((r) => !r.ok) ? 1 : 0);

@@ -96,7 +96,7 @@ function compileShader(
   gl.compileShader(shader);
 
   if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
-    console.error("Shader compile error:", gl.getShaderInfoLog(shader));
+    console.error('Shader compile error:', gl.getShaderInfoLog(shader));
     gl.deleteShader(shader);
     return null;
   }
@@ -120,7 +120,7 @@ function createProgram(
   gl.linkProgram(program);
 
   if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
-    console.error("Program link error:", gl.getProgramInfoLog(program));
+    console.error('Program link error:', gl.getProgramInfoLog(program));
     return null;
   }
 
@@ -144,7 +144,7 @@ function setupGeometry(
   const positionBuffer = gl.createBuffer();
   gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
   gl.bufferData(gl.ARRAY_BUFFER, positions, gl.STATIC_DRAW);
-  const positionLocation = gl.getAttribLocation(program, "a_position");
+  const positionLocation = gl.getAttribLocation(program, 'a_position');
   gl.enableVertexAttribArray(positionLocation);
   gl.vertexAttribPointer(positionLocation, 2, gl.FLOAT, false, 0, 0);
 
@@ -152,7 +152,7 @@ function setupGeometry(
   const texCoordBuffer = gl.createBuffer();
   gl.bindBuffer(gl.ARRAY_BUFFER, texCoordBuffer);
   gl.bufferData(gl.ARRAY_BUFFER, texCoords, gl.STATIC_DRAW);
-  const texCoordLocation = gl.getAttribLocation(program, "a_texCoord");
+  const texCoordLocation = gl.getAttribLocation(program, 'a_texCoord');
   gl.enableVertexAttribArray(texCoordLocation);
   gl.vertexAttribPointer(texCoordLocation, 2, gl.FLOAT, false, 0, 0);
 }
@@ -160,9 +160,7 @@ function setupGeometry(
 /**
  * Setup WebGL texture
  */
-function setupTexture(
-  gl: WebGLRenderingContext | WebGL2RenderingContext
-): WebGLTexture | null {
+function setupTexture(gl: WebGLRenderingContext | WebGL2RenderingContext): WebGLTexture | null {
   const texture = gl.createTexture();
   if (!texture) return null;
 
@@ -202,11 +200,10 @@ export function createChromaKeyProcessor(
   config: ChromaKeyConfig = DEFAULT_GREEN_SCREEN
 ): ChromaKeyProcessor | null {
   // Get WebGL context (prefer WebGL2)
-  const gl =
-    canvas.getContext("webgl2") || canvas.getContext("webgl");
+  const gl = canvas.getContext('webgl2') || canvas.getContext('webgl');
 
   if (!gl) {
-    console.error("WebGL not supported");
+    console.error('WebGL not supported');
     return null;
   }
 
@@ -217,11 +214,7 @@ export function createChromaKeyProcessor(
 
   // Compile shaders
   const vertexShader = compileShader(gl, VERTEX_SHADER_SOURCE, gl.VERTEX_SHADER);
-  const fragmentShader = compileShader(
-    gl,
-    FRAGMENT_SHADER_SOURCE,
-    gl.FRAGMENT_SHADER
-  );
+  const fragmentShader = compileShader(gl, FRAGMENT_SHADER_SOURCE, gl.FRAGMENT_SHADER);
 
   if (!vertexShader || !fragmentShader) {
     return null;
@@ -243,9 +236,9 @@ export function createChromaKeyProcessor(
   }
 
   // Get uniform locations
-  const keyColorLocation = gl.getUniformLocation(program, "u_keyColor");
-  const similarityLocation = gl.getUniformLocation(program, "u_similarity");
-  const smoothnessLocation = gl.getUniformLocation(program, "u_smoothness");
+  const keyColorLocation = gl.getUniformLocation(program, 'u_keyColor');
+  const similarityLocation = gl.getUniformLocation(program, 'u_similarity');
+  const smoothnessLocation = gl.getUniformLocation(program, 'u_smoothness');
 
   // Set initial chroma key parameters
   gl.uniform3f(keyColorLocation, ...config.keyColor);
@@ -261,22 +254,17 @@ export function createChromaKeyProcessor(
   // Render loop
   const processFrame = (): void => {
     if (!video.paused && !video.ended) {
-      gl.texImage2D(
-        gl.TEXTURE_2D,
-        0,
-        gl.RGBA,
-        gl.RGBA,
-        gl.UNSIGNED_BYTE,
-        video
-      );
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, video);
       gl.drawArrays(gl.TRIANGLES, 0, 6);
       animationFrameId = requestAnimationFrame(processFrame);
     }
   };
 
   // Start processing when video plays
-  const onPlay = (): void => { processFrame(); };
-  video.addEventListener("play", onPlay);
+  const onPlay = (): void => {
+    processFrame();
+  };
+  video.addEventListener('play', onPlay);
 
   return {
     start: () => {
@@ -290,7 +278,7 @@ export function createChromaKeyProcessor(
         cancelAnimationFrame(animationFrameId);
         animationFrameId = null;
       }
-      video.removeEventListener("play", onPlay);
+      video.removeEventListener('play', onPlay);
     },
 
     updateConfig: (newConfig: Partial<ChromaKeyConfig>) => {

@@ -1,5 +1,9 @@
 import { describe, it, expect } from "vitest";
-import { connectFailureCloseFrame, SERVER_AT_CAPACITY_CLOSE, toClientCloseFrame } from "../closeFrame.js";
+import {
+  connectFailureCloseFrame,
+  SERVER_AT_CAPACITY_CLOSE,
+  toClientCloseFrame,
+} from "../closeFrame.js";
 
 describe("toClientCloseFrame", () => {
   it("passes a normal upstream close through unchanged", () => {

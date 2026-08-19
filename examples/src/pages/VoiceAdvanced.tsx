@@ -42,7 +42,10 @@ export function VoiceAdvanced(): JSX.Element {
       .sampleRate(24000)
       .echoCancellation()
       .noiseReduction()
-      .greeting({ type: 'llm', text: 'Greet the user warmly in English and ask how you can help today.' })
+      .greeting({
+        type: 'llm',
+        text: 'Greet the user warmly in English and ask how you can help today.',
+      })
       .build(),
     onTranscript,
     logLevel: 'debug',
@@ -84,9 +87,7 @@ export function VoiceAdvanced(): JSX.Element {
       <StatusBadge status={connectionState} />
 
       {isConnected && (
-        <p style={{ margin: '0.5rem 0', fontStyle: 'italic' }}>
-          {sessionStateLabel(sessionState)}
-        </p>
+        <p style={{ margin: '0.5rem 0', fontStyle: 'italic' }}>{sessionStateLabel(sessionState)}</p>
       )}
 
       <ControlGroup>
@@ -96,11 +97,7 @@ export function VoiceAdvanced(): JSX.Element {
         <button onClick={handleStop} disabled={!isConnected}>
           Stop
         </button>
-        {isConnected && (
-          <button onClick={toggleMute}>
-            {isMuted ? 'Unmute' : 'Mute'}
-          </button>
-        )}
+        {isConnected && <button onClick={toggleMute}>{isMuted ? 'Unmute' : 'Mute'}</button>}
       </ControlGroup>
 
       <TextInput onSend={sendText} disabled={!isConnected} />

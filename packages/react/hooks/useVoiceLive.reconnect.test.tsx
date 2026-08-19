@@ -222,12 +222,16 @@ describe('useVoiceLive (reconnect)', () => {
   });
 
   it('reconnects the WebRTC transport after a negotiation timeout and re-attaches the mic track', async () => {
-    const { hook } = { hook: renderHook(() => useVoiceLive({
-      ...baseConfig,
-      connection: { resourceName: 'my-res', apiKey: 'secret', transport: 'webrtc' },
-      autoStartMic: true,
-      reconnect: { initialDelayMs: 10, jitter: 0 },
-    })) };
+    const { hook } = {
+      hook: renderHook(() =>
+        useVoiceLive({
+          ...baseConfig,
+          connection: { resourceName: 'my-res', apiKey: 'secret', transport: 'webrtc' },
+          autoStartMic: true,
+          reconnect: { initialDelayMs: 10, jitter: 0 },
+        })
+      ),
+    };
     await act(async () => {
       await hook.result.current.connect();
     });
@@ -360,7 +364,10 @@ describe('useVoiceLive (reconnect)', () => {
     const hook = renderHook(() =>
       useVoiceLive({
         ...baseConfig,
-        session: { instructions: 'Be nice.', avatar: { character: 'lisa', style: 'casual-sitting' } },
+        session: {
+          instructions: 'Be nice.',
+          avatar: { character: 'lisa', style: 'casual-sitting' },
+        },
       })
     );
     await act(async () => {
@@ -406,9 +413,7 @@ describe('useVoiceLive (reconnect)', () => {
   });
 
   it('fails a connect that never opens instead of sitting in connecting forever', async () => {
-    const hook = renderHook(() =>
-      useVoiceLive({ ...baseConfig, connectTimeoutMs: 5000 })
-    );
+    const hook = renderHook(() => useVoiceLive({ ...baseConfig, connectTimeoutMs: 5000 }));
     await act(async () => {
       await hook.result.current.connect();
     });
@@ -431,7 +436,11 @@ describe('useVoiceLive (reconnect)', () => {
 
   it('retries a timed-out connect when reconnect is enabled, and cancels the timer once open', async () => {
     const hook = renderHook(() =>
-      useVoiceLive({ ...baseConfig, connectTimeoutMs: 1000, reconnect: { initialDelayMs: 10, jitter: 0 } })
+      useVoiceLive({
+        ...baseConfig,
+        connectTimeoutMs: 1000,
+        reconnect: { initialDelayMs: 10, jitter: 0 },
+      })
     );
     await act(async () => {
       await hook.result.current.connect();
@@ -672,10 +681,16 @@ describe('useVoiceLive (reconnect)', () => {
 
   it('does not stream microphone audio while reconnecting or before the session is configured', async () => {
     const { stream } = makeFakeMicStream();
-    const restoreFakes = installBrowserFakes({ getUserMedia: async () => stream as unknown as MediaStream });
+    const restoreFakes = installBrowserFakes({
+      getUserMedia: async () => stream as unknown as MediaStream,
+    });
     try {
       const hook = renderHook(() =>
-        useVoiceLive({ ...baseConfig, autoStartMic: false, reconnect: { initialDelayMs: 10, jitter: 0 } })
+        useVoiceLive({
+          ...baseConfig,
+          autoStartMic: false,
+          reconnect: { initialDelayMs: 10, jitter: 0 },
+        })
       );
       await act(async () => {
         await hook.result.current.connect();
@@ -760,7 +775,10 @@ describe('useVoiceLive (reconnect)', () => {
       const hook = renderHook(() =>
         useVoiceLive({
           ...baseConfig,
-          session: { instructions: 'Be nice.', avatar: { character: 'lisa', style: 'casual-sitting' } },
+          session: {
+            instructions: 'Be nice.',
+            avatar: { character: 'lisa', style: 'casual-sitting' },
+          },
         })
       );
       await act(async () => {
@@ -801,7 +819,9 @@ describe('useVoiceLive (reconnect)', () => {
 
   it('keeps a pre-connect microphone acquisition (startMic before connect)', async () => {
     const { stream, track } = makeFakeMicStream();
-    const restoreFakes = installBrowserFakes({ getUserMedia: async () => stream as unknown as MediaStream });
+    const restoreFakes = installBrowserFakes({
+      getUserMedia: async () => stream as unknown as MediaStream,
+    });
     try {
       const hook = renderHook(() =>
         useVoiceLive({
@@ -932,7 +952,9 @@ describe('useVoiceLive (reconnect)', () => {
 
   it('stops the microphone when a close settles terminally (no reconnect)', async () => {
     const { stream, track } = makeFakeMicStream();
-    const restoreFakes = installBrowserFakes({ getUserMedia: async () => stream as unknown as MediaStream });
+    const restoreFakes = installBrowserFakes({
+      getUserMedia: async () => stream as unknown as MediaStream,
+    });
     try {
       const hook = renderHook(() =>
         useVoiceLive({
@@ -971,7 +993,9 @@ describe('useVoiceLive (reconnect)', () => {
 
   it('keeps the microphone across reconnect attempts but releases it when they are exhausted', async () => {
     const { stream, track } = makeFakeMicStream();
-    const restoreFakes = installBrowserFakes({ getUserMedia: async () => stream as unknown as MediaStream });
+    const restoreFakes = installBrowserFakes({
+      getUserMedia: async () => stream as unknown as MediaStream,
+    });
     try {
       const hook = renderHook(() =>
         useVoiceLive({
@@ -1035,7 +1059,9 @@ describe('useVoiceLive (reconnect)', () => {
 
   it('releases the microphone when the initial connect fails during setup', async () => {
     const { stream, track } = makeFakeMicStream();
-    const restoreFakes = installBrowserFakes({ getUserMedia: async () => stream as unknown as MediaStream });
+    const restoreFakes = installBrowserFakes({
+      getUserMedia: async () => stream as unknown as MediaStream,
+    });
     try {
       const hook = renderHook(() =>
         useVoiceLive({
@@ -1072,12 +1098,17 @@ describe('useVoiceLive (reconnect)', () => {
   it('sends the greeting through the gate and drops it if a turn is already running', async () => {
     const config = {
       ...baseConfig,
-      session: { instructions: 'Be nice.', greeting: { type: 'pregenerated' as const, text: 'Hello!' } },
+      session: {
+        instructions: 'Be nice.',
+        greeting: { type: 'pregenerated' as const, text: 'Hello!' },
+      },
     };
     // 1) normal case: the greeting is the first turn
     const first = await connectAndReady(config);
     expect(first.ws.sent.filter((e) => e.type === 'response.create')).toHaveLength(1);
-    expect(first.ws.lastSent('response.create').response.pre_generated_assistant_message).toBeTruthy();
+    expect(
+      first.ws.lastSent('response.create').response.pre_generated_assistant_message
+    ).toBeTruthy();
     expect(first.ws.lastSent('response.create').event_id).toMatch(/^evt_\d+$/);
     first.hook.unmount();
 
@@ -1146,7 +1177,10 @@ describe('useVoiceLive (reconnect)', () => {
     const hook = renderHook(() =>
       useVoiceLive({
         ...baseConfig,
-        session: { instructions: 'Be nice.', avatar: { character: 'lisa', style: 'casual-sitting' } },
+        session: {
+          instructions: 'Be nice.',
+          avatar: { character: 'lisa', style: 'casual-sitting' },
+        },
         onSessionUpdated: () => api?.disconnect(),
       })
     );
@@ -1204,7 +1238,10 @@ describe('useVoiceLive (reconnect)', () => {
     await act(async () => {
       ws.receive({
         type: 'session.updated',
-        session: { id: 's1', turn_detection: { type: 'azure_semantic_vad', create_response: false } },
+        session: {
+          id: 's1',
+          turn_detection: { type: 'azure_semantic_vad', create_response: false },
+        },
       });
       ws.receive({ type: 'input_audio_buffer.speech_stopped' });
     });
@@ -1290,7 +1327,10 @@ describe('useVoiceLive (reconnect)', () => {
       const hook = renderHook(() =>
         useVoiceLive({
           ...baseConfig,
-          session: { instructions: 'Be nice.', avatar: { character: 'lisa', style: 'casual-sitting' } },
+          session: {
+            instructions: 'Be nice.',
+            avatar: { character: 'lisa', style: 'casual-sitting' },
+          },
         })
       );
       await act(async () => {
@@ -1329,7 +1369,10 @@ describe('useVoiceLive (reconnect)', () => {
         useVoiceLive({
           ...baseConfig,
           connection: { resourceName: 'my-res', apiKey: 'secret', transport: 'webrtc' },
-          session: { instructions: 'Be nice.', turnDetection: { type: 'azure_semantic_vad', createResponse: false } },
+          session: {
+            instructions: 'Be nice.',
+            turnDetection: { type: 'azure_semantic_vad', createResponse: false },
+          },
           autoStartMic: false,
         })
       );

@@ -171,7 +171,11 @@ export function useAudioCapture({
    */
   const runCapture = useCallback(async () => {
     // What this attempt created, so a failure releases its own resources and nothing else
-    const owned: { stream: MediaStream | null; audioContext: AudioContext | null; blobUrl: string | null } = {
+    const owned: {
+      stream: MediaStream | null;
+      audioContext: AudioContext | null;
+      blobUrl: string | null;
+    } = {
       stream: null,
       audioContext: null,
       blobUrl: null,
@@ -261,7 +265,14 @@ export function useAudioCapture({
       console.error('Audio capture error:', err);
       throw err;
     }
-  }, [sampleRate, workletPath, audioConstraints, onAudioData, flushAudioBuffer, releasePartialCapture]);
+  }, [
+    sampleRate,
+    workletPath,
+    audioConstraints,
+    onAudioData,
+    flushAudioBuffer,
+    releasePartialCapture,
+  ]);
 
   /**
    * Start capturing, coalescing concurrent calls.

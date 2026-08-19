@@ -18,14 +18,22 @@ export function VoiceProxy(): JSX.Element {
     },
     // Auto-reconnect after network drops / proxy restarts (exponential backoff, 5 attempts)
     reconnect: true,
-    onReconnecting: (attempt, delayMs) => console.log(`Reconnecting (attempt ${attempt}) in ${delayMs} ms`),
+    onReconnecting: (attempt, delayMs) =>
+      console.log(`Reconnecting (attempt ${attempt}) in ${delayMs} ms`),
     onReconnected: () => console.log('Reconnected'),
     logLevel: 'debug',
   });
 
   // Voice Live hook - mic capture is integrated and auto-starts!
-  const { connect, disconnect, connectionState, reconnectAttempt, audioStream, sendText, error: hookError } =
-    useVoiceLive(config);
+  const {
+    connect,
+    disconnect,
+    connectionState,
+    reconnectAttempt,
+    audioStream,
+    sendText,
+    error: hookError,
+  } = useVoiceLive(config);
 
   useEffect(() => {
     if (audioRef.current && audioStream) {
@@ -63,7 +71,11 @@ export function VoiceProxy(): JSX.Element {
       <ErrorPanel error={error || hookError} />
 
       <StatusBadge
-        status={connectionState === 'reconnecting' ? `reconnecting (attempt ${reconnectAttempt})` : connectionState}
+        status={
+          connectionState === 'reconnecting'
+            ? `reconnecting (attempt ${reconnectAttempt})`
+            : connectionState
+        }
       />
 
       <ControlGroup>
@@ -78,8 +90,8 @@ export function VoiceProxy(): JSX.Element {
       {isConnected && <TextInput onSend={sendText} />}
 
       <p style={{ fontSize: '14px' }}>
-        This page enables <code>reconnect: true</code> — restart the proxy while connected and watch the
-        status go through <code>reconnecting</code> back to <code>connected</code>.
+        This page enables <code>reconnect: true</code> — restart the proxy while connected and watch
+        the status go through <code>reconnecting</code> back to <code>connected</code>.
       </p>
 
       <audio ref={audioRef} autoPlay hidden />

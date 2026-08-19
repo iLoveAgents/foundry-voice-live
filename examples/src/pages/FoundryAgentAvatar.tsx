@@ -55,7 +55,7 @@ export function FoundryAgentAvatar(): JSX.Element {
       .avatar(
         import.meta.env.VITE_AVATAR_CHARACTER || 'lisa',
         import.meta.env.VITE_AVATAR_STYLE || 'casual-sitting',
-        { codec: 'h264' },
+        { codec: 'h264' }
       )
       .semanticVAD({ interruptResponse: true })
       .echoCancellation()
@@ -113,18 +113,15 @@ export function FoundryAgentAvatar(): JSX.Element {
             </p>
             <ul>
               <li>
-                <code>VITE_FOUNDRY_AGENT_NAME</code> - Agent name from Azure AI
-                Foundry portal
+                <code>VITE_FOUNDRY_AGENT_NAME</code> - Agent name from Azure AI Foundry portal
               </li>
               <li>
-                <code>VITE_FOUNDRY_PROJECT_NAME</code> - Azure AI Foundry
-                project name
+                <code>VITE_FOUNDRY_PROJECT_NAME</code> - Azure AI Foundry project name
               </li>
             </ul>
             <p>
-              The proxy also needs <code>FOUNDRY_RESOURCE_NAME</code>. For local
-              dev, run <code>az login</code>. In production, use managed identity
-              or a service principal.
+              The proxy also needs <code>FOUNDRY_RESOURCE_NAME</code>. For local dev, run{' '}
+              <code>az login</code>. In production, use managed identity or a service principal.
             </p>
           </AlertBox>
         </Section>
@@ -147,10 +144,7 @@ export function FoundryAgentAvatar(): JSX.Element {
       <StatusBadge status={connectionState} />
 
       <ControlGroup>
-        <button
-          onClick={handleStart}
-          disabled={isConnected || !agentConfigured}
-        >
+        <button onClick={handleStart} disabled={isConnected || !agentConfigured}>
           Start Avatar
         </button>
         <button onClick={handleStop} disabled={!isConnected}>

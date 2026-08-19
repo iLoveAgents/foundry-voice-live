@@ -137,7 +137,8 @@ export function buildVoiceLiveUrl(connection: VoiceLiveConnectionConfig): Resolv
 
   const path = transport === 'webrtc' ? REALTIME_CALLS_PATH : REALTIME_PATH;
   const apiVersion =
-    connection.apiVersion ?? (transport === 'webrtc' ? DEFAULT_WEBRTC_API_VERSION : DEFAULT_API_VERSION);
+    connection.apiVersion ??
+    (transport === 'webrtc' ? DEFAULT_WEBRTC_API_VERSION : DEFAULT_API_VERSION);
   const base = `wss://${connection.resourceName}.services.ai.azure.com/${path}?api-version=${encodeURIComponent(apiVersion)}`;
 
   // ===== Foundry Agents =====
@@ -206,14 +207,19 @@ export function validateTransport(
     );
   }
 
-  if (connection.apiVersion && compareApiVersions(connection.apiVersion, MIN_WEBRTC_API_VERSION) < 0) {
+  if (
+    connection.apiVersion &&
+    compareApiVersions(connection.apiVersion, MIN_WEBRTC_API_VERSION) < 0
+  ) {
     throw new Error(
       `The WebRTC transport requires api-version ${MIN_WEBRTC_API_VERSION} or later (got ${connection.apiVersion}).`
     );
   }
 
   if (!hasRtcPeerConnection) {
-    throw new Error("RTCPeerConnection is not available in this environment; use transport: 'websocket'.");
+    throw new Error(
+      "RTCPeerConnection is not available in this environment; use transport: 'websocket'."
+    );
   }
 }
 

@@ -228,7 +228,9 @@ describe('AvatarConnection', () => {
     // some browsers deliver a track with no stream attached — the media is still there
     const lonelyTrack = { kind: 'video' };
     pc.ontrack?.({ track: lonelyTrack, streams: [] });
-    expect(onVideoStream).toHaveBeenLastCalledWith(expect.objectContaining({ tracks: [lonelyTrack] }));
+    expect(onVideoStream).toHaveBeenLastCalledWith(
+      expect.objectContaining({ tracks: [lonelyTrack] })
+    );
 
     pc.setConnectionState('failed');
     expect(onError).toHaveBeenCalledWith('WebRTC connection failed');
@@ -249,7 +251,11 @@ describe('WebRtcMicrophone', () => {
     mic.setMuted(true);
     expect(await mic.start({ deviceId: 'mic-1' })).toBe(track);
     expect(getUserMedia).toHaveBeenCalledWith({
-      audio: expect.objectContaining({ deviceId: 'mic-1', echoCancellation: true, channelCount: 1 }),
+      audio: expect.objectContaining({
+        deviceId: 'mic-1',
+        echoCancellation: true,
+        channelCount: 1,
+      }),
     });
     expect(track.enabled).toBe(false); // muted before start
     await mic.start();
@@ -265,13 +271,19 @@ describe('WebRtcMicrophone', () => {
 
 describe('AvatarConnection failures', () => {
   it('closes the peer connection when transceiver setup throws', async () => {
-    const avatar = new AvatarConnection({ onVideoStream: vi.fn(), onAudioStream: vi.fn(), onError: vi.fn() });
+    const avatar = new AvatarConnection({
+      onVideoStream: vi.fn(),
+      onAudioStream: vi.fn(),
+      onError: vi.fn(),
+    });
     const original = FakePeerConnection.prototype.addTransceiver;
     FakePeerConnection.prototype.addTransceiver = (): never => {
       throw new Error('addTransceiver unsupported');
     };
     try {
-      await expect(avatar.createOffer([{ urls: 'turn:relay.example' }])).rejects.toThrow('addTransceiver unsupported');
+      await expect(avatar.createOffer([{ urls: 'turn:relay.example' }])).rejects.toThrow(
+        'addTransceiver unsupported'
+      );
       // setup failures before the offer must be cleaned up too, not just offer failures
       expect(FakePeerConnection.instances.at(-1)!.closed).toBe(true);
       expect(avatar.peerConnection).toBeNull();
@@ -281,13 +293,19 @@ describe('AvatarConnection failures', () => {
   });
 
   it('closes the peer connection when the offer cannot be created', async () => {
-    const avatar = new AvatarConnection({ onVideoStream: vi.fn(), onAudioStream: vi.fn(), onError: vi.fn() });
+    const avatar = new AvatarConnection({
+      onVideoStream: vi.fn(),
+      onAudioStream: vi.fn(),
+      onError: vi.fn(),
+    });
     const original = FakePeerConnection.prototype.createOffer;
     FakePeerConnection.prototype.createOffer = (): never => {
       throw new Error('createOffer failed');
     };
     try {
-      await expect(avatar.createOffer([{ urls: 'turn:relay.example' }])).rejects.toThrow('createOffer failed');
+      await expect(avatar.createOffer([{ urls: 'turn:relay.example' }])).rejects.toThrow(
+        'createOffer failed'
+      );
       // the caller never receives a handle for a failed setup, so it cannot clean up
       expect(FakePeerConnection.instances.at(-1)!.closed).toBe(true);
       expect(avatar.peerConnection).toBeNull();
@@ -367,7 +385,10 @@ describe('reconnect policy', () => {
     expect(resolveReconnectOptions(undefined)).toBeNull();
     expect(resolveReconnectOptions(false)).toBeNull();
     expect(resolveReconnectOptions(true)).toEqual(DEFAULT_RECONNECT_OPTIONS);
-    expect(resolveReconnectOptions({ maxAttempts: 2 })).toEqual({ ...DEFAULT_RECONNECT_OPTIONS, maxAttempts: 2 });
+    expect(resolveReconnectOptions({ maxAttempts: 2 })).toEqual({
+      ...DEFAULT_RECONNECT_OPTIONS,
+      maxAttempts: 2,
+    });
   });
 
   it('computes capped exponential backoff with jitter', () => {
@@ -391,11 +412,15 @@ describe('reconnect policy', () => {
     expect(isReconnectableClose({ code: 1011, reason: 'server error', wasClean: true })).toBe(true);
     expect(isReconnectableClose({ code: 4008, reason: 'timeout', wasClean: false })).toBe(true);
     // rejections of the request itself: the same URL and credentials would be rejected again
-    expect(isReconnectableClose({ code: 1008, reason: 'Invalid connection request', wasClean: true })).toBe(
+    expect(
+      isReconnectableClose({ code: 1008, reason: 'Invalid connection request', wasClean: true })
+    ).toBe(false);
+    expect(isReconnectableClose({ code: 1003, reason: 'unsupported data', wasClean: true })).toBe(
       false
     );
-    expect(isReconnectableClose({ code: 1003, reason: 'unsupported data', wasClean: true })).toBe(false);
-    expect(isReconnectableClose({ code: 1010, reason: 'extension required', wasClean: false })).toBe(false);
+    expect(
+      isReconnectableClose({ code: 1010, reason: 'extension required', wasClean: false })
+    ).toBe(false);
   });
 });
 

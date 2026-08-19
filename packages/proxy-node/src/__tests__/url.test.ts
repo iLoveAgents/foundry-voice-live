@@ -516,8 +516,12 @@ describe("redactUrl (encoded parameter names)", () => {
   });
 
   it("still redacts the plain forms and leaves everything else intact", () => {
-    expect(redactUrl("/ws?model=gpt-realtime&token=SECRET")).toBe("/ws?model=gpt-realtime&token=REDACTED");
+    expect(redactUrl("/ws?model=gpt-realtime&token=SECRET")).toBe(
+      "/ws?model=gpt-realtime&token=REDACTED"
+    );
     expect(redactUrl("/ws?model=gpt-realtime")).toBe("/ws?model=gpt-realtime");
-    expect(redactUrl("wss://host/voice-live/realtime?api-version=2026-07-15&api-key=SECRET")).not.toContain("SECRET");
+    expect(
+      redactUrl("wss://host/voice-live/realtime?api-version=2026-07-15&api-key=SECRET")
+    ).not.toContain("SECRET");
   });
 });

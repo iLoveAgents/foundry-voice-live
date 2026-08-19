@@ -36,8 +36,7 @@ export function AvatarProxy(): JSX.Element {
     logLevel: 'debug',
   });
 
-  const { connect, disconnect, connectionState, videoStream, audioStream } =
-    useVoiceLive(config);
+  const { connect, disconnect, connectionState, videoStream, audioStream } = useVoiceLive(config);
 
   const handleStart = async (): Promise<void> => {
     try {

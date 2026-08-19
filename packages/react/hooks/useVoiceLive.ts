@@ -56,7 +56,11 @@ import type {
   ToolResult,
 } from '../types/voiceLive';
 import type { VoiceLiveServerEvent, VoiceLiveClientEvent } from '../types/events';
-import { buildSessionConfig, buildAgentSessionConfig, validateConfig } from '../utils/sessionBuilder';
+import {
+  buildSessionConfig,
+  buildAgentSessionConfig,
+  validateConfig,
+} from '../utils/sessionBuilder';
 import { buildGreetingEvents } from '../utils/greeting';
 import { buildVoiceLiveUrl, validateTransport, redactUrl } from '../utils/connectionUrl';
 import { DEFAULT_CONNECT_TIMEOUT_MS } from '../utils/constants';
@@ -73,7 +77,11 @@ import type {
 import { OutputAudioGraph, PcmPlayer } from '../core/audioOutput';
 import { AvatarConnection } from '../core/avatarConnection';
 import { WebRtcMicrophone } from '../core/microphone';
-import { resolveReconnectOptions, computeBackoffDelay, isReconnectableClose } from '../core/reconnect';
+import {
+  resolveReconnectOptions,
+  computeBackoffDelay,
+  isReconnectableClose,
+} from '../core/reconnect';
 import { BoundedMap } from '../core/boundedMap';
 import { Scope } from '../core/lifecycle';
 import { ResponseGate } from '../core/responseGate';
@@ -245,7 +253,8 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
       }
       // A consumer may call disconnect()/connect() from its callback: the caller must not keep
       // applying an event to a session that no longer exists
-      const stillCurrent = sessionRef.current === sessionBefore && sessionBefore?.scope.isActive !== false;
+      const stillCurrent =
+        sessionRef.current === sessionBefore && sessionBefore?.scope.isActive !== false;
       if (!stillCurrent) {
         log.debug(`Session changed inside ${name} — stopping work for this event`);
       }
@@ -359,8 +368,10 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
   // Stable refs so transport callbacks always see the latest closures
   const sendEventRef = useRef<(event: VoiceLiveClientEvent | VoiceLiveEvent) => void>();
   const handleServerEventRef = useRef<(event: VoiceLiveServerEvent) => void>();
-  const openConnectionRef = useRef<(connectionScope: Scope, mode: 'initial' | 'reconnect') => Promise<void>>();
-  const handleUnexpectedCloseRef = useRef<(connectionScope: Scope, info: TransportCloseInfo) => void>();
+  const openConnectionRef =
+    useRef<(connectionScope: Scope, mode: 'initial' | 'reconnect') => Promise<void>>();
+  const handleUnexpectedCloseRef =
+    useRef<(connectionScope: Scope, info: TransportCloseInfo) => void>();
   const requestResponseRef = useRef<typeof requestResponse>();
   const sendGatedResponseCreateRef = useRef<(event?: VoiceLiveClientEvent) => void>();
   /** Monotonic id for client events we need to correlate errors with */
@@ -368,7 +379,8 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
   /** Payload of a queued `response.create`, so a custom request survives being deferred */
   const queuedResponseEventRef = useRef<VoiceLiveClientEvent | null>(null);
   const endConnectionRef = useRef<(options: { resetMute: boolean }) => void>();
-  const finishToolBatchIfReadyRef = useRef<(key: string, batch: ToolBatch, session: LiveSession) => void>();
+  const finishToolBatchIfReadyRef =
+    useRef<(key: string, batch: ToolBatch, session: LiveSession) => void>();
 
   /**
    * Handle audio data from microphone (WebSocket transport)
@@ -379,7 +391,10 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
     // session.updated) the audio would either be dropped with a warning per 100 ms chunk, or worse,
     // be processed by a session that has not received our session.update yet.
     if (!sessionRef.current?.ready) return;
-    sendEventRef.current?.({ type: 'input_audio_buffer.append', audio: arrayBufferToBase64(audioData) });
+    sendEventRef.current?.({
+      type: 'input_audio_buffer.append',
+      audio: arrayBufferToBase64(audioData),
+    });
   }, []);
 
   /**
@@ -403,7 +418,9 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
    */
   const buildSession = useCallback(
     (sessionConfig?: VoiceLiveSessionConfig): Record<string, unknown> =>
-      isAgentModeRef.current ? buildAgentSessionConfig(sessionConfig) : buildSessionConfig(sessionConfig),
+      isAgentModeRef.current
+        ? buildAgentSessionConfig(sessionConfig)
+        : buildSessionConfig(sessionConfig),
     []
   );
 
@@ -467,7 +484,8 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
       // for an answer depends on whether *this* batch asked for one: `answered` records what
       // actually happened, not merely that the batch finished.
       const answerRequested =
-        (batch.sentOutput || batch.followUpOwed) && !(batch.followUpSuppressed && !batch.followUpOwed);
+        (batch.sentOutput || batch.followUpOwed) &&
+        !(batch.followUpSuppressed && !batch.followUpOwed);
       const completions = completedResponsesRef.current as BoundedMap<string, ResponseCompletion>;
       completions.set(key, {
         outstandingToolCalls: 0,
@@ -795,8 +813,14 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
         log.debug(data.type);
       }
 
-      const { onEvent, onTranscript, onWarning, onMcpApprovalRequest, onSessionUpdated, toolExecutor } =
-        configRef.current;
+      const {
+        onEvent,
+        onTranscript,
+        onWarning,
+        onMcpApprovalRequest,
+        onSessionUpdated,
+        toolExecutor,
+      } = configRef.current;
 
       // Call custom event handler first (never let it abort our own handling). If it ends or
       // replaces the session, this event belongs to a session that no longer exists.
@@ -826,10 +850,15 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
             setSessionExpiresAt(data.session.expires_at * 1000);
           }
           // The service echoes the effective session: keep the VAD behaviour in sync with it
-          const turnDetection = (data.session as { turn_detection?: { create_response?: boolean } } | undefined)
-            ?.turn_detection;
-          autoCreateResponseRef.current = turnDetection ? turnDetection.create_response !== false : true;
-          if (!safeCall('onSessionUpdated', onSessionUpdated, data.session as Record<string, unknown>)) {
+          const turnDetection = (
+            data.session as { turn_detection?: { create_response?: boolean } } | undefined
+          )?.turn_detection;
+          autoCreateResponseRef.current = turnDetection
+            ? turnDetection.create_response !== false
+            : true;
+          if (
+            !safeCall('onSessionUpdated', onSessionUpdated, data.session as Record<string, unknown>)
+          ) {
             // The consumer disconnected/reconnected: do not set up an avatar for a dead session
             break;
           }
@@ -869,7 +898,9 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
             const avatar = avatarRef.current;
             const avatarSession = sessionRef.current;
             const isCurrent = (): boolean =>
-              avatarRef.current === avatar && sessionRef.current === avatarSession && !!avatarSession?.scope.isActive;
+              avatarRef.current === avatar &&
+              sessionRef.current === avatarSession &&
+              !!avatarSession?.scope.isActive;
             try {
               await avatar.applyServerSdp(data.server_sdp);
               if (!isCurrent()) {
@@ -931,7 +962,8 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
         case 'conversation.item.input_audio_transcription.delta':
           if (onTranscript && data.delta) {
             userTranscriptRef.current += data.delta;
-            if (!safeCall('onTranscript', onTranscript, 'user', userTranscriptRef.current, false)) break;
+            if (!safeCall('onTranscript', onTranscript, 'user', userTranscriptRef.current, false))
+              break;
           }
           break;
 
@@ -946,7 +978,11 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
         case 'response.audio.delta':
           // Play audio for WebSocket voice-only mode (no avatar), only for the current response
           if (isWebRtc) break;
-          if (data.delta && !videoStreamRef.current && data.response_id === currentResponseIdRef.current) {
+          if (
+            data.delta &&
+            !videoStreamRef.current &&
+            data.response_id === currentResponseIdRef.current
+          ) {
             void ensurePlayer().enqueue(data.delta);
           }
           break;
@@ -955,7 +991,16 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
         case 'response.text.delta':
           if (onTranscript && data.delta) {
             assistantTranscriptRef.current += data.delta;
-            if (!safeCall('onTranscript', onTranscript, 'assistant', assistantTranscriptRef.current, false)) break;
+            if (
+              !safeCall(
+                'onTranscript',
+                onTranscript,
+                'assistant',
+                assistantTranscriptRef.current,
+                false
+              )
+            )
+              break;
           }
           break;
 
@@ -979,7 +1024,10 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
           const toolCallCount = (data.response?.output ?? []).filter(
             (item) => (item as { type?: string }).type === 'function_call'
           ).length;
-          const completions = completedResponsesRef.current as BoundedMap<string, ResponseCompletion>;
+          const completions = completedResponsesRef.current as BoundedMap<
+            string,
+            ResponseCompletion
+          >;
           completions.set(doneKey, {
             outstandingToolCalls: toolCallCount,
             answered: completions.get(doneKey)?.answered ?? false,
@@ -1011,7 +1059,8 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
               // required function_call_output exists. Hand it to the batch, whose single follow-up
               // answers the tool result and that turn together.
               doneBatch.followUpOwed =
-                (responseGateRef.current as ResponseGate).consumeQueuedRequest() || doneBatch.followUpOwed;
+                (responseGateRef.current as ResponseGate).consumeQueuedRequest() ||
+                doneBatch.followUpOwed;
               // ...but never wait forever for a call that may never arrive
               armToolBatchTimeout(doneKey, doneBatch, doneSession);
             }
@@ -1068,7 +1117,10 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
             // reconnect replaces the conversation, and `session.scope` says so.
             const session = sessionRef.current;
             const batchKey = `${data.response_id ?? currentResponseIdRef.current ?? ''}`;
-            const completed = completedResponsesRef.current as BoundedMap<string, ResponseCompletion>;
+            const completed = completedResponsesRef.current as BoundedMap<
+              string,
+              ResponseCompletion
+            >;
             const completion = completed.get(batchKey);
             const batch =
               toolBatchesRef.current.get(batchKey) ??
@@ -1114,9 +1166,13 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
                 if (sessionRef.current !== session || !session?.scope.isActive) return;
                 // The service waits for an output for this call_id: without one the conversation
                 // stalls forever. Report the failure so the model can react to it instead.
-                sendToolResult(callId, { error: err instanceof Error ? err.message : String(err) }, {
-                  triggerResponse: false,
-                });
+                sendToolResult(
+                  callId,
+                  { error: err instanceof Error ? err.message : String(err) },
+                  {
+                    triggerResponse: false,
+                  }
+                );
                 batch.sentOutput = true;
                 batch.pendingCallIds.delete(callId);
               })
@@ -1252,43 +1308,46 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
    * Release the media/session objects of the current connection (transport, avatar, player,
    * audio graph). Used by disconnect() and between reconnect attempts (`keepAudio`).
    */
-  const releaseConnection = useCallback((options: { keepAudio: boolean }): void => {
-    clearConnectTimer();
-    clearSpeculativeTimer();
-    // Aborting the session scope is the single teardown signal: every in-flight continuation that
-    // captured it (tool executors, avatar negotiation, mic attachment) discards itself
-    const session = sessionRef.current;
-    sessionRef.current = null;
-    session?.scope.abort();
-    session?.transport.close();
-    avatarRef.current?.close();
-    avatarRef.current = null;
-    videoStreamRef.current = null;
-    setVideoStream(null);
-    if (options.keepAudio) {
-      // Between reconnect attempts: keep the AudioContext (user gesture) but flush playback
-      playerRef.current?.stop();
-      graphRef.current?.detachRemoteStream();
-    } else {
-      playerRef.current?.dispose();
-      playerRef.current = null;
-      graphRef.current?.close();
-      graphRef.current = null;
-      setAudioStream(null);
-    }
-    currentResponseIdRef.current = null;
-    (responseGateRef.current as ResponseGate).reset();
-    queuedResponseEventRef.current = null;
-    for (const batch of toolBatchesRef.current.values()) {
-      if (batch.lateCallTimer) clearTimeout(batch.lateCallTimer);
-    }
-    toolBatchesRef.current.clear();
-    completedResponsesRef.current?.clear();
-    assistantTranscriptRef.current = '';
-    userTranscriptRef.current = '';
-    // The expiry belonged to the session that just ended; the next session.created brings a new one
-    setSessionExpiresAt(null);
-  }, [clearConnectTimer, clearSpeculativeTimer]);
+  const releaseConnection = useCallback(
+    (options: { keepAudio: boolean }): void => {
+      clearConnectTimer();
+      clearSpeculativeTimer();
+      // Aborting the session scope is the single teardown signal: every in-flight continuation that
+      // captured it (tool executors, avatar negotiation, mic attachment) discards itself
+      const session = sessionRef.current;
+      sessionRef.current = null;
+      session?.scope.abort();
+      session?.transport.close();
+      avatarRef.current?.close();
+      avatarRef.current = null;
+      videoStreamRef.current = null;
+      setVideoStream(null);
+      if (options.keepAudio) {
+        // Between reconnect attempts: keep the AudioContext (user gesture) but flush playback
+        playerRef.current?.stop();
+        graphRef.current?.detachRemoteStream();
+      } else {
+        playerRef.current?.dispose();
+        playerRef.current = null;
+        graphRef.current?.close();
+        graphRef.current = null;
+        setAudioStream(null);
+      }
+      currentResponseIdRef.current = null;
+      (responseGateRef.current as ResponseGate).reset();
+      queuedResponseEventRef.current = null;
+      for (const batch of toolBatchesRef.current.values()) {
+        if (batch.lateCallTimer) clearTimeout(batch.lateCallTimer);
+      }
+      toolBatchesRef.current.clear();
+      completedResponsesRef.current?.clear();
+      assistantTranscriptRef.current = '';
+      userTranscriptRef.current = '';
+      // The expiry belonged to the session that just ended; the next session.created brings a new one
+      setSessionExpiresAt(null);
+    },
+    [clearConnectTimer, clearSpeculativeTimer]
+  );
 
   /**
    * Schedule a reconnect attempt after an unexpected close, or settle into
@@ -1381,7 +1440,9 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
         },
         onClose: (info) => {
           if (isStale()) return;
-          log.info(`Connection closed - Code: ${info.code}, Reason: ${info.reason || 'none'}, Clean: ${info.wasClean}`);
+          log.info(
+            `Connection closed - Code: ${info.code}, Reason: ${info.reason || 'none'}, Clean: ${info.wasClean}`
+          );
           if (!info.wasClean) {
             log.warn('Connection closed unexpectedly');
           }
@@ -1402,7 +1463,11 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
           setAudioStream(stream);
           // Remote tracks start muted and unmute once RTP packets arrive — useful for diagnostics
           stream.getAudioTracks().forEach((track) => {
-            track.addEventListener('unmute', () => log.debug('Remote audio flowing (track unmuted)'), { once: true });
+            track.addEventListener(
+              'unmute',
+              () => log.debug('Remote audio flowing (track unmuted)'),
+              { once: true }
+            );
           });
           ensureGraph().attachRemoteStream(stream);
         },
@@ -1436,7 +1501,9 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
         setConnectionState(mode === 'initial' ? 'connecting' : 'reconnecting');
 
         // Fresh token per attempt when a provider is configured
-        const token = currentConnection.getToken ? await currentConnection.getToken() : currentConnection.token;
+        const token = currentConnection.getToken
+          ? await currentConnection.getToken()
+          : currentConnection.token;
         if (!connectionScope.isActive) return; // disconnected while acquiring the token
         const resolvedConnection = token ? { ...currentConnection, token } : currentConnection;
 
@@ -1453,17 +1520,21 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
         }
         transportKindRef.current = kind;
 
-        log.info(`${mode === 'reconnect' ? 'Reconnecting' : 'Connecting'} (${modeLabel}, ${kind}) → ${redactUrl(url)}`);
+        log.info(
+          `${mode === 'reconnect' ? 'Reconnecting' : 'Connecting'} (${modeLabel}, ${kind}) → ${redactUrl(url)}`
+        );
         if (mode === 'initial') {
           // Local compatibility warnings reach `onWarning` like the service's own `warning`
           // events, so an app can surface them in its UI instead of only in the console
-          validateConfig(currentSession ?? {}, isAgentMode, currentConnection.model).forEach((warning) => {
-            log.warn(warning);
-            safeCall('onWarning', configRef.current.onWarning, {
-              message: warning,
-              code: CLIENT_CONFIG_WARNING_CODE,
-            });
-          });
+          validateConfig(currentSession ?? {}, isAgentMode, currentConnection.model).forEach(
+            (warning) => {
+              log.warn(warning);
+              safeCall('onWarning', configRef.current.onWarning, {
+                message: warning,
+                code: CLIENT_CONFIG_WARNING_CODE,
+              });
+            }
+          );
           // A consumer may `disconnect()` from `onWarning`. Continuing would open a socket whose
           // scope is already aborted — its close handler runs before `connect()` and the transport
           // would be left open with nothing able to shut it down.
@@ -1491,7 +1562,7 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
         (responseGateRef.current as ResponseGate).reset();
         session.transport.connect(url, kind === 'webrtc' ? buildSession(currentSession) : {}, {
           // WebRTC: keep sending the microphone that was started before connect()/reconnect
-          localTrack: kind === 'webrtc' ? micRef.current?.track ?? null : undefined,
+          localTrack: kind === 'webrtc' ? (micRef.current?.track ?? null) : undefined,
         });
 
         // A socket that never opens *and* never errors (silently dropped upgrade, dead proxy)

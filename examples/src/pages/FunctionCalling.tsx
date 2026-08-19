@@ -1,16 +1,7 @@
 import { useRef, useEffect, useState, useCallback } from 'react';
-import {
-  useVoiceLive,
-  createVoiceLiveConfig,
-} from '@iloveagents/foundry-voice-live-react';
+import { useVoiceLive, createVoiceLiveConfig } from '@iloveagents/foundry-voice-live-react';
 import type { FunctionTool } from '@iloveagents/foundry-voice-live-react';
-import {
-  SampleLayout,
-  StatusBadge,
-  Section,
-  ControlGroup,
-  ErrorPanel,
-} from '../components';
+import { SampleLayout, StatusBadge, Section, ControlGroup, ErrorPanel } from '../components';
 import { directOrProxyConnection } from '../lib/connection';
 
 // Tool definitions (JSON schema parameters)
@@ -51,10 +42,7 @@ export function FunctionCalling(): JSX.Element {
   const [error, setError] = useState<string | null>(null);
 
   const addLog = useCallback((message: string): void => {
-    setLogs((prev) => [
-      ...prev,
-      `[${new Date().toLocaleTimeString()}] ${message}`,
-    ]);
+    setLogs((prev) => [...prev, `[${new Date().toLocaleTimeString()}] ${message}`]);
   }, []);
 
   // Tool executor: RETURN the result and the hook sends it as
@@ -76,9 +64,7 @@ export function FunctionCalling(): JSX.Element {
             location: parsedArgs.location,
             temperature: Math.floor(Math.random() * 30) + 10,
             unit: parsedArgs.unit || 'celsius',
-            condition: ['Sunny', 'Cloudy', 'Rainy', 'Windy'][
-              Math.floor(Math.random() * 4)
-            ],
+            condition: ['Sunny', 'Cloudy', 'Rainy', 'Windy'][Math.floor(Math.random() * 4)],
           };
         } else if (toolName === 'get_time') {
           result = {
@@ -116,8 +102,7 @@ export function FunctionCalling(): JSX.Element {
     logLevel: 'debug',
   });
 
-  const { connect, disconnect, connectionState, audioStream } =
-    useVoiceLive(config);
+  const { connect, disconnect, connectionState, audioStream } = useVoiceLive(config);
 
   const audioRef = useRef<HTMLAudioElement>(null);
 
@@ -158,16 +143,10 @@ export function FunctionCalling(): JSX.Element {
 
       <Section>
         <ControlGroup>
-          <button
-            onClick={handleStart}
-            disabled={connectionState === 'connected'}
-          >
+          <button onClick={handleStart} disabled={connectionState === 'connected'}>
             Start Conversation
           </button>
-          <button
-            onClick={handleStop}
-            disabled={connectionState !== 'connected'}
-          >
+          <button onClick={handleStop} disabled={connectionState !== 'connected'}>
             Stop
           </button>
         </ControlGroup>
@@ -177,8 +156,8 @@ export function FunctionCalling(): JSX.Element {
         <div className="tool-info">
           <span className="tool-info__name">get_weather</span>
           <span className="tool-info__description">
-            Get weather for a location. Parameters: location (required), unit
-            (optional: celsius/fahrenheit)
+            Get weather for a location. Parameters: location (required), unit (optional:
+            celsius/fahrenheit)
           </span>
         </div>
         <div className="tool-info">
@@ -204,8 +183,7 @@ export function FunctionCalling(): JSX.Element {
         <div className="code-block">
           {logs.length === 0 ? (
             <div className="code-block__placeholder">
-              No tool calls yet. Start the conversation and ask about weather or
-              time!
+              No tool calls yet. Start the conversation and ask about weather or time!
             </div>
           ) : (
             logs.map((log, i) => <div key={i}>{log}</div>)

@@ -5,7 +5,12 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 import { useAudioCapture } from './useAudioCapture';
-import { FakeAudioContext, FakeAudioWorkletNode, installBrowserFakes, makeFakeMicStream } from './testFakes';
+import {
+  FakeAudioContext,
+  FakeAudioWorkletNode,
+  installBrowserFakes,
+  makeFakeMicStream,
+} from './testFakes';
 
 let restore: () => void;
 let mic: ReturnType<typeof makeFakeMicStream>;
@@ -221,10 +226,16 @@ describe('useAudioCapture', () => {
 
   it('honours autoStart and a custom worklet path', async () => {
     const { result } = renderHook(() =>
-      useAudioCapture({ autoStart: true, workletPath: '/custom-processor.js', onAudioData: vi.fn() })
+      useAudioCapture({
+        autoStart: true,
+        workletPath: '/custom-processor.js',
+        onAudioData: vi.fn(),
+      })
     );
     await vi.waitFor(() => expect(result.current.isCapturing).toBe(true));
-    expect(FakeAudioContext.instances[0]!.audioWorklet.addModule).toHaveBeenCalledWith('/custom-processor.js');
+    expect(FakeAudioContext.instances[0]!.audioWorklet.addModule).toHaveBeenCalledWith(
+      '/custom-processor.js'
+    );
   });
 
   it('abandons a start whose getUserMedia resolves after stopCapture()', async () => {

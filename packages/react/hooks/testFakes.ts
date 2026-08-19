@@ -233,18 +233,21 @@ export function installBrowserFakes(options: { getUserMedia?: () => Promise<any>
   vi.stubGlobal('AudioContext', FakeAudioContext);
   vi.stubGlobal('AudioWorkletNode', FakeAudioWorkletNode);
   vi.stubGlobal('RTCPeerConnection', FakePeerConnection);
-  vi.stubGlobal('MediaStream', class {
-    tracks: any[];
-    constructor(tracks: any[] = []) {
-      this.tracks = tracks;
+  vi.stubGlobal(
+    'MediaStream',
+    class {
+      tracks: any[];
+      constructor(tracks: any[] = []) {
+        this.tracks = tracks;
+      }
+      getTracks() {
+        return this.tracks;
+      }
+      getAudioTracks() {
+        return this.tracks;
+      }
     }
-    getTracks() {
-      return this.tracks;
-    }
-    getAudioTracks() {
-      return this.tracks;
-    }
-  });
+  );
   if (!(URL as any).createObjectURL) {
     (URL as any).createObjectURL = vi.fn(() => 'blob:fake');
     (URL as any).revokeObjectURL = vi.fn();

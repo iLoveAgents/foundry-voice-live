@@ -113,7 +113,10 @@ describe('createWebRtcOffer', () => {
     expect(sdpOffer).toBe('v=0 offer');
     expect(handle.pc).toBe(pc);
     expect(pc.dataChannels[0]?.label).toBe(VOICE_LIVE_DATA_CHANNEL);
-    expect(pc.transceivers[0]).toMatchObject({ kindOrTrack: 'audio', init: { direction: 'sendrecv' } });
+    expect(pc.transceivers[0]).toMatchObject({
+      kindOrTrack: 'audio',
+      init: { direction: 'sendrecv' },
+    });
 
     // Data channel messages and connection state changes are forwarded
     pc.dataChannels[0]!.onmessage!({ data: '{"type":"response.created"}' } as MessageEvent);
@@ -150,7 +153,10 @@ describe('message helpers', () => {
       sdp_offer: 'sdp',
       session: { modalities: ['text', 'audio'] },
     });
-    expect(buildRtcSdpCreateEvent('sdp')).toEqual({ type: 'rtc.call.sdp.create', sdp_offer: 'sdp' });
+    expect(buildRtcSdpCreateEvent('sdp')).toEqual({
+      type: 'rtc.call.sdp.create',
+      sdp_offer: 'sdp',
+    });
   });
 
   it('applyRtcSdpAnswer sets the remote answer', async () => {
@@ -164,20 +170,40 @@ describe('message helpers', () => {
       formatRtcCallError({
         type: 'rtc.call.error',
         operation: 'rtc.call.sdp.create',
-        error: { type: 'invalid_request_error', code: 'missing_sdp', message: 'SDP offer is required' },
+        error: {
+          type: 'invalid_request_error',
+          code: 'missing_sdp',
+          message: 'SDP offer is required',
+        },
       })
-    ).toBe('WebRTC call error — missing_sdp: SDP offer is required (operation: rtc.call.sdp.create)');
+    ).toBe(
+      'WebRTC call error — missing_sdp: SDP offer is required (operation: rtc.call.sdp.create)'
+    );
   });
 
   it('buildMicConstraints merges overrides onto sane defaults', () => {
     expect(buildMicConstraints()).toEqual({
-      audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 },
+      audio: {
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true,
+        channelCount: 1,
+      },
     });
     expect(buildMicConstraints(true)).toEqual(buildMicConstraints());
     expect(buildMicConstraints({ deviceId: 'mic-1', echoCancellation: false })).toEqual({
-      audio: { echoCancellation: false, noiseSuppression: true, autoGainControl: true, channelCount: 1, deviceId: 'mic-1' },
+      audio: {
+        echoCancellation: false,
+        noiseSuppression: true,
+        autoGainControl: true,
+        channelCount: 1,
+        deviceId: 'mic-1',
+      },
     });
-    expect(buildMicConstraints(undefined, 24000).audio).toMatchObject({ sampleRate: 24000, channelCount: 1 });
+    expect(buildMicConstraints(undefined, 24000).audio).toMatchObject({
+      sampleRate: 24000,
+      channelCount: 1,
+    });
   });
 
   it('closeWebRtc stops tracks and closes channel + peer connection', () => {
@@ -186,7 +212,11 @@ describe('message helpers', () => {
     const stop = vi.fn();
     const stream = { getTracks: () => [{ stop }] } as unknown as MediaStream;
     closeWebRtc(
-      { pc: pc as unknown as RTCPeerConnection, dataChannel: dc as unknown as RTCDataChannel, audioTransceiver: {} as RTCRtpTransceiver },
+      {
+        pc: pc as unknown as RTCPeerConnection,
+        dataChannel: dc as unknown as RTCDataChannel,
+        audioTransceiver: {} as RTCRtpTransceiver,
+      },
       stream
     );
     expect(stop).toHaveBeenCalled();

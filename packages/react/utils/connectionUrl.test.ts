@@ -14,14 +14,19 @@ const params = (url: string) => new URL(url).searchParams;
 describe('resolveConnectionMode', () => {
   it('prefers proxy, then agent, then standard', () => {
     expect(resolveConnectionMode({ proxyUrl: 'ws://x/ws', agentName: 'a' })).toBe('proxy');
-    expect(resolveConnectionMode({ resourceName: 'r', agentName: 'a', projectName: 'p' })).toBe('foundry-agent');
+    expect(resolveConnectionMode({ resourceName: 'r', agentName: 'a', projectName: 'p' })).toBe(
+      'foundry-agent'
+    );
     expect(resolveConnectionMode({ resourceName: 'r', apiKey: 'k' })).toBe('standard');
   });
 });
 
 describe('buildVoiceLiveUrl — standard mode', () => {
   it('builds the realtime URL with default api-version and model, api-key auth', () => {
-    const { url, mode, isAgentMode } = buildVoiceLiveUrl({ resourceName: 'my-res', apiKey: 'secret' });
+    const { url, mode, isAgentMode } = buildVoiceLiveUrl({
+      resourceName: 'my-res',
+      apiKey: 'secret',
+    });
     expect(url.startsWith('wss://my-res.services.ai.azure.com/voice-live/realtime?')).toBe(true);
     expect(params(url).get('api-version')).toBe(DEFAULT_API_VERSION);
     expect(params(url).get('model')).toBe('gpt-realtime');
@@ -31,7 +36,12 @@ describe('buildVoiceLiveUrl — standard mode', () => {
   });
 
   it('uses the documented Authorization=Bearer query param for tokens (token wins over apiKey)', () => {
-    const { url } = buildVoiceLiveUrl({ resourceName: 'r', token: 'tok', apiKey: 'k', model: 'azure-realtime' });
+    const { url } = buildVoiceLiveUrl({
+      resourceName: 'r',
+      token: 'tok',
+      apiKey: 'k',
+      model: 'azure-realtime',
+    });
     expect(url).toContain('&Authorization=Bearer%20tok');
     expect(params(url).get('Authorization')).toBe('Bearer tok');
     expect(params(url).has('api-key')).toBe(false);
@@ -79,8 +89,12 @@ describe('buildVoiceLiveUrl — Foundry Agents', () => {
   });
 
   it('throws when projectName or token is missing', () => {
-    expect(() => buildVoiceLiveUrl({ resourceName: 'r', agentName: 'a', token: 't' })).toThrow(/projectName/);
-    expect(() => buildVoiceLiveUrl({ resourceName: 'r', agentName: 'a', projectName: 'p' })).toThrow(/token/);
+    expect(() => buildVoiceLiveUrl({ resourceName: 'r', agentName: 'a', token: 't' })).toThrow(
+      /projectName/
+    );
+    expect(() =>
+      buildVoiceLiveUrl({ resourceName: 'r', agentName: 'a', projectName: 'p' })
+    ).toThrow(/token/);
   });
 });
 
@@ -94,63 +108,82 @@ describe('buildVoiceLiveUrl — proxy mode', () => {
   });
 
   it('detects agent mode from proxy query params or the agentMode flag', () => {
-    expect(buildVoiceLiveUrl({ proxyUrl: 'ws://x/ws?agentName=a&projectName=p' }).isAgentMode).toBe(true);
+    expect(buildVoiceLiveUrl({ proxyUrl: 'ws://x/ws?agentName=a&projectName=p' }).isAgentMode).toBe(
+      true
+    );
     expect(buildVoiceLiveUrl({ proxyUrl: 'ws://x/ws', agentMode: true }).isAgentMode).toBe(true);
-    expect(buildVoiceLiveUrl({ proxyUrl: 'ws://x/ws?agentName=a', agentMode: false }).isAgentMode).toBe(false);
+    expect(
+      buildVoiceLiveUrl({ proxyUrl: 'ws://x/ws?agentName=a', agentMode: false }).isAgentMode
+    ).toBe(false);
   });
 
   it('needs a non-empty agentName, like the proxy itself', () => {
     // the proxy routes to an agent only for a truthy agentName; assuming agent mode here would
     // strip instructions, tools, temperature and the voice from a standard session
-    expect(buildVoiceLiveUrl({ proxyUrl: 'ws://x/ws?model=gpt-realtime&projectName=p' }).isAgentMode).toBe(false);
+    expect(
+      buildVoiceLiveUrl({ proxyUrl: 'ws://x/ws?model=gpt-realtime&projectName=p' }).isAgentMode
+    ).toBe(false);
     expect(buildVoiceLiveUrl({ proxyUrl: 'ws://x/ws?agentName=' }).isAgentMode).toBe(false);
     expect(buildVoiceLiveUrl({ proxyUrl: 'ws://x/ws?agentName=%20' }).isAgentMode).toBe(false);
-    expect(buildVoiceLiveUrl({ proxyUrl: 'ws://x/ws?agentName=support&projectName=p' }).isAgentMode).toBe(true);
+    expect(
+      buildVoiceLiveUrl({ proxyUrl: 'ws://x/ws?agentName=support&projectName=p' }).isAgentMode
+    ).toBe(true);
   });
 
   it('forwards apiVersion to the proxy for the websocket transport too', () => {
-    expect(buildVoiceLiveUrl({ proxyUrl: 'ws://x/ws?model=gpt-4.1', apiVersion: '2026-06-01-preview' }).url).toBe(
-      'ws://x/ws?model=gpt-4.1&apiVersion=2026-06-01-preview'
-    );
+    expect(
+      buildVoiceLiveUrl({ proxyUrl: 'ws://x/ws?model=gpt-4.1', apiVersion: '2026-06-01-preview' })
+        .url
+    ).toBe('ws://x/ws?model=gpt-4.1&apiVersion=2026-06-01-preview');
   });
 
   it('appends transport=webrtc (and apiVersion when given) for the WebRTC transport', () => {
-    expect(buildVoiceLiveUrl({ proxyUrl: 'ws://x/ws?model=gpt-realtime', transport: 'webrtc' }).url).toBe(
-      'ws://x/ws?model=gpt-realtime&transport=webrtc'
-    );
-    expect(buildVoiceLiveUrl({ proxyUrl: 'ws://x/ws', transport: 'webrtc', apiVersion: '2026-06-01-preview' }).url).toBe(
-      'ws://x/ws?transport=webrtc&apiVersion=2026-06-01-preview'
-    );
+    expect(
+      buildVoiceLiveUrl({ proxyUrl: 'ws://x/ws?model=gpt-realtime', transport: 'webrtc' }).url
+    ).toBe('ws://x/ws?model=gpt-realtime&transport=webrtc');
+    expect(
+      buildVoiceLiveUrl({
+        proxyUrl: 'ws://x/ws',
+        transport: 'webrtc',
+        apiVersion: '2026-06-01-preview',
+      }).url
+    ).toBe('ws://x/ws?transport=webrtc&apiVersion=2026-06-01-preview');
     // no duplicates
-    expect(buildVoiceLiveUrl({ proxyUrl: 'ws://x/ws?transport=webrtc', transport: 'webrtc' }).url).toBe(
-      'ws://x/ws?transport=webrtc'
-    );
+    expect(
+      buildVoiceLiveUrl({ proxyUrl: 'ws://x/ws?transport=webrtc', transport: 'webrtc' }).url
+    ).toBe('ws://x/ws?transport=webrtc');
   });
 
   it('lets explicit connection settings override params already in the proxy URL', () => {
     expect(
-      buildVoiceLiveUrl({ proxyUrl: 'ws://x/ws?apiVersion=2026-07-15&transport=websocket', transport: 'webrtc', apiVersion: '2026-01-01-preview' }).url
+      buildVoiceLiveUrl({
+        proxyUrl: 'ws://x/ws?apiVersion=2026-07-15&transport=websocket',
+        transport: 'webrtc',
+        apiVersion: '2026-01-01-preview',
+      }).url
     ).toBe('ws://x/ws?apiVersion=2026-01-01-preview&transport=webrtc');
   });
 
   it('overrides a stale transport=webrtc param when the caller selects the websocket transport', () => {
     // Reusing a proxy URL from a WebRTC page must not route a WebSocket session to /calls
-    expect(buildVoiceLiveUrl({ proxyUrl: 'ws://x/ws?transport=webrtc', transport: 'websocket' }).url).toBe(
-      'ws://x/ws?transport=websocket'
-    );
+    expect(
+      buildVoiceLiveUrl({ proxyUrl: 'ws://x/ws?transport=webrtc', transport: 'websocket' }).url
+    ).toBe('ws://x/ws?transport=websocket');
     // ...also when `transport` is omitted (defaults to websocket)
-    expect(buildVoiceLiveUrl({ proxyUrl: 'ws://x/ws?model=gpt-realtime&transport=webrtc' }).url).toBe(
-      'ws://x/ws?model=gpt-realtime&transport=websocket'
-    );
+    expect(
+      buildVoiceLiveUrl({ proxyUrl: 'ws://x/ws?model=gpt-realtime&transport=webrtc' }).url
+    ).toBe('ws://x/ws?model=gpt-realtime&transport=websocket');
     // no transport param + websocket → URL stays untouched
-    expect(buildVoiceLiveUrl({ proxyUrl: 'ws://x/ws?model=gpt-realtime' }).url).toBe('ws://x/ws?model=gpt-realtime');
+    expect(buildVoiceLiveUrl({ proxyUrl: 'ws://x/ws?model=gpt-realtime' }).url).toBe(
+      'ws://x/ws?model=gpt-realtime'
+    );
   });
 
   it('puts a per-user token on the proxy URL and replaces a stale one', () => {
     // documented pattern: proxyUrl + getToken (the hook resolves it into connection.token)
-    expect(buildVoiceLiveUrl({ proxyUrl: 'ws://x/ws?model=gpt-realtime', token: 'tok-1' }).url).toBe(
-      'ws://x/ws?model=gpt-realtime&token=tok-1'
-    );
+    expect(
+      buildVoiceLiveUrl({ proxyUrl: 'ws://x/ws?model=gpt-realtime', token: 'tok-1' }).url
+    ).toBe('ws://x/ws?model=gpt-realtime&token=tok-1');
     // a refreshed token must win over whatever the caller's URL carries
     expect(buildVoiceLiveUrl({ proxyUrl: 'ws://x/ws?token=expired', token: 'tok-2' }).url).toBe(
       'ws://x/ws?token=tok-2'
@@ -170,20 +203,22 @@ describe('buildVoiceLiveUrl — proxy mode', () => {
       );
     }
     // and the WebRTC direction still wins over anything present
-    expect(buildVoiceLiveUrl({ proxyUrl: 'ws://x/ws?transport=WEBSOCKET', transport: 'webrtc' }).url).toBe(
-      'ws://x/ws?transport=webrtc'
-    );
+    expect(
+      buildVoiceLiveUrl({ proxyUrl: 'ws://x/ws?transport=WEBSOCKET', transport: 'webrtc' }).url
+    ).toBe('ws://x/ws?transport=webrtc');
   });
 
   it('supports relative proxy URLs and origin-only URLs', () => {
-    expect(buildVoiceLiveUrl({ proxyUrl: '/voice-live?model=gpt-realtime', transport: 'webrtc' }).url).toBe(
-      '/voice-live?model=gpt-realtime&transport=webrtc'
-    );
-    expect(buildVoiceLiveUrl({ proxyUrl: 'wss://proxy.example.com', transport: 'webrtc' }).url).toBe(
-      'wss://proxy.example.com/?transport=webrtc'
-    );
+    expect(
+      buildVoiceLiveUrl({ proxyUrl: '/voice-live?model=gpt-realtime', transport: 'webrtc' }).url
+    ).toBe('/voice-live?model=gpt-realtime&transport=webrtc');
+    expect(
+      buildVoiceLiveUrl({ proxyUrl: 'wss://proxy.example.com', transport: 'webrtc' }).url
+    ).toBe('wss://proxy.example.com/?transport=webrtc');
     // untouched when nothing is added
-    expect(buildVoiceLiveUrl({ proxyUrl: '/voice-live?token=a%2Bb' }).url).toBe('/voice-live?token=a%2Bb');
+    expect(buildVoiceLiveUrl({ proxyUrl: '/voice-live?token=a%2Bb' }).url).toBe(
+      '/voice-live?token=a%2Bb'
+    );
   });
 });
 
@@ -205,18 +240,28 @@ describe('buildVoiceLiveUrl — WebRTC transport', () => {
 
 describe('validateTransport', () => {
   it('is a no-op for websocket', () => {
-    expect(() => validateTransport({ resourceName: 'r' }, { avatar: { character: 'lisa', style: 's' } }, false)).not.toThrow();
+    expect(() =>
+      validateTransport({ resourceName: 'r' }, { avatar: { character: 'lisa', style: 's' } }, false)
+    ).not.toThrow();
   });
 
   it('rejects avatar, old api versions and missing RTCPeerConnection for webrtc', () => {
     expect(() =>
-      validateTransport({ transport: 'webrtc' }, { avatar: { character: 'lisa', style: 's' } }, true)
+      validateTransport(
+        { transport: 'webrtc' },
+        { avatar: { character: 'lisa', style: 's' } },
+        true
+      )
     ).toThrow(/Avatar is not supported/);
-    expect(() => validateTransport({ transport: 'webrtc', apiVersion: '2025-10-01' }, undefined, true)).toThrow(
-      /2026-01-01-preview/
+    expect(() =>
+      validateTransport({ transport: 'webrtc', apiVersion: '2025-10-01' }, undefined, true)
+    ).toThrow(/2026-01-01-preview/);
+    expect(() => validateTransport({ transport: 'webrtc' }, undefined, false)).toThrow(
+      /RTCPeerConnection/
     );
-    expect(() => validateTransport({ transport: 'webrtc' }, undefined, false)).toThrow(/RTCPeerConnection/);
-    expect(() => validateTransport({ transport: 'webrtc', apiVersion: '2026-07-15' }, undefined, true)).not.toThrow();
+    expect(() =>
+      validateTransport({ transport: 'webrtc', apiVersion: '2026-07-15' }, undefined, true)
+    ).not.toThrow();
   });
 });
 

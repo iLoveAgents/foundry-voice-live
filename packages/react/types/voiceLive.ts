@@ -40,21 +40,21 @@ export type {
  */
 export type KnownVoiceLiveModel =
   // Pro tier - Best quality
-  | 'gpt-realtime'        // Native audio, best quality
-  | 'azure-realtime'      // Azure native speech-to-speech (GA 2026-07-15); use with 'azure-realtime-native' voices
-  | 'gpt-4o'              // Azure STT/TTS
-  | 'gpt-4.1'             // Azure STT/TTS
-  | 'gpt-5'               // Azure STT/TTS
-  | 'gpt-5-chat'          // Azure STT/TTS
+  | 'gpt-realtime' // Native audio, best quality
+  | 'azure-realtime' // Azure native speech-to-speech (GA 2026-07-15); use with 'azure-realtime-native' voices
+  | 'gpt-4o' // Azure STT/TTS
+  | 'gpt-4.1' // Azure STT/TTS
+  | 'gpt-5' // Azure STT/TTS
+  | 'gpt-5-chat' // Azure STT/TTS
   // Basic tier
-  | 'gpt-realtime-mini'   // Native audio
-  | 'gpt-4o-mini'         // Azure STT/TTS
-  | 'gpt-4.1-mini'        // Azure STT/TTS
-  | 'gpt-5-mini'          // Azure STT/TTS
+  | 'gpt-realtime-mini' // Native audio
+  | 'gpt-4o-mini' // Azure STT/TTS
+  | 'gpt-4.1-mini' // Azure STT/TTS
+  | 'gpt-5-mini' // Azure STT/TTS
   // Lite tier
-  | 'gpt-5-nano'          // Azure STT/TTS
-  | 'phi4-mm-realtime'    // Native audio
-  | 'phi4-mini';          // Azure STT/TTS
+  | 'gpt-5-nano' // Azure STT/TTS
+  | 'phi4-mm-realtime' // Native audio
+  | 'phi4-mini'; // Azure STT/TTS
 
 /**
  * Voice Live model - extensible to support future models
@@ -255,9 +255,9 @@ export interface InputAudioEchoCancellation {
  * Noise reduction type
  */
 export type NoiseReductionType =
-  | 'azure_deep_noise_suppression'  // Voice Live: Optimized for close microphones
-  | 'near_field'                     // Azure OpenAI: Close-talking microphones
-  | 'far_field';                     // Azure OpenAI: Far-field microphones
+  | 'azure_deep_noise_suppression' // Voice Live: Optimized for close microphones
+  | 'near_field' // Azure OpenAI: Close-talking microphones
+  | 'far_field'; // Azure OpenAI: Far-field microphones
 
 /**
  * Noise reduction configuration
@@ -275,7 +275,7 @@ export type TranscriptionModel =
   | 'gpt-4o-transcribe'
   | 'gpt-4o-mini-transcribe'
   | 'gpt-4o-transcribe-diarize'
-  | 'mai-transcribe';          // Preview: works with all models and agents
+  | 'mai-transcribe'; // Preview: works with all models and agents
 
 /**
  * Custom speech model configuration per locale (Voice Live)
@@ -349,10 +349,10 @@ export interface InputAudioTranscription {
  * Turn detection type
  */
 export type TurnDetectionType =
-  | 'server_vad'                      // Volume-based (Azure OpenAI default)
-  | 'semantic_vad'                    // Semantic (gpt-realtime/mini only)
-  | 'azure_semantic_vad'              // Voice Live: Azure semantic (all models)
-  | 'azure_semantic_vad_en'           // Voice Live: English-optimized Azure semantic
+  | 'server_vad' // Volume-based (Azure OpenAI default)
+  | 'semantic_vad' // Semantic (gpt-realtime/mini only)
+  | 'azure_semantic_vad' // Voice Live: Azure semantic (all models)
+  | 'azure_semantic_vad_en' // Voice Live: English-optimized Azure semantic
   | 'azure_semantic_vad_multilingual'; // Voice Live: Multilingual semantic
 
 /**
@@ -365,10 +365,10 @@ export type Eagerness = 'low' | 'medium' | 'high' | 'auto';
  * End of utterance detection model (Voice Live)
  */
 export type EndOfUtteranceModel =
-  | 'semantic_detection_v1'              // English only (text-based)
-  | 'semantic_detection_v1_en'           // English-optimized (text-based)
+  | 'semantic_detection_v1' // English only (text-based)
+  | 'semantic_detection_v1_en' // English-optimized (text-based)
   | 'semantic_detection_v1_multilingual' // Multi-language support (text-based)
-  | 'smart_end_of_turn_detection';       // Audio-based EOU (operates on the input audio stream)
+  | 'smart_end_of_turn_detection'; // Audio-based EOU (operates on the input audio stream)
 
 /**
  * End of utterance detection threshold level (Voice Live)
@@ -504,7 +504,16 @@ export interface TurnDetectionConfig {
  * OpenAI voice names (gpt-realtime family). Single source of truth for the `StandardVoice` type.
  */
 export const OPENAI_VOICES = [
-  'alloy', 'ash', 'ballad', 'coral', 'echo', 'sage', 'shimmer', 'verse', 'marin', 'cedar',
+  'alloy',
+  'ash',
+  'ballad',
+  'coral',
+  'echo',
+  'sage',
+  'shimmer',
+  'verse',
+  'marin',
+  'cedar',
 ] as const;
 
 /**
@@ -517,8 +526,18 @@ export type StandardVoice = (typeof OPENAI_VOICES)[number];
  * Single source of truth for the `AzureRealtimeNativeVoiceName` type (and voice pickers).
  */
 export const AZURE_REALTIME_NATIVE_VOICES = [
-  'aarti', 'andrew', 'ava', 'denise', 'diya', 'elsa',
-  'florian', 'francisca', 'meera', 'ximena', 'xiaoxiao', 'yunxi',
+  'aarti',
+  'andrew',
+  'ava',
+  'denise',
+  'diya',
+  'elsa',
+  'florian',
+  'francisca',
+  'meera',
+  'ximena',
+  'xiaoxiao',
+  'yunxi',
 ] as const;
 
 /**
@@ -542,10 +561,10 @@ export type PersonalVoiceModel =
  * Voice type discriminator (Voice Live)
  */
 export type VoiceType =
-  | 'openai'                // OpenAI voices (gpt-realtime family)
-  | 'azure-standard'        // Azure neural / HD voices, e.g. 'en-US-Ava:DragonHDLatestNeural'
-  | 'azure-custom'          // Custom neural voice (requires endpointId)
-  | 'azure-personal'        // Personal voice (requires model)
+  | 'openai' // OpenAI voices (gpt-realtime family)
+  | 'azure-standard' // Azure neural / HD voices, e.g. 'en-US-Ava:DragonHDLatestNeural'
+  | 'azure-custom' // Custom neural voice (requires endpointId)
+  | 'azure-personal' // Personal voice (requires model)
   | 'azure-realtime-native'; // Azure Realtime native voices (model 'azure-realtime' only)
 
 /**
@@ -762,10 +781,7 @@ export interface FunctionTool {
  * - 'never': tools execute automatically.
  * - Per-tool: `{ always: ['submit_feedback'], never: ['search_docs'] }` (unlisted → 'always').
  */
-export type McpRequireApproval =
-  | 'always'
-  | 'never'
-  | { always?: string[]; never?: string[] };
+export type McpRequireApproval = 'always' | 'never' | { always?: string[]; never?: string[] };
 
 /**
  * Remote MCP server that Voice Live connects to server-side (tools are auto-discovered
@@ -845,10 +861,11 @@ export type Tool = FunctionTool | MCPTool | FoundryAgentTool;
  * Tool choice strategy
  */
 export type ToolChoice =
-  | 'auto'      // Let model decide
-  | 'none'      // Don't call functions
-  | 'required'  // Must call a function
-  | {           // Specific function
+  | 'auto' // Let model decide
+  | 'none' // Don't call functions
+  | 'required' // Must call a function
+  | {
+      // Specific function
       type: 'function';
       function: { name: string };
     };
@@ -1280,7 +1297,12 @@ export type SessionState = 'idle' | 'listening' | 'thinking' | 'speaking';
  * Connection state of the control channel.
  * `'reconnecting'` is only reached with the `reconnect` option.
  */
-export type ConnectionState = 'disconnected' | 'connecting' | 'reconnecting' | 'connected' | 'error';
+export type ConnectionState =
+  | 'disconnected'
+  | 'connecting'
+  | 'reconnecting'
+  | 'connected'
+  | 'error';
 
 /**
  * Auto-reconnect policy (see `UseVoiceLiveConfig.reconnect`)
@@ -1376,7 +1398,11 @@ export interface UseVoiceLiveReturn {
    * Send a function-call result (`function_call_output`) for `callId` and, by default,
    * trigger a response. Objects are JSON-stringified.
    */
-  sendToolResult: (callId: string, output: ToolResult, options?: { triggerResponse?: boolean }) => void;
+  sendToolResult: (
+    callId: string,
+    output: ToolResult,
+    options?: { triggerResponse?: boolean }
+  ) => void;
 
   /** Cancel the in-progress response (`response.cancel`) and flush local playback */
   cancelResponse: () => void;
@@ -1405,4 +1431,3 @@ export interface UseVoiceLiveReturn {
    */
   getAudioPlaybackTime: () => number | null;
 }
-

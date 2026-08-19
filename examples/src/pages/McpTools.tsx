@@ -113,7 +113,10 @@ export function McpTools(): JSX.Element {
         case 'mcp_list_tools.completed':
           addLog('MCP tool discovery completed');
           // Fetch the populated mcp_list_tools item to show the discovered tools
-          sendEventRef.current({ type: 'conversation.item.retrieve', item_id: event.item_id as string });
+          sendEventRef.current({
+            type: 'conversation.item.retrieve',
+            item_id: event.item_id as string,
+          });
           break;
 
         case 'conversation.item.retrieved': {
@@ -123,7 +126,9 @@ export function McpTools(): JSX.Element {
           if (item?.type === 'mcp_list_tools') {
             const names = (item.tools ?? []).map((tool) => tool.name ?? '?');
             setDiscoveredTools(names);
-            addLog(`Discovered ${names.length} tool(s) on ${item.server_label ?? '?'}: ${names.join(', ')}`);
+            addLog(
+              `Discovered ${names.length} tool(s) on ${item.server_label ?? '?'}: ${names.join(', ')}`
+            );
           }
           break;
         }
@@ -299,9 +304,7 @@ export function McpTools(): JSX.Element {
       <StatusBadge status={connectionState} />
 
       {isConnected && (
-        <p style={{ margin: '0.5rem 0', fontStyle: 'italic' }}>
-          {sessionStateLabel(sessionState)}
-        </p>
+        <p style={{ margin: '0.5rem 0', fontStyle: 'italic' }}>{sessionStateLabel(sessionState)}</p>
       )}
 
       <ControlGroup>
@@ -311,9 +314,7 @@ export function McpTools(): JSX.Element {
         <button onClick={handleStop} disabled={!isConnected}>
           Stop
         </button>
-        {isConnected && (
-          <button onClick={toggleMute}>{isMuted ? 'Unmute' : 'Mute'}</button>
-        )}
+        {isConnected && <button onClick={toggleMute}>{isMuted ? 'Unmute' : 'Mute'}</button>}
       </ControlGroup>
 
       {isConnected && <TextInput onSend={sendText} />}

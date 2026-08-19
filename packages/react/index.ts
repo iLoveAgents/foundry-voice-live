@@ -139,7 +139,12 @@ export type {
   TransportKind,
   TransportState,
 } from './core/transports/types';
-export { OutputAudioGraph, PcmPlayer, type OutputAudioGraphOptions, type PcmPlayerOptions } from './core/audioOutput';
+export {
+  OutputAudioGraph,
+  PcmPlayer,
+  type OutputAudioGraphOptions,
+  type PcmPlayerOptions,
+} from './core/audioOutput';
 export {
   AvatarConnection,
   encodeAvatarSdp,
@@ -161,9 +166,7 @@ export { Scope } from './core/lifecycle';
 export { ResponseGate, type ResponseGateState } from './core/responseGate';
 
 // ==================== Configuration ====================
-export {
-  createVoiceLiveConfig,
-} from './presets';
+export { createVoiceLiveConfig } from './presets';
 
 // ==================== Types ====================
 export type {

@@ -12,7 +12,9 @@ describe("PendingMessageQueue", () => {
     expect(queue.push('{"type":"session.update"}')).toBe("queued");
     expect(queue.push('{"type":"rtc.call.sdp.create"}')).toBe("queued");
     expect(queue.size).toBe(2);
-    expect(queue.byteLength).toBe('{"type":"session.update"}'.length + '{"type":"rtc.call.sdp.create"}'.length);
+    expect(queue.byteLength).toBe(
+      '{"type":"session.update"}'.length + '{"type":"rtc.call.sdp.create"}'.length
+    );
 
     expect(queue.drain()).toEqual(['{"type":"session.update"}', '{"type":"rtc.call.sdp.create"}']);
     expect(queue.size).toBe(0);

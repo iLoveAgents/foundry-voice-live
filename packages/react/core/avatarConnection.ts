@@ -58,7 +58,8 @@ export class AvatarConnection {
     const log = this.options.log;
     const create =
       this.options.createPeerConnection ??
-      ((configuration?: RTCConfiguration): RTCPeerConnection => new RTCPeerConnection(configuration));
+      ((configuration?: RTCConfiguration): RTCPeerConnection =>
+        new RTCPeerConnection(configuration));
     const pc = create({ iceServers });
     this.pc = pc;
 
@@ -73,7 +74,11 @@ export class AvatarConnection {
         pc,
         this.options.iceGatheringTimeoutMs ?? DEFAULT_AVATAR_ICE_GATHERING_TIMEOUT_MS
       );
-      log?.debug(gathered ? 'Avatar ICE gathering complete' : 'Avatar ICE gathering timed out — sending offer anyway');
+      log?.debug(
+        gathered
+          ? 'Avatar ICE gathering complete'
+          : 'Avatar ICE gathering timed out — sending offer anyway'
+      );
 
       const localDescription = pc.localDescription ?? offer;
       return encodeAvatarSdp(localDescription);
@@ -113,7 +118,6 @@ export class AvatarConnection {
         this.callbacks.onError('WebRTC connection failed');
       }
     };
-
   }
 
   /** Apply the server SDP from `session.avatar.connecting` */

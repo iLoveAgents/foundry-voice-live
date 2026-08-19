@@ -7,7 +7,11 @@
  */
 
 import { useState, useRef, useEffect, useCallback, Suspense } from 'react';
-import { useVoiceLive, createVoiceLiveConfig, withViseme } from '@iloveagents/foundry-voice-live-react';
+import {
+  useVoiceLive,
+  createVoiceLiveConfig,
+  withViseme,
+} from '@iloveagents/foundry-voice-live-react';
 import type { VoiceLiveServerEvent } from '@iloveagents/foundry-voice-live-react';
 import { SampleLayout, StatusBadge, Section, ControlGroup, ErrorPanel } from '../components';
 import { Canvas, useFrame } from '@react-three/fiber';
@@ -43,28 +47,28 @@ interface AvatarProps {
  * Maps Azure viseme IDs (0-21) to Oculus Viseme morph target names.
  */
 const VISEME_MORPH_TARGETS: Record<number, string> = {
-  0:  'viseme_sil',  // Silence
-  1:  'viseme_aa',   // æ, ə, ʌ
-  2:  'viseme_aa',   // ɑ (widest)
-  3:  'viseme_O',    // ɔ
-  4:  'viseme_E',    // eɪ, ɛ
-  5:  'viseme_E',    // ɝ
-  6:  'viseme_I',    // j, i, ɪ
-  7:  'viseme_U',    // w, ʊ
-  8:  'viseme_O',    // oʊ
-  9:  'viseme_aa',   // aʊ
-  10: 'viseme_O',    // ɔɪ
-  11: 'viseme_aa',   // aɪ
-  12: 'viseme_CH',   // h
-  13: 'viseme_RR',   // ɹ
-  14: 'viseme_nn',   // l
-  15: 'viseme_SS',   // s, z
-  16: 'viseme_CH',   // ʃ, tʃ, dʒ, ʒ
-  17: 'viseme_TH',   // θ, ð
-  18: 'viseme_FF',   // f, v
-  19: 'viseme_DD',   // d, t, n
-  20: 'viseme_kk',   // k, g, ŋ
-  21: 'viseme_PP',   // p, b, m
+  0: 'viseme_sil', // Silence
+  1: 'viseme_aa', // æ, ə, ʌ
+  2: 'viseme_aa', // ɑ (widest)
+  3: 'viseme_O', // ɔ
+  4: 'viseme_E', // eɪ, ɛ
+  5: 'viseme_E', // ɝ
+  6: 'viseme_I', // j, i, ɪ
+  7: 'viseme_U', // w, ʊ
+  8: 'viseme_O', // oʊ
+  9: 'viseme_aa', // aʊ
+  10: 'viseme_O', // ɔɪ
+  11: 'viseme_aa', // aɪ
+  12: 'viseme_CH', // h
+  13: 'viseme_RR', // ɹ
+  14: 'viseme_nn', // l
+  15: 'viseme_SS', // s, z
+  16: 'viseme_CH', // ʃ, tʃ, dʒ, ʒ
+  17: 'viseme_TH', // θ, ð
+  18: 'viseme_FF', // f, v
+  19: 'viseme_DD', // d, t, n
+  20: 'viseme_kk', // k, g, ŋ
+  21: 'viseme_PP', // p, b, m
 };
 
 // ============================================================================
@@ -95,7 +99,7 @@ function Avatar({ visemeRef }: AvatarProps): JSX.Element {
           console.log('Mesh:', child.name, 'has morph targets:', morphNames);
         }
 
-        const hasVisemes = morphNames.some(key => key.startsWith('viseme_'));
+        const hasVisemes = morphNames.some((key) => key.startsWith('viseme_'));
 
         if (hasVisemes) {
           const indexMap = new Map<string, number>();
@@ -156,13 +160,7 @@ function Avatar({ visemeRef }: AvatarProps): JSX.Element {
     }
   });
 
-  return (
-    <primitive
-      object={scene}
-      position={[0, -0.9, 0]}
-      scale={1}
-    />
-  );
+  return <primitive object={scene} position={[0, -0.9, 0]} scale={1} />;
 }
 
 // ============================================================================

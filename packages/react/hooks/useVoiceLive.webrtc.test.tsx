@@ -62,7 +62,10 @@ describe('useVoiceLive (webrtc)', () => {
     expect(ws.url).toContain('wss://my-res.services.ai.azure.com/voice-live/realtime/calls?');
     expect(ws.url).toContain('api-version=2026-01-01-preview');
     expect(pc.dataChannels[0]?.label).toBe('voice-live-events');
-    expect(pc.transceivers[0]).toMatchObject({ kindOrTrack: 'audio', init: { direction: 'sendrecv' } });
+    expect(pc.transceivers[0]).toMatchObject({
+      kindOrTrack: 'audio',
+      init: { direction: 'sendrecv' },
+    });
 
     // First message on the control channel is the SDP offer with the session config
     expect(ws.sent[0].type).toBe('rtc.call.sdp.create');
@@ -113,7 +116,12 @@ describe('useVoiceLive (webrtc)', () => {
     const onEvent = vi.fn();
     const onTranscript = vi.fn();
     const toolExecutor = vi.fn(async () => ({ ok: true }));
-    const { hook, pc, ws, dc } = await connectWebRtc({ ...baseConfig, onEvent, onTranscript, toolExecutor });
+    const { hook, pc, ws, dc } = await connectWebRtc({
+      ...baseConfig,
+      onEvent,
+      onTranscript,
+      toolExecutor,
+    });
     await act(async () => {
       pc.setConnectionState('connected');
       pc.dataChannels[0]!.open();
@@ -232,7 +240,9 @@ describe('useVoiceLive (webrtc)', () => {
   });
 
   it('keeps the microphone controls on the live session when the transport prop changes', async () => {
-    const hook = renderHook(({ config }) => useVoiceLive(config), { initialProps: { config: baseConfig } });
+    const hook = renderHook(({ config }) => useVoiceLive(config), {
+      initialProps: { config: baseConfig },
+    });
     await act(async () => {
       await hook.result.current.connect();
     });
@@ -253,7 +263,10 @@ describe('useVoiceLive (webrtc)', () => {
     // Switching the prop only takes effect on the next connect — the running WebRTC microphone
     // must stay controllable until then, not silently hand over to the WebSocket capture path.
     hook.rerender({
-      config: { ...baseConfig, connection: { ...baseConfig.connection, transport: 'websocket' as const } },
+      config: {
+        ...baseConfig,
+        connection: { ...baseConfig.connection, transport: 'websocket' as const },
+      },
     });
     expect(hook.result.current.isMicActive).toBe(true);
     await act(async () => {
@@ -283,7 +296,11 @@ describe('useVoiceLive (webrtc)', () => {
       ws.receive({
         type: 'rtc.call.error',
         operation: 'rtc.call.sdp.create',
-        error: { type: 'invalid_request_error', code: 'missing_sdp', message: 'SDP offer is required' },
+        error: {
+          type: 'invalid_request_error',
+          code: 'missing_sdp',
+          message: 'SDP offer is required',
+        },
       });
     });
     expect(hook.result.current.connectionState).toBe('error');
@@ -301,7 +318,10 @@ describe('useVoiceLive (webrtc)', () => {
 
   it('rejects avatar sessions on the WebRTC transport', async () => {
     const hook = renderHook(() =>
-      useVoiceLive({ ...baseConfig, session: { avatar: { character: 'lisa', style: 'casual-sitting' } } })
+      useVoiceLive({
+        ...baseConfig,
+        session: { avatar: { character: 'lisa', style: 'casual-sitting' } },
+      })
     );
     await act(async () => {
       await hook.result.current.connect();

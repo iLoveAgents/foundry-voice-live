@@ -1,15 +1,6 @@
 import { useRef, useEffect, useState } from 'react';
-import {
-  useVoiceLive,
-  createVoiceLiveConfig,
-} from '@iloveagents/foundry-voice-live-react';
-import {
-  SampleLayout,
-  StatusBadge,
-  Section,
-  ControlGroup,
-  ErrorPanel,
-} from '../components';
+import { useVoiceLive, createVoiceLiveConfig } from '@iloveagents/foundry-voice-live-react';
+import { SampleLayout, StatusBadge, Section, ControlGroup, ErrorPanel } from '../components';
 import { directOrProxyConnection } from '../lib/connection';
 
 export function AudioVisualizer(): JSX.Element {
@@ -27,8 +18,7 @@ export function AudioVisualizer(): JSX.Element {
     logLevel: 'debug',
   });
 
-  const { connect, disconnect, connectionState, audioStream, audioAnalyser } =
-    useVoiceLive(config);
+  const { connect, disconnect, connectionState, audioStream, audioAnalyser } = useVoiceLive(config);
 
   // Connect audio stream to audio element for playback
   useEffect(() => {
@@ -131,12 +121,7 @@ export function AudioVisualizer(): JSX.Element {
       </ControlGroup>
 
       <Section title="Audio Waveform">
-        <canvas
-          ref={canvasRef}
-          width={800}
-          height={300}
-          className="canvas-display"
-        />
+        <canvas ref={canvasRef} width={800} height={300} className="canvas-display" />
       </Section>
 
       <audio ref={audioRef} autoPlay hidden />

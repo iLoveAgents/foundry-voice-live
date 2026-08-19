@@ -69,7 +69,12 @@ export const DEFAULT_SESSION_CONFIG: VoiceLiveSessionConfig = {
 };
 
 /** Native-audio models that do not support interim responses / cascaded-only features */
-const NATIVE_AUDIO_MODELS = ['gpt-realtime', 'gpt-realtime-mini', 'phi4-mm-realtime', 'azure-realtime'];
+const NATIVE_AUDIO_MODELS = [
+  'gpt-realtime',
+  'gpt-realtime-mini',
+  'phi4-mm-realtime',
+  'azure-realtime',
+];
 
 /** Models that support OpenAI `semantic_vad` and near/far-field noise reduction */
 const OPENAI_REALTIME_MODELS = ['gpt-realtime', 'gpt-realtime-mini'];
@@ -84,7 +89,7 @@ const OPENAI_REALTIME_MODELS = ['gpt-realtime', 'gpt-realtime-mini'];
  */
 export function buildSessionConfig(
   userConfig?: VoiceLiveSessionConfig
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
 ): any {
   if (!userConfig) {
     return convertToSessionUpdate(DEFAULT_SESSION_CONFIG);
@@ -133,7 +138,7 @@ const AGENT_DEFAULT_SESSION_CONFIG: VoiceLiveSessionConfig = omitKeys(DEFAULT_SE
  */
 export function buildAgentSessionConfig(
   userConfig?: VoiceLiveSessionConfig
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
 ): any {
   const overrides = userConfig ? omitKeys(userConfig, AGENT_OWNED_FIELDS) : {};
   return convertToSessionUpdate(deepMerge(AGENT_DEFAULT_SESSION_CONFIG, overrides));
@@ -364,7 +369,12 @@ export function convertToSessionUpdate(config: VoiceLiveSessionConfig): any {
 function convertTool(tool: Tool): any {
   // Hand-built wire-format objects (server_label / agent_name …) pass through unchanged
   const raw = tool as unknown as Record<string, unknown>;
-  if ('server_label' in raw || 'server_url' in raw || 'agent_name' in raw || 'project_name' in raw) {
+  if (
+    'server_label' in raw ||
+    'server_url' in raw ||
+    'agent_name' in raw ||
+    'project_name' in raw
+  ) {
     return tool;
   }
 
@@ -392,7 +402,8 @@ function convertTool(tool: Tool): any {
     if (tool.agentVersion !== undefined) agent.agent_version = tool.agentVersion;
     if (tool.clientId !== undefined) agent.client_id = tool.clientId;
     if (tool.description !== undefined) agent.description = tool.description;
-    if (tool.foundryResourceOverride !== undefined) agent.foundry_resource_override = tool.foundryResourceOverride;
+    if (tool.foundryResourceOverride !== undefined)
+      agent.foundry_resource_override = tool.foundryResourceOverride;
     if (tool.agentContextType !== undefined) agent.agent_context_type = tool.agentContextType;
     if (tool.returnAgentResponseDirectly !== undefined) {
       agent.return_agent_response_directly = tool.returnAgentResponseDirectly;
@@ -641,10 +652,15 @@ export function validateConfig(
   }
 
   // Interim responses require a cascaded (text) model or agent mode
-  if (config.interimResponse && !isAgentMode && modelName && NATIVE_AUDIO_MODELS.includes(modelName)) {
+  if (
+    config.interimResponse &&
+    !isAgentMode &&
+    modelName &&
+    NATIVE_AUDIO_MODELS.includes(modelName)
+  ) {
     warnings.push(
       `interimResponse is not supported by native audio models (${modelName}). ` +
-      'Use a cascaded model such as gpt-4.1 with an Azure voice, or agent mode.'
+        'Use a cascaded model such as gpt-4.1 with an Azure voice, or agent mode.'
     );
   }
 
@@ -657,7 +673,7 @@ export function validateConfig(
   ) {
     warnings.push(
       `turnDetection.type 'semantic_vad' is only supported by ${OPENAI_REALTIME_MODELS.join('/')}; ` +
-      "use 'azure_semantic_vad' instead."
+        "use 'azure_semantic_vad' instead."
     );
   }
 
@@ -669,9 +685,7 @@ export function validateConfig(
     modelName &&
     modelName !== 'azure-realtime'
   ) {
-    warnings.push(
-      "voice.type 'azure-realtime-native' requires model 'azure-realtime'."
-    );
+    warnings.push("voice.type 'azure-realtime-native' requires model 'azure-realtime'.");
   }
 
   const td = config.turnDetection;
@@ -680,7 +694,11 @@ export function validateConfig(
       if (!td.autoTruncate) {
         warnings.push('turnDetection.appendedTextAfterTruncation requires autoTruncate: true.');
       }
-      if (td.type && td.type !== 'azure_semantic_vad' && td.type !== 'azure_semantic_vad_multilingual') {
+      if (
+        td.type &&
+        td.type !== 'azure_semantic_vad' &&
+        td.type !== 'azure_semantic_vad_multilingual'
+      ) {
         warnings.push(
           "turnDetection.appendedTextAfterTruncation is only supported by 'azure_semantic_vad' and 'azure_semantic_vad_multilingual'."
         );
@@ -731,7 +749,7 @@ export function validateConfig(
   if (config.inputAudioEchoCancellation?.referenceSource === 'client') {
     warnings.push(
       "inputAudioEchoCancellation.referenceSource 'client' requires interleaved stereo capture, " +
-      'which useAudioCapture does not implement yet — the service will reject mono audio.'
+        'which useAudioCapture does not implement yet — the service will reject mono audio.'
     );
   }
 

@@ -404,7 +404,10 @@ export const TYPED_SERVER_EVENT_TYPES = [
 ] as const;
 
 /** Every known server event type name (runtime list; the type-level check below keeps it complete) */
-export const SERVER_EVENT_TYPES = [...TYPED_SERVER_EVENT_TYPES, ...OTHER_SERVER_EVENT_TYPES] as const;
+export const SERVER_EVENT_TYPES = [
+  ...TYPED_SERVER_EVENT_TYPES,
+  ...OTHER_SERVER_EVENT_TYPES,
+] as const;
 
 // Compile-time completeness: every member of the union must be listed, and vice versa
 type _MissingServerNames = Exclude<ServerEventType, (typeof SERVER_EVENT_TYPES)[number]>;
