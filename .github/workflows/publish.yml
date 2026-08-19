@@ -32,7 +32,9 @@ jobs:
 
       # Trusted Publishing needs npm >= 11.5.1; Node 22 still ships npm 10.x
       - name: Use an OIDC-capable npm
-        run: npm install --global npm@latest
+        # Pinned to a major: Trusted Publishing needs >= 11.5.1, and `npm@latest` would let a
+        # future major change publishing behaviour without a commit here
+        run: npm install --global "npm@^11.5.1"
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
