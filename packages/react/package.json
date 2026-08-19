@@ -26,13 +26,13 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/iloveagents/foundry-voice-live.git",
+    "url": "git+https://github.com/iLoveAgents/foundry-voice-live.git",
     "directory": "packages/react"
   },
   "bugs": {
-    "url": "https://github.com/iloveagents/foundry-voice-live/issues"
+    "url": "https://github.com/iLoveAgents/foundry-voice-live/issues"
   },
-  "homepage": "https://github.com/iloveagents/foundry-voice-live#readme",
+  "homepage": "https://github.com/iLoveAgents/foundry-voice-live#readme",
   "funding": {
     "type": "buymeacoffee",
     "url": "https://buymeacoffee.com/leitwolf"
