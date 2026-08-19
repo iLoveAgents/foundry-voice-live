@@ -27,12 +27,12 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/iloveagents/foundry-voice-live.git",
+    "url": "git+https://github.com/iLoveAgents/foundry-voice-live.git",
     "directory": "packages/proxy-node"
   },
-  "homepage": "https://github.com/iloveagents/foundry-voice-live#readme",
+  "homepage": "https://github.com/iLoveAgents/foundry-voice-live#readme",
   "bugs": {
-    "url": "https://github.com/iloveagents/foundry-voice-live/issues"
+    "url": "https://github.com/iLoveAgents/foundry-voice-live/issues"
   },
   "funding": {
     "type": "buymeacoffee",
