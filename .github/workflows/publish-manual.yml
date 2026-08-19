@@ -38,9 +38,18 @@ jobs:
         with:
           node-version: '22'
           cache: 'pnpm'
-          registry-url: 'https://registry.npmjs.org'
+          # No `registry-url`: it makes setup-node write an .npmrc pointing at
+          # ${NODE_AUTH_TOKEN} and export that variable with a placeholder value, so npm
+          # authenticates with a bogus token (registry answers 404) instead of exchanging the
+          # OIDC identity. npm defaults to registry.npmjs.org anyway.
 
       # Trusted Publishing needs npm >= 11.5.1; Node 22 still ships npm 10.x
+      - name: Report the publishing toolchain
+        run: |
+          node --version
+          npm --version
+          echo "npm registry auth configured: $(npm config get //registry.npmjs.org/:_authToken)"
+
       - name: Use an OIDC-capable npm
         # Pinned to a major: Trusted Publishing needs >= 11.5.1, and `npm@latest` would let a
         # future major change publishing behaviour without a commit here
