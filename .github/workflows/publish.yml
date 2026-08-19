@@ -33,18 +33,6 @@ jobs:
           # authenticates with a bogus token (registry answers 404) instead of exchanging the
           # OIDC identity. npm defaults to registry.npmjs.org anyway.
 
-      # Trusted Publishing needs npm >= 11.5.1; Node 22 still ships npm 10.x
-      - name: Report the publishing toolchain
-        run: |
-          node --version
-          npm --version
-          echo "npm registry auth configured: $(npm config get //registry.npmjs.org/:_authToken)"
-
-      - name: Use an OIDC-capable npm
-        # Pinned to a major: Trusted Publishing needs >= 11.5.1, and `npm@latest` would let a
-        # future major change publishing behaviour without a commit here
-        run: npm install --global "npm@^11.5.1"
-
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
@@ -56,10 +44,13 @@ jobs:
 
       # `npm publish`, not `pnpm publish`: the OIDC token exchange is implemented in the
       # npm CLI. Provenance is generated from the same OIDC identity.
-      - name: Publish React package
-        run: npm publish --provenance --access public
-        working-directory: packages/react
-
-      - name: Publish Proxy package
-        run: npm publish --provenance --access public
-        working-directory: packages/proxy-node
+      # The upgrade and the publish share one shell on purpose: Node 22 ships npm 10.x, which
+      # has no OIDC support, and a global npm installed in an *earlier* step was still not the
+      # npm that ran here (the publish reported 10.9.8 and asked for a login).
+      - name: Publish to npm
+        run: |
+          npm install --global "npm@^11.5.1"
+          hash -r
+          echo "node $(node --version), npm $(npm --version) at $(which npm)"
+          (cd packages/react && npm publish --provenance --access public)
+          (cd packages/proxy-node && npm publish --provenance --access public)
