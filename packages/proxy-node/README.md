@@ -110,7 +110,7 @@ Credentials are always sent upstream as headers — `Authorization: Bearer` for 
 >
 > **Invalid limits fail closed.** A non-numeric `MAX_CONNECTIONS` / `MAX_FRAME_BYTES` / `RATE_LIMIT_*` value falls back to the default with a warning instead of silently removing the limit.
 
-> **Origin enforcement.** Browser connections are checked against `ALLOWED_ORIGINS` on the HTTP request *and* on the WebSocket upgrade (matching is exact — a prefix check would let `http://localhost:3001.attacker.com` through). Requests **without** an `Origin` header (curl, native apps, server-to-server) are allowed by design, so the origin check alone does not authenticate anyone: pair it with network rules or your own auth.
+> **Origin enforcement.** Browser connections are checked against `ALLOWED_ORIGINS` on the HTTP request _and_ on the WebSocket upgrade (matching is exact — a prefix check would let `http://localhost:3001.attacker.com` through). Requests **without** an `Origin` header (curl, native apps, server-to-server) are allowed by design, so the origin check alone does not authenticate anyone: pair it with network rules or your own auth.
 
 > **Trust boundary.** With a shared API key or `DefaultAzureCredential`, every client that can reach `/ws` acts with the proxy's credentials — for any model and any agent the key/identity can access, in either mode. Restrict who can reach the proxy (`ALLOWED_ORIGINS`, network rules, your own auth in front of it) or use per-user `?token=` auth so each user is authorized and audited individually.
 
@@ -294,21 +294,21 @@ Upstream parameter names: `agentName` → `agent-name`, `projectName` → `agent
 
 ### Environment Variables
 
-| Variable                                | Required | Default                 | Description                                                                 |
-| --------------------------------------- | -------- | ----------------------- | --------------------------------------------------------------------------- |
-| `FOUNDRY_RESOURCE_NAME`                 | Yes      | -                       | Azure AI Foundry resource                                                   |
-| `FOUNDRY_API_KEY`                       | No       | -                       | Shared API key (standard mode); unset = token or `DefaultAzureCredential`   |
-| `FOUNDRY_AGENT_NAME`                    | No       | -                       | Default agent name (fallback when the URL has no `agentName`/`model`)       |
-| `FOUNDRY_PROJECT_NAME`                  | No       | -                       | Default project name (fallback)                                             |
-| `PORT`                                  | No       | `8080`                  | Server port                                                                 |
-| `API_VERSION`                           | No       | `2026-07-15`            | Voice Live API version (WebRTC defaults to `2026-01-01-preview` when unset) |
-| `ALLOWED_ORIGINS`                       | No       | `http://localhost:3000` | CORS origins (comma-sep)                                                    |
-| `RATE_LIMIT_MAX_REQUESTS`               | No       | `100`                   | Max requests per window                                                     |
-| `RATE_LIMIT_WINDOW_MS`                  | No       | `60000`                 | Rate limit window (ms)                                                      |
-| `MAX_FRAME_BYTES`                       | No       | `1048576`               | Largest accepted browser frame (1 MiB); offenders are closed with `1009`     |
-| `MAX_CONNECTIONS`                       | No       | `1000`                  | Max concurrent connections                                                  |
+| Variable                                | Required | Default                 | Description                                                                                                                    |
+| --------------------------------------- | -------- | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| `FOUNDRY_RESOURCE_NAME`                 | Yes      | -                       | Azure AI Foundry resource                                                                                                      |
+| `FOUNDRY_API_KEY`                       | No       | -                       | Shared API key (standard mode); unset = token or `DefaultAzureCredential`                                                      |
+| `FOUNDRY_AGENT_NAME`                    | No       | -                       | Default agent name (fallback when the URL has no `agentName`/`model`)                                                          |
+| `FOUNDRY_PROJECT_NAME`                  | No       | -                       | Default project name (fallback)                                                                                                |
+| `PORT`                                  | No       | `8080`                  | Server port                                                                                                                    |
+| `API_VERSION`                           | No       | `2026-07-15`            | Voice Live API version (WebRTC defaults to `2026-01-01-preview` when unset)                                                    |
+| `ALLOWED_ORIGINS`                       | No       | `http://localhost:3000` | CORS origins (comma-sep)                                                                                                       |
+| `RATE_LIMIT_MAX_REQUESTS`               | No       | `100`                   | Max requests per window                                                                                                        |
+| `RATE_LIMIT_WINDOW_MS`                  | No       | `60000`                 | Rate limit window (ms)                                                                                                         |
+| `MAX_FRAME_BYTES`                       | No       | `1048576`               | Largest accepted browser frame (1 MiB); offenders are closed with `1009`                                                       |
+| `MAX_CONNECTIONS`                       | No       | `1000`                  | Max concurrent connections                                                                                                     |
 | `TRUST_PROXY`                           | No       | _(off)_                 | Express `trust proxy` (hop count, `true`, or IP list) — set it behind an ingress so the per-IP rate limit sees real client IPs |
-| `APPLICATIONINSIGHTS_CONNECTION_STRING` | No       | -                       | Enable Application Insights telemetry                                       |
+| `APPLICATIONINSIGHTS_CONNECTION_STRING` | No       | -                       | Enable Application Insights telemetry                                                                                          |
 
 ### Health Check Response
 

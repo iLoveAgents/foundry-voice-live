@@ -118,10 +118,10 @@ export function AzureRealtime(): JSX.Element {
       <Section>
         <AlertBox variant="info" title="Region availability">
           <p>
-            <code>azure-realtime</code> is not deployed in every Voice Live region (for
-            example it is available in <code>eastus2</code>, <code>swedencentral</code>,{' '}
-            <code>westus2</code> and <code>uksouth</code>, but not in <code>eastus</code> or{' '}
-            <code>westeurope</code>). If the session fails to start, check the{' '}
+            <code>azure-realtime</code> is not deployed in every Voice Live region (for example it
+            is available in <code>eastus2</code>, <code>swedencentral</code>, <code>westus2</code>{' '}
+            and <code>uksouth</code>, but not in <code>eastus</code> or <code>westeurope</code>). If
+            the session fails to start, check the{' '}
             <a
               href="https://learn.microsoft.com/azure/ai-services/speech-service/regions?tabs=voice-live"
               target="_blank"
@@ -165,9 +165,7 @@ export function AzureRealtime(): JSX.Element {
       <StatusBadge status={connectionState} />
 
       {isConnected && (
-        <p style={{ margin: '0.5rem 0', fontStyle: 'italic' }}>
-          {sessionStateLabel(sessionState)}
-        </p>
+        <p style={{ margin: '0.5rem 0', fontStyle: 'italic' }}>{sessionStateLabel(sessionState)}</p>
       )}
 
       <ControlGroup>
@@ -177,9 +175,7 @@ export function AzureRealtime(): JSX.Element {
         <button onClick={handleStop} disabled={!isConnected}>
           Stop
         </button>
-        {isConnected && (
-          <button onClick={toggleMute}>{isMuted ? 'Unmute' : 'Mute'}</button>
-        )}
+        {isConnected && <button onClick={toggleMute}>{isMuted ? 'Unmute' : 'Mute'}</button>}
       </ControlGroup>
 
       {isConnected && <TextInput onSend={sendText} />}

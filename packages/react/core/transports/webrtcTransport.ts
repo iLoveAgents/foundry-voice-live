@@ -69,9 +69,11 @@ export class WebRtcTransport implements VoiceLiveTransport {
    * open until the real `replaceTrack()` runs, so a failure is reported instead of the caller
    * believing the microphone is live.
    */
-  private pendingTrack:
-    | { track: MediaStreamTrack | null; resolve: () => void; reject: (err: unknown) => void }
-    | null = null;
+  private pendingTrack: {
+    track: MediaStreamTrack | null;
+    resolve: () => void;
+    reject: (err: unknown) => void;
+  } | null = null;
   private negotiationTimer: ReturnType<typeof setTimeout> | null = null;
   /**
    * Events the caller sent between `onOpen` and `rtc.call.sdp.create`. The contract says events may
@@ -111,9 +113,15 @@ export class WebRtcTransport implements VoiceLiveTransport {
     }
   }
 
-  connect(url: string, session: Record<string, unknown>, connectOptions: TransportConnectOptions = {}): void {
+  connect(
+    url: string,
+    session: Record<string, unknown>,
+    connectOptions: TransportConnectOptions = {}
+  ): void {
     if (this.ws) {
-      throw new Error('WebRtcTransport.connect() called twice — create a new transport per connection');
+      throw new Error(
+        'WebRtcTransport.connect() called twice — create a new transport per connection'
+      );
     }
     const generation = ++this.generation;
     const log = this.options.log;
@@ -203,7 +211,9 @@ export class WebRtcTransport implements VoiceLiveTransport {
       this.offerPromise = null;
       this.currentState = 'closed';
       const message =
-        err instanceof Error ? `Failed to open the control channel: ${err.message}` : 'Failed to open the control channel';
+        err instanceof Error
+          ? `Failed to open the control channel: ${err.message}`
+          : 'Failed to open the control channel';
       log?.error(message);
       this.notify('onError', this.callbacks.onError, message, err);
       this.notify('onClose', this.callbacks.onClose, {
@@ -237,7 +247,9 @@ export class WebRtcTransport implements VoiceLiveTransport {
         this.notify(
           'onError',
           this.callbacks.onError,
-          err instanceof Error ? `Failed to create WebRTC offer: ${err.message}` : 'Failed to create WebRTC offer',
+          err instanceof Error
+            ? `Failed to create WebRTC offer: ${err.message}`
+            : 'Failed to create WebRTC offer',
           err
         );
         ws.close(); // onclose → callbacks.onClose
@@ -288,12 +300,16 @@ export class WebRtcTransport implements VoiceLiveTransport {
     };
 
     ws.onclose = (event: CloseEvent): void => {
-      log?.info(`Control channel closed - Code: ${event.code}, Reason: ${event.reason || 'none'}, Clean: ${event.wasClean}`);
+      log?.info(
+        `Control channel closed - Code: ${event.code}, Reason: ${event.reason || 'none'}, Clean: ${event.wasClean}`
+      );
       this.currentState = 'closed';
       // Invalidate any negotiation still in flight: an offer that resolves after this must not
       // send SDP on the dead socket or arm a negotiation timer that fires 30 s later
       this.generation += 1;
-      this.settlePendingTrack(new Error('Control channel closed before the microphone was attached'));
+      this.settlePendingTrack(
+        new Error('Control channel closed before the microphone was attached')
+      );
       if (this.ws === ws) this.ws = null;
       if (this.negotiationTimer) {
         clearTimeout(this.negotiationTimer);
@@ -314,7 +330,9 @@ export class WebRtcTransport implements VoiceLiveTransport {
       // The control channel is open but the call is not created yet: queue rather than send into
       // a session the service does not have. Bounded, because a caller could keep writing.
       if (this.preCallQueue.length >= MAX_PRE_CALL_QUEUE) {
-        this.options.log?.warn('Dropping event: too many events queued before the WebRTC call was created');
+        this.options.log?.warn(
+          'Dropping event: too many events queued before the WebRTC call was created'
+        );
         return false;
       }
       this.preCallQueue.push(json);
@@ -440,7 +458,11 @@ export class WebRtcTransport implements VoiceLiveTransport {
         .then(() => this.options.log?.debug('WebRTC SDP answer applied'))
         .catch((err: unknown) => {
           if (generation !== this.generation) return;
-          this.failTerminally('Failed to apply WebRTC SDP answer', RTC_SDP_ANSWER_FAILED_CLOSE_CODE, err);
+          this.failTerminally(
+            'Failed to apply WebRTC SDP answer',
+            RTC_SDP_ANSWER_FAILED_CLOSE_CODE,
+            err
+          );
         });
     } else if (event.type === 'rtc.call.error') {
       const message = formatRtcCallError(event as RtcCallErrorEvent);

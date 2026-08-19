@@ -22,10 +22,7 @@ describe('Session Builder Wire Format', () => {
       },
     });
 
-    expect(result.input_audio_transcription.phrase_list).toEqual([
-      'Neo QLED TV',
-      'TUF Gaming',
-    ]);
+    expect(result.input_audio_transcription.phrase_list).toEqual(['Neo QLED TV', 'TUF Gaming']);
   });
 
   it('converts transcription customSpeech to custom_speech', () => {
@@ -248,7 +245,9 @@ describe('Session Builder Wire Format', () => {
 
   it('converts custom, personal and azure-realtime-native voices', () => {
     expect(
-      buildSessionConfig({ voice: { name: 'my-voice', type: 'azure-custom', endpointId: 'ep-123' } }).voice
+      buildSessionConfig({
+        voice: { name: 'my-voice', type: 'azure-custom', endpointId: 'ep-123' },
+      }).voice
     ).toEqual({ name: 'my-voice', type: 'azure-custom', endpoint_id: 'ep-123' });
 
     expect(
@@ -257,7 +256,9 @@ describe('Session Builder Wire Format', () => {
       }).voice
     ).toEqual({ name: 'my-personal', type: 'azure-personal', model: 'DragonHDOmniLatestNeural' });
 
-    expect(buildSessionConfig({ voice: { name: 'ava', type: 'azure-realtime-native' } }).voice).toEqual({
+    expect(
+      buildSessionConfig({ voice: { name: 'ava', type: 'azure-realtime-native' } }).voice
+    ).toEqual({
       name: 'ava',
       type: 'azure-realtime-native',
     });
@@ -277,7 +278,9 @@ describe('Session Builder Wire Format', () => {
       },
     });
 
-    expect(result.turn_detection.appended_text_after_truncation).toBe(' [The user interrupted me.]');
+    expect(result.turn_detection.appended_text_after_truncation).toBe(
+      ' [The user interrupted me.]'
+    );
     expect(result.turn_detection.end_of_utterance_detection).toEqual({
       model: 'smart_end_of_turn_detection',
       threshold_level: 'high',
@@ -406,8 +409,14 @@ describe('buildAgentSessionConfig', () => {
   });
 
   it('deep-merges partial turn detection overrides like buildSessionConfig', () => {
-    const result = buildAgentSessionConfig({ turnDetection: { type: 'azure_semantic_vad', silenceDurationMs: 900 } });
-    expect(result.turn_detection).toMatchObject({ type: 'azure_semantic_vad', silence_duration_ms: 900, threshold: 0.5 });
+    const result = buildAgentSessionConfig({
+      turnDetection: { type: 'azure_semantic_vad', silenceDurationMs: 900 },
+    });
+    expect(result.turn_detection).toMatchObject({
+      type: 'azure_semantic_vad',
+      silence_duration_ms: 900,
+      threshold: 0.5,
+    });
   });
 
   it('strips every AGENT_OWNED_FIELDS entry', () => {
@@ -443,28 +452,58 @@ describe('validateConfig', () => {
     );
     expect(warnings.some((w) => w.includes('interimResponse'))).toBe(true);
     // Fine in agent mode and with cascaded models
-    expect(validateConfig({ interimResponse: { type: 'llm_interim_response', triggers: ['tool'] } }, true)).toEqual([]);
     expect(
-      validateConfig({ interimResponse: { type: 'llm_interim_response', triggers: ['tool'] } }, false, 'gpt-4.1')
+      validateConfig(
+        { interimResponse: { type: 'llm_interim_response', triggers: ['tool'] } },
+        true
+      )
+    ).toEqual([]);
+    expect(
+      validateConfig(
+        { interimResponse: { type: 'llm_interim_response', triggers: ['tool'] } },
+        false,
+        'gpt-4.1'
+      )
     ).toEqual([]);
   });
 
   it('warns about semantic_vad and azure-realtime-native voice with incompatible models', () => {
-    expect(validateConfig({ turnDetection: { type: 'semantic_vad' } }, false, 'gpt-4.1')[0]).toMatch(/semantic_vad/);
-    expect(validateConfig({ turnDetection: { type: 'semantic_vad' } }, false, 'gpt-realtime')).toEqual([]);
     expect(
-      validateConfig({ voice: { name: 'ava', type: 'azure-realtime-native' } }, false, 'gpt-realtime')[0]
+      validateConfig({ turnDetection: { type: 'semantic_vad' } }, false, 'gpt-4.1')[0]
+    ).toMatch(/semantic_vad/);
+    expect(
+      validateConfig({ turnDetection: { type: 'semantic_vad' } }, false, 'gpt-realtime')
+    ).toEqual([]);
+    expect(
+      validateConfig(
+        { voice: { name: 'ava', type: 'azure-realtime-native' } },
+        false,
+        'gpt-realtime'
+      )[0]
     ).toMatch(/azure-realtime/);
-    expect(validateConfig({ voice: { name: 'ava', type: 'azure-realtime-native' } }, false, 'azure-realtime')).toEqual(
-      []
-    );
+    expect(
+      validateConfig(
+        { voice: { name: 'ava', type: 'azure-realtime-native' } },
+        false,
+        'azure-realtime'
+      )
+    ).toEqual([]);
   });
 
   it('warns about truncation option combinations and client-reference AEC', () => {
     const warnings = validateConfig(
       {
-        turnDetection: { type: 'server_vad', appendedTextAfterTruncation: ' [cut]', interruptResponse: false, autoTruncate: true },
-        inputAudioEchoCancellation: { type: 'server_echo_cancellation', referenceSource: 'client', channels: 2 },
+        turnDetection: {
+          type: 'server_vad',
+          appendedTextAfterTruncation: ' [cut]',
+          interruptResponse: false,
+          autoTruncate: true,
+        },
+        inputAudioEchoCancellation: {
+          type: 'server_echo_cancellation',
+          referenceSource: 'client',
+          channels: 2,
+        },
       },
       false,
       'gpt-4.1'
@@ -472,9 +511,9 @@ describe('validateConfig', () => {
     expect(warnings.some((w) => w.includes("only supported by 'azure_semantic_vad'"))).toBe(true);
     expect(warnings.some((w) => w.includes('interruptResponse is false'))).toBe(true);
     expect(warnings.some((w) => w.includes("referenceSource 'client'"))).toBe(true);
-    expect(validateConfig({ turnDetection: { appendedTextAfterTruncation: ' [cut]' } }, false)[0]).toMatch(
-      /requires autoTruncate/
-    );
+    expect(
+      validateConfig({ turnDetection: { appendedTextAfterTruncation: ' [cut]' } }, false)[0]
+    ).toMatch(/requires autoTruncate/);
   });
 
   it('does not warn about the greeting voice in agent mode when no voice is set', () => {
@@ -482,32 +521,49 @@ describe('validateConfig', () => {
   });
 
   it('warns about incompatible transcription models', () => {
-    expect(validateConfig({ inputAudioTranscription: { model: 'whisper-1' } }, true)[0]).toMatch(/only supported by/);
-    expect(validateConfig({ inputAudioTranscription: { model: 'whisper-1' } }, false, 'gpt-4.1')[0]).toMatch(
+    expect(validateConfig({ inputAudioTranscription: { model: 'whisper-1' } }, true)[0]).toMatch(
       /only supported by/
     );
-    expect(validateConfig({ inputAudioTranscription: { model: 'azure-speech' } }, false, 'gpt-realtime')[0]).toMatch(
-      /not supported by the gpt-realtime family/
+    expect(
+      validateConfig({ inputAudioTranscription: { model: 'whisper-1' } }, false, 'gpt-4.1')[0]
+    ).toMatch(/only supported by/);
+    expect(
+      validateConfig(
+        { inputAudioTranscription: { model: 'azure-speech' } },
+        false,
+        'gpt-realtime'
+      )[0]
+    ).toMatch(/not supported by the gpt-realtime family/);
+    expect(validateConfig({ inputAudioTranscription: { model: 'azure-speech' } }, true)).toEqual(
+      []
     );
-    expect(validateConfig({ inputAudioTranscription: { model: 'azure-speech' } }, true)).toEqual([]);
-    expect(validateConfig({ inputAudioTranscription: { model: 'whisper-1' } }, false, 'gpt-realtime')).toEqual([]);
-    expect(validateConfig({ inputAudioTranscription: { model: 'mai-transcribe' } }, true)).toEqual([]);
+    expect(
+      validateConfig({ inputAudioTranscription: { model: 'whisper-1' } }, false, 'gpt-realtime')
+    ).toEqual([]);
+    expect(validateConfig({ inputAudioTranscription: { model: 'mai-transcribe' } }, true)).toEqual(
+      []
+    );
   });
 
   it('warns when a pre-generated greeting is combined with an OpenAI voice', () => {
-    expect(validateConfig({ greeting: { type: 'pregenerated', text: 'Hi' } }, false, 'gpt-realtime')[0]).toMatch(
-      /Azure voice/
-    );
-    expect(validateConfig({ greeting: { type: 'pregenerated', text: 'Hi' }, voice: 'alloy' }, false)[0]).toMatch(
-      /Azure voice/
-    );
+    expect(
+      validateConfig({ greeting: { type: 'pregenerated', text: 'Hi' } }, false, 'gpt-realtime')[0]
+    ).toMatch(/Azure voice/);
+    expect(
+      validateConfig({ greeting: { type: 'pregenerated', text: 'Hi' }, voice: 'alloy' }, false)[0]
+    ).toMatch(/Azure voice/);
     expect(
       validateConfig(
-        { greeting: { type: 'pregenerated', text: 'Hi' }, voice: { name: 'en-US-AvaNeural', type: 'azure-standard' } },
+        {
+          greeting: { type: 'pregenerated', text: 'Hi' },
+          voice: { name: 'en-US-AvaNeural', type: 'azure-standard' },
+        },
         false
       )
     ).toEqual([]);
-    expect(validateConfig({ greeting: { type: 'llm', text: 'Greet' }, voice: 'alloy' }, false)).toEqual([]);
+    expect(
+      validateConfig({ greeting: { type: 'llm', text: 'Greet' }, voice: 'alloy' }, false)
+    ).toEqual([]);
   });
 
   it('never throws', () => {

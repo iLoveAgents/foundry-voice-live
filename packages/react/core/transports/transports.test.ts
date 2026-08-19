@@ -42,7 +42,10 @@ describe('WebSocketTransport', () => {
     });
     t.connect('not a url');
     // no handlers will ever fire, so a silent return would hang the caller forever
-    expect(cb.onError).toHaveBeenCalledWith(expect.stringMatching(/Failed to open the WebSocket/), expect.anything());
+    expect(cb.onError).toHaveBeenCalledWith(
+      expect.stringMatching(/Failed to open the WebSocket/),
+      expect.anything()
+    );
     expect(cb.onClose).toHaveBeenCalledWith({
       code: CONTROL_CHANNEL_SETUP_FAILED_CLOSE_CODE,
       reason: expect.stringMatching(/Failed to open the WebSocket/),
@@ -96,7 +99,10 @@ describe('WebSocketTransport', () => {
 describe('WebRtcTransport', () => {
   const session = { modalities: ['audio'] };
 
-  async function openNegotiated(cb = makeCallbacks(), options: ConstructorParameters<typeof WebRtcTransport>[1] = {}) {
+  async function openNegotiated(
+    cb = makeCallbacks(),
+    options: ConstructorParameters<typeof WebRtcTransport>[1] = {}
+  ) {
     const t = new WebRtcTransport(cb, options);
     t.connect('wss://x/voice-live/realtime/calls?api-version=p', session);
     const ws = FakeWebSocket.instances.at(-1)!;
@@ -116,9 +122,13 @@ describe('WebRtcTransport', () => {
     expect(cb.onOpen).toHaveBeenCalledTimes(1);
 
     ws.receive({ type: 'rtc.call.sdp.created', event_id: 'e1', sdp_answer: 'v=0 answer' });
-    await vi.waitFor(() => expect(pc.remoteDescription).toEqual({ type: 'answer', sdp: 'v=0 answer' }));
+    await vi.waitFor(() =>
+      expect(pc.remoteDescription).toEqual({ type: 'answer', sdp: 'v=0 answer' })
+    );
     // negotiation events are still forwarded to the caller
-    expect(cb.onEvent).toHaveBeenCalledWith(expect.objectContaining({ type: 'rtc.call.sdp.created' }));
+    expect(cb.onEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'rtc.call.sdp.created' })
+    );
   });
 
   it('announces readiness only when media is connected AND the data channel is open', async () => {
@@ -175,7 +185,9 @@ describe('WebRtcTransport', () => {
     const { ws, pc } = await openNegotiated(cb);
     ws.receive({ type: 'rtc.call.sdp.created', event_id: 'e1', sdp_answer: 'v=0 answer' });
     // the answer must still be applied even though the consumer's handler threw
-    await vi.waitFor(() => expect(pc.remoteDescription).toEqual({ type: 'answer', sdp: 'v=0 answer' }));
+    await vi.waitFor(() =>
+      expect(pc.remoteDescription).toEqual({ type: 'answer', sdp: 'v=0 answer' })
+    );
   });
 
   it('falls back to media-only readiness when the data channel never opens', async () => {
@@ -221,11 +233,18 @@ describe('WebRtcTransport', () => {
 
   it('treats rtc.call.error as terminal: reports it, tears down and closes so the caller can retry', async () => {
     const { t, ws, pc, cb } = await openNegotiated();
-    ws.receive({ type: 'rtc.call.error', event_id: 'err', error: { code: 'session_error', message: 'bad sdp' } });
+    ws.receive({
+      type: 'rtc.call.error',
+      event_id: 'err',
+      error: { code: 'session_error', message: 'bad sdp' },
+    });
     // the consumer must still receive the event itself (with operation/rtc_call_id/details),
     // which means dispatching it before the teardown that follows
     expect(cb.onEvent).toHaveBeenCalledWith(expect.objectContaining({ type: 'rtc.call.error' }));
-    expect(cb.onError).toHaveBeenCalledWith(expect.stringMatching(/session_error: bad sdp/), expect.anything());
+    expect(cb.onError).toHaveBeenCalledWith(
+      expect.stringMatching(/session_error: bad sdp/),
+      expect.anything()
+    );
     expect(pc.closed).toBe(true);
     // The service rejected the call: leaving the transport 'open' would block both reconnect
     // and a fresh connect()
@@ -262,7 +281,10 @@ describe('WebRtcTransport', () => {
     ws.receive({ type: 'rtc.call.sdp.created', event_id: 'e1', sdp_answer: 'v=0 broken' });
 
     await vi.waitFor(() =>
-      expect(cb.onError).toHaveBeenCalledWith('Failed to apply WebRTC SDP answer', expect.anything())
+      expect(cb.onError).toHaveBeenCalledWith(
+        'Failed to apply WebRTC SDP answer',
+        expect.anything()
+      )
     );
     // Without the close the state would stay 'open' → connect() refused and no reconnect
     expect(cb.onClose).toHaveBeenCalledWith({
@@ -341,7 +363,13 @@ describe('WebRtcTransport', () => {
     const t = new WebRtcTransport(cb, {
       createPeerConnection: () => {
         const pc = new FakePeerConnection();
-        const transceiver = { sender: { replaceTrack: vi.fn(async () => { throw new Error('device gone'); }) } };
+        const transceiver = {
+          sender: {
+            replaceTrack: vi.fn(async () => {
+              throw new Error('device gone');
+            }),
+          },
+        };
         pc.addTransceiver = () => transceiver as never;
         return pc as unknown as RTCPeerConnection;
       },
@@ -508,7 +536,10 @@ describe('WebRtcTransport', () => {
     });
     t.connect('not a url', {});
 
-    expect(cb.onError).toHaveBeenCalledWith(expect.stringMatching(/Failed to open the control channel/), expect.anything());
+    expect(cb.onError).toHaveBeenCalledWith(
+      expect.stringMatching(/Failed to open the control channel/),
+      expect.anything()
+    );
     expect(cb.onClose).toHaveBeenCalledWith({
       code: CONTROL_CHANNEL_SETUP_FAILED_CLOSE_CODE,
       reason: expect.stringMatching(/Failed to open the control channel/),
@@ -530,7 +561,10 @@ describe('WebRtcTransport', () => {
     const ws = FakeWebSocket.instances.at(-1)!;
     ws.open();
     await vi.waitFor(() =>
-      expect(cb.onError).toHaveBeenCalledWith('Failed to create WebRTC offer: no webrtc here', expect.anything())
+      expect(cb.onError).toHaveBeenCalledWith(
+        'Failed to create WebRTC offer: no webrtc here',
+        expect.anything()
+      )
     );
     expect(cb.onClose).toHaveBeenCalled();
     expect(t.state).toBe('closed');

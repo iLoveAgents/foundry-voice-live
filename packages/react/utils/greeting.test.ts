@@ -19,7 +19,10 @@ describe('buildGreetingEvents', () => {
   });
 
   it('builds response.create with pre_generated_assistant_message for pregenerated greetings', () => {
-    const events = buildGreetingEvents({ type: 'pregenerated', text: 'Hello! How can I help?' }, 456);
+    const events = buildGreetingEvents(
+      { type: 'pregenerated', text: 'Hello! How can I help?' },
+      456
+    );
 
     expect(events).toHaveLength(1);
     expect(events[0]).toEqual({

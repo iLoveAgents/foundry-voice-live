@@ -17,7 +17,11 @@ import { createChromaKeyProcessor } from '../utils/chromaKey';
 function defineSrcObject(): void {
   for (const proto of [HTMLVideoElement.prototype, HTMLAudioElement.prototype]) {
     if (!Object.getOwnPropertyDescriptor(proto, 'srcObject')) {
-      Object.defineProperty(proto, 'srcObject', { writable: true, configurable: true, value: null });
+      Object.defineProperty(proto, 'srcObject', {
+        writable: true,
+        configurable: true,
+        value: null,
+      });
     }
   }
 }
@@ -40,7 +44,9 @@ describe('VoiceLiveAvatar', () => {
     const audioEl = container.querySelector('audio') as HTMLAudioElement;
     expect(videoEl.srcObject).toBeNull();
 
-    rerender(<VoiceLiveAvatar videoStream={video} audioStream={audio} loadingMessage="Connecting…" />);
+    rerender(
+      <VoiceLiveAvatar videoStream={video} audioStream={audio} loadingMessage="Connecting…" />
+    );
     expect(queryByText('Connecting…')).toBeNull();
     expect(videoEl.srcObject).toBe(video);
     expect(audioEl.srcObject).toBe(audio);
@@ -50,7 +56,12 @@ describe('VoiceLiveAvatar', () => {
     const onVideoReady = vi.fn();
     const config = { threshold: 0.4 } as any;
     const { container, rerender, unmount } = render(
-      <VoiceLiveAvatar videoStream={video} audioStream={null} chromaKeyConfig={config} onVideoReady={onVideoReady} />
+      <VoiceLiveAvatar
+        videoStream={video}
+        audioStream={null}
+        chromaKeyConfig={config}
+        onVideoReady={onVideoReady}
+      />
     );
     const videoEl = container.querySelector('video') as HTMLVideoElement;
     const canvas = container.querySelector('canvas');
@@ -66,7 +77,14 @@ describe('VoiceLiveAvatar', () => {
 
     // a config change after start re-runs the stream effect (stop + restart) and pushes the config
     const next = { threshold: 0.6 } as any;
-    rerender(<VoiceLiveAvatar videoStream={video} audioStream={null} chromaKeyConfig={next} onVideoReady={onVideoReady} />);
+    rerender(
+      <VoiceLiveAvatar
+        videoStream={video}
+        audioStream={null}
+        chromaKeyConfig={next}
+        onVideoReady={onVideoReady}
+      />
+    );
     expect(processor.stop).toHaveBeenCalled();
 
     unmount();
@@ -74,7 +92,9 @@ describe('VoiceLiveAvatar', () => {
   });
 
   it('renders the raw video without a canvas when transparentBackground is false', () => {
-    const { container } = render(<VoiceLiveAvatar videoStream={video} audioStream={null} transparentBackground={false} />);
+    const { container } = render(
+      <VoiceLiveAvatar videoStream={video} audioStream={null} transparentBackground={false} />
+    );
     expect(container.querySelector('canvas')).toBeNull();
     const videoEl = container.querySelector('video') as HTMLVideoElement;
     act(() => {
@@ -86,7 +106,12 @@ describe('VoiceLiveAvatar', () => {
 
   it('reveals controls only while the pointer is over the bottom quarter', () => {
     const { container, getByText } = render(
-      <VoiceLiveAvatar videoStream={video} audioStream={null} showControls controls={<button>Mute</button>} />
+      <VoiceLiveAvatar
+        videoStream={video}
+        audioStream={null}
+        showControls
+        controls={<button>Mute</button>}
+      />
     );
     const root = container.firstElementChild as HTMLDivElement;
     Object.defineProperty(root, 'clientHeight', { value: 400, configurable: true });
@@ -104,7 +129,9 @@ describe('VoiceLiveAvatar', () => {
 
   it('calls onAudioReady when the audio element reports metadata', () => {
     const onAudioReady = vi.fn();
-    const { container } = render(<VoiceLiveAvatar videoStream={video} audioStream={audio} onAudioReady={onAudioReady} />);
+    const { container } = render(
+      <VoiceLiveAvatar videoStream={video} audioStream={audio} onAudioReady={onAudioReady} />
+    );
     const audioEl = container.querySelector('audio') as HTMLAudioElement;
     fireEvent(audioEl, new Event('loadedmetadata'));
     expect(onAudioReady).toHaveBeenCalledTimes(1);

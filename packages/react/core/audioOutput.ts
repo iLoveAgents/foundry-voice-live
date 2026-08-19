@@ -54,7 +54,8 @@ export class OutputAudioGraph {
   ensure(): boolean {
     if (this.ctx) return false;
     const create =
-      this.options.createAudioContext ?? ((): AudioContext => new AudioContext({ latencyHint: 'interactive' }));
+      this.options.createAudioContext ??
+      ((): AudioContext => new AudioContext({ latencyHint: 'interactive' }));
     const ctx = create();
     try {
       const gain = ctx.createGain();
@@ -254,11 +255,15 @@ export class PcmPlayer {
         this.options.createWorkletNode ??
         ((context: AudioContext, options: AudioWorkletNodeOptions): AudioWorkletNode =>
           new AudioWorkletNode(context, 'audio-playback-processor', options));
-      const node = create(ctx, { processorOptions: { sourceSampleRate: this.options.sourceSampleRate } });
+      const node = create(ctx, {
+        processorOptions: { sourceSampleRate: this.options.sourceSampleRate },
+      });
       // Through the gain node (visualization + output stream) or straight to the speakers
       node.connect(this.graph.gain ?? ctx.destination);
       this.worklet = node;
-      this.options.log?.debug('Playback worklet initialized (Lanczos-3 resampling, off main thread)');
+      this.options.log?.debug(
+        'Playback worklet initialized (Lanczos-3 resampling, off main thread)'
+      );
     })();
     return this.initPromise;
   }

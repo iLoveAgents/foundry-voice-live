@@ -425,9 +425,7 @@ export function withSemanticVAD(
   } = {},
   config: Partial<VoiceLiveSessionConfig> = {}
 ): Partial<VoiceLiveSessionConfig> {
-  const type = options.multilingual
-    ? 'azure_semantic_vad_multilingual'
-    : 'azure_semantic_vad';
+  const type = options.multilingual ? 'azure_semantic_vad_multilingual' : 'azure_semantic_vad';
 
   return {
     ...config,
@@ -471,8 +469,7 @@ export function withEndOfUtterance(
   } = {},
   config: Partial<VoiceLiveSessionConfig> = {}
 ): Partial<VoiceLiveSessionConfig> {
-  const isMultilingual =
-    config.turnDetection?.type === 'azure_semantic_vad_multilingual';
+  const isMultilingual = config.turnDetection?.type === 'azure_semantic_vad_multilingual';
 
   return {
     ...config,
@@ -480,7 +477,9 @@ export function withEndOfUtterance(
       ...config.turnDetection,
       type: config.turnDetection?.type || 'azure_semantic_vad',
       endOfUtteranceDetection: {
-        model: options.model || (isMultilingual ? 'semantic_detection_v1_multilingual' : 'semantic_detection_v1'),
+        model:
+          options.model ||
+          (isMultilingual ? 'semantic_detection_v1_multilingual' : 'semantic_detection_v1'),
         thresholdLevel: options.thresholdLevel || 'default',
         timeoutMs: options.timeoutMs || 1000,
       },
@@ -1014,9 +1013,7 @@ export function withGreeting(
  * const config = enhance(baseConfig);
  * ```
  */
-export function compose<T>(
-  ...fns: Array<(config: T) => T>
-): (config: T) => T {
+export function compose<T>(...fns: Array<(config: T) => T>): (config: T) => T {
   return (config: T) => fns.reduce((acc, fn) => fn(acc), config);
 }
 
@@ -1113,10 +1110,7 @@ export class SessionConfigBuilder {
   }
 
   /** Set avatar crop */
-  avatarCrop(crop: {
-    topLeft: [number, number];
-    bottomRight: [number, number];
-  }): this {
+  avatarCrop(crop: { topLeft: [number, number]; bottomRight: [number, number] }): this {
     this.config = withAvatarCrop(crop, this.config);
     return this;
   }
@@ -1162,7 +1156,9 @@ export class SessionConfigBuilder {
   }
 
   /** Enable server echo cancellation (optionally with Live-Reference AEC settings) */
-  echoCancellation(options: { referenceSource?: 'server' | 'client'; channels?: 1 | 2 } = {}): this {
+  echoCancellation(
+    options: { referenceSource?: 'server' | 'client'; channels?: 1 | 2 } = {}
+  ): this {
     this.config = withEchoCancellation(this.config, options);
     return this;
   }
@@ -1332,9 +1328,7 @@ export class SessionConfigBuilder {
  * });
  * ```
  */
-export function sessionConfig(
-  initial: Partial<VoiceLiveSessionConfig> = {}
-): SessionConfigBuilder {
+export function sessionConfig(initial: Partial<VoiceLiveSessionConfig> = {}): SessionConfigBuilder {
   const builder = new SessionConfigBuilder();
   // Apply initial config
   Object.assign(builder['config'], initial);

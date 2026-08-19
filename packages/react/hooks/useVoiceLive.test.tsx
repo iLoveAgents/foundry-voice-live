@@ -53,7 +53,10 @@ describe('useVoiceLive (websocket)', () => {
     expect(hook.result.current.connectionState).toBe('connected');
     expect(hook.result.current.transport).toBe('websocket');
 
-    await deliver(ws, { type: 'session.created', session: { id: 's1', expires_at: 1_700_000_000 } });
+    await deliver(ws, {
+      type: 'session.created',
+      session: { id: 's1', expires_at: 1_700_000_000 },
+    });
     const update = ws.lastSent('session.update');
     expect(update).toBeDefined();
     expect(update.session.instructions).toBe('Be nice.');
@@ -80,7 +83,10 @@ describe('useVoiceLive (websocket)', () => {
     expect(update.session.turn_detection.type).toBe('azure_semantic_vad');
 
     await act(async () => {
-      hook.result.current.updateSession({ instructions: 'ignored in agent mode', voice: 'en-US-AvaNeural' });
+      hook.result.current.updateSession({
+        instructions: 'ignored in agent mode',
+        voice: 'en-US-AvaNeural',
+      });
     });
     const second = ws.sent.filter((e) => e.type === 'session.update')[1];
     expect(second.session).not.toHaveProperty('instructions');
@@ -111,8 +117,16 @@ describe('useVoiceLive (websocket)', () => {
     await deliver(ws, { type: 'session.created', session: {} });
     await deliver(ws, { type: 'session.updated', session: {} });
 
-    await deliver(ws, { type: 'conversation.item.input_audio_transcription.delta', item_id: 'i', delta: 'Hel' });
-    await deliver(ws, { type: 'conversation.item.input_audio_transcription.delta', item_id: 'i', delta: 'lo' });
+    await deliver(ws, {
+      type: 'conversation.item.input_audio_transcription.delta',
+      item_id: 'i',
+      delta: 'Hel',
+    });
+    await deliver(ws, {
+      type: 'conversation.item.input_audio_transcription.delta',
+      item_id: 'i',
+      delta: 'lo',
+    });
     expect(onTranscript).toHaveBeenLastCalledWith('user', 'Hello', false);
     await deliver(ws, {
       type: 'conversation.item.input_audio_transcription.completed',
@@ -147,7 +161,9 @@ describe('useVoiceLive (websocket)', () => {
   });
 
   it('auto-sends tool results returned by toolExecutor and stays quiet for void executors', async () => {
-    const toolExecutor = vi.fn(async (name: string) => (name === 'get_time' ? { time: '12:00' } : undefined));
+    const toolExecutor = vi.fn(async (name: string) =>
+      name === 'get_time' ? { time: '12:00' } : undefined
+    );
     const { hook, ws } = await connectAndOpen({ ...baseConfig, toolExecutor });
     await deliver(ws, { type: 'session.created', session: {} });
 
@@ -168,7 +184,11 @@ describe('useVoiceLive (websocket)', () => {
 
     expect(toolExecutor).toHaveBeenCalledWith('get_time', '{}', 'call_1');
     const output = ws.lastSent('conversation.item.create');
-    expect(output.item).toEqual({ type: 'function_call_output', call_id: 'call_1', output: '{"time":"12:00"}' });
+    expect(output.item).toEqual({
+      type: 'function_call_output',
+      call_id: 'call_1',
+      output: '{"time":"12:00"}',
+    });
     // The output goes out immediately; the follow-up response waits for response.done, because
     // only then is it certain that no further tool call belongs to this response
     expect(ws.lastSent('response.create')).toBeUndefined();
@@ -213,7 +233,10 @@ describe('useVoiceLive (websocket)', () => {
         item: { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'Hello' }] },
       },
       { type: 'response.create', event_id: expect.stringMatching(/^evt_\d+$/) },
-      { type: 'conversation.item.create', item: { type: 'function_call_output', call_id: 'call_9', output: 'done' } },
+      {
+        type: 'conversation.item.create',
+        item: { type: 'function_call_output', call_id: 'call_9', output: 'done' },
+      },
       {
         type: 'conversation.item.create',
         item: { type: 'mcp_approval_response', approval_request_id: 'req_1', approve: true },
@@ -231,7 +254,10 @@ describe('useVoiceLive (websocket)', () => {
       useVoiceLive({
         ...baseConfig,
         connection: { ...baseConfig.connection, model: 'gpt-realtime' },
-        session: { ...baseConfig.session, interimResponse: { type: 'llm_interim_response', triggers: ['latency'] } },
+        session: {
+          ...baseConfig.session,
+          interimResponse: { type: 'llm_interim_response', triggers: ['latency'] },
+        },
         onWarning: () => hook.result.current.disconnect(),
       })
     );
@@ -252,7 +278,10 @@ describe('useVoiceLive (websocket)', () => {
     await connectAndOpen({
       ...baseConfig,
       connection: { ...baseConfig.connection, model: 'gpt-realtime' },
-      session: { ...baseConfig.session, interimResponse: { type: 'llm_interim_response', triggers: ['latency'] } },
+      session: {
+        ...baseConfig.session,
+        interimResponse: { type: 'llm_interim_response', triggers: ['latency'] },
+      },
       onWarning,
     });
 
@@ -265,11 +294,22 @@ describe('useVoiceLive (websocket)', () => {
     const onMcpApprovalRequest = vi.fn();
     const onWarning = vi.fn();
     const onEvent = vi.fn();
-    const { hook, ws } = await connectAndOpen({ ...baseConfig, onMcpApprovalRequest, onWarning, onEvent });
+    const { hook, ws } = await connectAndOpen({
+      ...baseConfig,
+      onMcpApprovalRequest,
+      onWarning,
+      onEvent,
+    });
 
     await deliver(ws, {
       type: 'conversation.item.created',
-      item: { id: 'req_1', type: 'mcp_approval_request', server_label: 'mslearn', name: 'search', arguments: '{"q":"x"}' },
+      item: {
+        id: 'req_1',
+        type: 'mcp_approval_request',
+        server_label: 'mslearn',
+        name: 'search',
+        arguments: '{"q":"x"}',
+      },
     });
     expect(onMcpApprovalRequest).toHaveBeenCalledWith({
       approvalRequestId: 'req_1',
@@ -282,9 +322,15 @@ describe('useVoiceLive (websocket)', () => {
     expect(onWarning).toHaveBeenCalledWith({ message: 'slow', code: 'latency' });
 
     // benign cancel errors are ignored, real errors surface
-    await deliver(ws, { type: 'error', error: { code: 'response_cancel_not_active', message: 'no active response' } });
+    await deliver(ws, {
+      type: 'error',
+      error: { code: 'response_cancel_not_active', message: 'no active response' },
+    });
     expect(hook.result.current.error).toBeNull();
-    await deliver(ws, { type: 'error', error: { code: 'invalid_request_error', message: 'Bad session' } });
+    await deliver(ws, {
+      type: 'error',
+      error: { code: 'invalid_request_error', message: 'Bad session' },
+    });
     expect(hook.result.current.error).toBe('Bad session');
 
     expect(onEvent).toHaveBeenCalledTimes(4);
@@ -305,7 +351,9 @@ describe('useVoiceLive (websocket)', () => {
   });
 
   it('reports configuration problems as errors instead of throwing', async () => {
-    const hook = renderHook(() => useVoiceLive({ ...baseConfig, connection: { resourceName: 'r' } }));
+    const hook = renderHook(() =>
+      useVoiceLive({ ...baseConfig, connection: { resourceName: 'r' } })
+    );
     await act(async () => {
       await hook.result.current.connect();
     });
@@ -802,7 +850,10 @@ describe('useVoiceLive (websocket)', () => {
     await act(async () => {
       ws.receive({
         type: 'response.done',
-        response: { id: 'resp-1', output: [{ type: 'function_call', call_id: 'call-a', name: 'a' }] },
+        response: {
+          id: 'resp-1',
+          output: [{ type: 'function_call', call_id: 'call-a', name: 'a' }],
+        },
       });
     });
     // the turn must be held: no function_call_output exists yet
@@ -1054,7 +1105,10 @@ describe('useVoiceLive (websocket)', () => {
       ws.receive({ type: 'response.created', response: { id: 'resp-1' } });
       ws.receive({
         type: 'response.done',
-        response: { id: 'resp-1', output: [{ type: 'function_call', call_id: 'call-a', name: 'a' }] },
+        response: {
+          id: 'resp-1',
+          output: [{ type: 'function_call', call_id: 'call-a', name: 'a' }],
+        },
       });
       ws.receive({
         type: 'response.function_call_arguments.done',

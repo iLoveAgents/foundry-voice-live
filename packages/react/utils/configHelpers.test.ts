@@ -92,10 +92,15 @@ describe('Avatar Helpers', () => {
   });
 
   it('withAvatar merges with base config', () => {
-    const config = withAvatar('lisa', 'casual-sitting', { codec: 'h264' }, {
-      instructions: 'You are helpful.',
-      voice: { name: 'en-US-AvaMultilingualNeural', type: 'azure-standard' },
-    });
+    const config = withAvatar(
+      'lisa',
+      'casual-sitting',
+      { codec: 'h264' },
+      {
+        instructions: 'You are helpful.',
+        voice: { name: 'en-US-AvaMultilingualNeural', type: 'azure-standard' },
+      }
+    );
     expect(config.avatar?.character).toBe('lisa');
     expect(config.instructions).toBe('You are helpful.');
     expect(config.voice).toEqual({ name: 'en-US-AvaMultilingualNeural', type: 'azure-standard' });
@@ -145,9 +150,9 @@ describe('VAD Helpers', () => {
       prefixPaddingMs: 300,
       speechDurationMs: 80,
       silenceDurationMs: 500,
-      removeFillerWords: undefined,  // API default is false
+      removeFillerWords: undefined, // API default is false
       languages: undefined,
-      interruptResponse: undefined,  // API default is false
+      interruptResponse: undefined, // API default is false
       createResponse: true,
       autoTruncate: undefined,
     });
@@ -330,7 +335,14 @@ describe('Tools Helpers', () => {
   });
 
   it('withToolChoice sets tool choice mode', () => {
-    const base = withTools([{ type: 'function', name: 'test', description: 'Test', parameters: { type: 'object', properties: {} } }]);
+    const base = withTools([
+      {
+        type: 'function',
+        name: 'test',
+        description: 'Test',
+        parameters: { type: 'object', properties: {} },
+      },
+    ]);
     const config = withToolChoice('required', base);
     expect(config.toolChoice).toBe('required');
   });
@@ -351,9 +363,14 @@ describe('Composition', () => {
       { threshold: 0.5 },
       withEchoCancellation(
         withDeepNoiseReduction(
-          withAvatar('lisa', 'casual-sitting', { codec: 'h264' }, {
-            instructions: 'You are a helpful assistant.',
-          })
+          withAvatar(
+            'lisa',
+            'casual-sitting',
+            { codec: 'h264' },
+            {
+              instructions: 'You are a helpful assistant.',
+            }
+          )
         )
       )
     );
@@ -448,10 +465,7 @@ describe('Session Builder', () => {
   });
 
   it('builder supports viseme and word timestamps', () => {
-    const config = sessionConfig()
-      .viseme()
-      .wordTimestamps()
-      .build();
+    const config = sessionConfig().viseme().wordTimestamps().build();
 
     expect(config.animation?.outputs).toEqual(['viseme_id']);
     expect(config.outputAudioTimestampTypes).toEqual(['word']);
@@ -579,11 +593,20 @@ describe('New voice helpers', () => {
 });
 
 describe('Tools, MCP and Foundry agent helpers', () => {
-  const fnTool = { type: 'function' as const, name: 'get_time', description: 'Time', parameters: {} };
+  const fnTool = {
+    type: 'function' as const,
+    name: 'get_time',
+    description: 'Time',
+    parameters: {},
+  };
 
   it('withMcpServer appends an mcp tool and defaults toolChoice to auto', () => {
     const config = withMcpServer(
-      { serverLabel: 'mslearn', serverUrl: 'https://learn.microsoft.com/api/mcp', requireApproval: 'never' },
+      {
+        serverLabel: 'mslearn',
+        serverUrl: 'https://learn.microsoft.com/api/mcp',
+        requireApproval: 'never',
+      },
       withTools([fnTool])
     );
     expect(config.tools).toHaveLength(2);
@@ -601,12 +624,21 @@ describe('Tools, MCP and Foundry agent helpers', () => {
       { serverLabel: 'b', serverUrl: 'https://b' },
       withMcpServer({ serverLabel: 'a', serverUrl: 'https://a' })
     );
-    expect(config.tools?.map((t) => (t as { serverLabel?: string }).serverLabel)).toEqual(['a', 'b']);
+    expect(config.tools?.map((t) => (t as { serverLabel?: string }).serverLabel)).toEqual([
+      'a',
+      'b',
+    ]);
   });
 
   it('withFoundryAgentTool appends a foundry_agent tool', () => {
-    const config = withFoundryAgentTool({ agentName: 'agent', projectName: 'proj', description: 'd' });
-    expect(config.tools).toEqual([{ type: 'foundry_agent', agentName: 'agent', projectName: 'proj', description: 'd' }]);
+    const config = withFoundryAgentTool({
+      agentName: 'agent',
+      projectName: 'proj',
+      description: 'd',
+    });
+    expect(config.tools).toEqual([
+      { type: 'foundry_agent', agentName: 'agent', projectName: 'proj', description: 'd' },
+    ]);
   });
 
   it('withParallelToolCalls sets parallelToolCalls', () => {
@@ -628,8 +660,16 @@ describe('Model behaviour helpers', () => {
 
 describe('Conversation helpers', () => {
   it('withInterimResponse sets interimResponse', () => {
-    const config = withInterimResponse({ type: 'llm_interim_response', triggers: ['tool'], latencyThresholdInMs: 1500 });
-    expect(config.interimResponse).toEqual({ type: 'llm_interim_response', triggers: ['tool'], latencyThresholdInMs: 1500 });
+    const config = withInterimResponse({
+      type: 'llm_interim_response',
+      triggers: ['tool'],
+      latencyThresholdInMs: 1500,
+    });
+    expect(config.interimResponse).toEqual({
+      type: 'llm_interim_response',
+      triggers: ['tool'],
+      latencyThresholdInMs: 1500,
+    });
   });
 
   it('withGreeting sets greeting', () => {
@@ -644,12 +684,17 @@ describe('Conversation helpers', () => {
   });
 
   it('withEchoCancellation accepts Live-Reference AEC options', () => {
-    expect(withEchoCancellation({}, { referenceSource: 'client', channels: 2 }).inputAudioEchoCancellation).toEqual({
+    expect(
+      withEchoCancellation({}, { referenceSource: 'client', channels: 2 })
+        .inputAudioEchoCancellation
+    ).toEqual({
       type: 'server_echo_cancellation',
       referenceSource: 'client',
       channels: 2,
     });
-    expect(withEchoCancellation().inputAudioEchoCancellation).toEqual({ type: 'server_echo_cancellation' });
+    expect(withEchoCancellation().inputAudioEchoCancellation).toEqual({
+      type: 'server_echo_cancellation',
+    });
   });
 });
 
@@ -670,13 +715,23 @@ describe('Builder: new methods', () => {
     expect(config.reasoningEffort).toBe('medium');
     expect(config.metadata).toEqual({ k: 'v' });
     expect(config.voice).toEqual({ name: 'diya', type: 'azure-realtime-native' });
-    expect(config.inputAudioEchoCancellation).toEqual({ type: 'server_echo_cancellation', referenceSource: 'server' });
+    expect(config.inputAudioEchoCancellation).toEqual({
+      type: 'server_echo_cancellation',
+      referenceSource: 'server',
+    });
   });
 
   it('personalVoice and hdVoice options work in the builder', () => {
     const config = sessionConfig().personalVoice('pv', 'MAI-Voice-1', { rate: '0.9' }).build();
-    expect(config.voice).toEqual({ name: 'pv', type: 'azure-personal', model: 'MAI-Voice-1', rate: '0.9' });
-    const hd = sessionConfig().hdVoice('en-US-Ava:DragonHDLatestNeural', { locale: 'en-US' }).build();
+    expect(config.voice).toEqual({
+      name: 'pv',
+      type: 'azure-personal',
+      model: 'MAI-Voice-1',
+      rate: '0.9',
+    });
+    const hd = sessionConfig()
+      .hdVoice('en-US-Ava:DragonHDLatestNeural', { locale: 'en-US' })
+      .build();
     expect((hd.voice as { locale?: string }).locale).toBe('en-US');
   });
 });

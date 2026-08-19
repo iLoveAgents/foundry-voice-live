@@ -1,9 +1,6 @@
 import { useRef, useEffect, useState, useCallback } from 'react';
 import { useVoiceLive, sessionConfig } from '@iloveagents/foundry-voice-live-react';
-import type {
-  FunctionTool,
-  InterimResponseConfig,
-} from '@iloveagents/foundry-voice-live-react';
+import type { FunctionTool, InterimResponseConfig } from '@iloveagents/foundry-voice-live-react';
 import {
   SampleLayout,
   StatusBadge,
@@ -182,18 +179,17 @@ export function InterimResponse(): JSX.Element {
         <AlertBox variant="warning" title="Model requirement">
           <p>
             Interim responses are only supported with cascaded text models (this page uses{' '}
-            <code>gpt-4.1</code>) combined with Azure voices, or in Foundry agent mode. They
-            are <strong>not</strong> supported by native audio models such as{' '}
-            <code>gpt-realtime</code>, <code>gpt-realtime-mini</code> or{' '}
-            <code>azure-realtime</code>.
+            <code>gpt-4.1</code>) combined with Azure voices, or in Foundry agent mode. They are{' '}
+            <strong>not</strong> supported by native audio models such as <code>gpt-realtime</code>,{' '}
+            <code>gpt-realtime-mini</code> or <code>azure-realtime</code>.
           </p>
           <p>
             Measured live (August 2026, 6 s <em>client-side</em> tool): the{' '}
             <code>static_interim_response</code> filler was spoken in every run, while{' '}
             <code>llm_interim_response</code> produced a filler in 1 of 11 runs regardless of{' '}
-            <code>model</code>/<code>instructions</code>/<code>latency</code> settings. Prefer static
-            texts for client-side tools; LLM-generated fillers suit server-side waits (MCP servers,
-            Foundry agent tools).
+            <code>model</code>/<code>instructions</code>/<code>latency</code> settings. Prefer
+            static texts for client-side tools; LLM-generated fillers suit server-side waits (MCP
+            servers, Foundry agent tools).
           </p>
         </AlertBox>
       </Section>
@@ -224,17 +220,15 @@ export function InterimResponse(): JSX.Element {
           </label>
         </ControlGroup>
         <p style={{ fontSize: '14px' }}>
-          Triggers: <code>tool</code> + <code>latency</code> (threshold 1500 ms). The mode is
-          part of the session config, so change it before connecting (or stop and reconnect).
+          Triggers: <code>tool</code> + <code>latency</code> (threshold 1500 ms). The mode is part
+          of the session config, so change it before connecting (or stop and reconnect).
         </p>
       </Section>
 
       <StatusBadge status={connectionState} />
 
       {isConnected && (
-        <p style={{ margin: '0.5rem 0', fontStyle: 'italic' }}>
-          {sessionStateLabel(sessionState)}
-        </p>
+        <p style={{ margin: '0.5rem 0', fontStyle: 'italic' }}>{sessionStateLabel(sessionState)}</p>
       )}
 
       <ControlGroup>
@@ -244,9 +238,7 @@ export function InterimResponse(): JSX.Element {
         <button onClick={handleStop} disabled={!isConnected}>
           Stop
         </button>
-        {isConnected && (
-          <button onClick={toggleMute}>{isMuted ? 'Unmute' : 'Mute'}</button>
-        )}
+        {isConnected && <button onClick={toggleMute}>{isMuted ? 'Unmute' : 'Mute'}</button>}
       </ControlGroup>
 
       {isConnected && <TextInput onSend={sendText} />}

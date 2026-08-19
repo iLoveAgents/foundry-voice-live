@@ -18,11 +18,11 @@ export const DEFAULT_MAX_PENDING_BYTES = 1024 * 1024;
 /** What the caller should do after offering a message to the queue */
 export type PendingQueueResult =
   /** Queued for the flush after the upstream socket opens */
-  | 'queued'
+  | "queued"
   /** Frame count exceeded — drop this message, keep the connection */
-  | 'dropped'
+  | "dropped"
   /** Byte budget exceeded — close the client connection */
-  | 'over-budget';
+  | "over-budget";
 
 export interface PendingQueueLimits {
   maxMessages?: number;
@@ -54,16 +54,16 @@ export class PendingMessageQueue {
    * exceeding the frame count only drops the message.
    */
   push(text: string): PendingQueueResult {
-    const size = Buffer.byteLength(text, 'utf8');
+    const size = Buffer.byteLength(text, "utf8");
     if (this.bytes + size > this.maxBytes) {
-      return 'over-budget';
+      return "over-budget";
     }
     if (this.messages.length >= this.maxMessages) {
-      return 'dropped';
+      return "dropped";
     }
     this.messages.push(text);
     this.bytes += size;
-    return 'queued';
+    return "queued";
   }
 
   /** Remove and return everything queued so far */

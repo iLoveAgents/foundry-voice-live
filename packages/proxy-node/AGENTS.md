@@ -46,14 +46,14 @@ docker-compose.yml
 - **Credentials travel as headers, never in the upstream URL**: `?token=` becomes
   `Authorization: Bearer`, `FOUNDRY_API_KEY` becomes the `api-key` header. A URL is exported by
   dependency tracing (Application Insights records the full URL of every outbound request), a
-  header is not. `redactUrl()` masks `token`/`api-key`/`Authorization` wherever a URL *is* logged —
+  header is not. `redactUrl()` masks `token`/`api-key`/`Authorization` wherever a URL _is_ logged —
   it decodes parameter names first, because the server reads `?to%6Ben=` as `token` too. Any new
   logging site that touches `req.url` must go through it.
 - Transport: `?transport=webrtc` → upstream `/voice-live/realtime/calls` (WebRTC control channel,
   default api-version `2026-01-01-preview`); default → `/voice-live/realtime` (`2026-07-15`).
   The relay is identical for both — `rtc.call.*` are plain JSON text frames.
 - API version precedence: `?apiVersion=` > `API_VERSION` env > built-in default per transport
-- Origin is checked in three places, on purpose: `verifyClient` (rejects the *handshake* with HTTP
+- Origin is checked in three places, on purpose: `verifyClient` (rejects the _handshake_ with HTTP
   `403`, the only way the browser gets an unambiguous failure), the CORS middleware, and the `/ws`
   handler as defence in depth. With `express-ws` the upgrade completes before middleware runs, so a
   CORS rejection alone reaches the client as a close without a status code

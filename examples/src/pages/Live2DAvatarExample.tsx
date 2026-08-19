@@ -15,7 +15,11 @@
  */
 
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { useVoiceLive, createVoiceLiveConfig, withViseme } from '@iloveagents/foundry-voice-live-react';
+import {
+  useVoiceLive,
+  createVoiceLiveConfig,
+  withViseme,
+} from '@iloveagents/foundry-voice-live-react';
 import type { VoiceLiveServerEvent } from '@iloveagents/foundry-voice-live-react';
 import { SampleLayout, StatusBadge, Section, ControlGroup, ErrorPanel } from '../components';
 import * as PIXI from 'pixi.js';
@@ -57,11 +61,11 @@ interface VisemeData {
 /** Live2D vowel mouth shape parameters (values 0-1) */
 interface VowelParams {
   mouthOpen: number; // ParamMouthOpenY - overall mouth opening
-  a: number;         // ParamA - "ah" vowel shape
-  i: number;         // ParamI - "ee" vowel shape
-  u: number;         // ParamU - "oo" vowel shape
-  e: number;         // ParamE - "eh" vowel shape
-  o: number;         // ParamO - "oh" vowel shape
+  a: number; // ParamA - "ah" vowel shape
+  i: number; // ParamI - "ee" vowel shape
+  u: number; // ParamU - "oo" vowel shape
+  e: number; // ParamE - "eh" vowel shape
+  o: number; // ParamO - "oh" vowel shape
 }
 
 /** Viseme mapping entry with phoneme description */
@@ -83,38 +87,38 @@ interface VisemeMapping extends VowelParams {
  */
 const VISEME_MAP: Record<number, VisemeMapping> = {
   // Silence - mouth closed
-  0:  { phonemes: 'Silence',       mouthOpen: 0.0, a: 0,   i: 0,   u: 0,   e: 0,   o: 0   },
+  0: { phonemes: 'Silence', mouthOpen: 0.0, a: 0, i: 0, u: 0, e: 0, o: 0 },
 
   // Open vowels - wide mouth opening
-  1:  { phonemes: 'æ, ə, ʌ',       mouthOpen: 0.8, a: 1,   i: 0,   u: 0,   e: 0,   o: 0   },
-  2:  { phonemes: 'ɑ',             mouthOpen: 1.0, a: 1,   i: 0,   u: 0,   e: 0,   o: 0   },
+  1: { phonemes: 'æ, ə, ʌ', mouthOpen: 0.8, a: 1, i: 0, u: 0, e: 0, o: 0 },
+  2: { phonemes: 'ɑ', mouthOpen: 1.0, a: 1, i: 0, u: 0, e: 0, o: 0 },
 
   // Back vowels - rounded lips
-  3:  { phonemes: 'ɔ',             mouthOpen: 0.7, a: 0,   i: 0,   u: 0,   e: 0,   o: 1   },
-  7:  { phonemes: 'w, ʊ',          mouthOpen: 0.6, a: 0,   i: 0,   u: 1,   e: 0,   o: 0   },
-  8:  { phonemes: 'oʊ',            mouthOpen: 0.8, a: 0,   i: 0,   u: 0,   e: 0,   o: 1   },
+  3: { phonemes: 'ɔ', mouthOpen: 0.7, a: 0, i: 0, u: 0, e: 0, o: 1 },
+  7: { phonemes: 'w, ʊ', mouthOpen: 0.6, a: 0, i: 0, u: 1, e: 0, o: 0 },
+  8: { phonemes: 'oʊ', mouthOpen: 0.8, a: 0, i: 0, u: 0, e: 0, o: 1 },
 
   // Front vowels - spread lips
-  4:  { phonemes: 'eɪ, ɛ, ʊ',      mouthOpen: 0.6, a: 0,   i: 0,   u: 0,   e: 1,   o: 0   },
-  5:  { phonemes: 'ɝ',             mouthOpen: 0.5, a: 0,   i: 0,   u: 0,   e: 0.8, o: 0   },
-  6:  { phonemes: 'j, i, ɪ',       mouthOpen: 0.5, a: 0,   i: 1,   u: 0,   e: 0,   o: 0   },
+  4: { phonemes: 'eɪ, ɛ, ʊ', mouthOpen: 0.6, a: 0, i: 0, u: 0, e: 1, o: 0 },
+  5: { phonemes: 'ɝ', mouthOpen: 0.5, a: 0, i: 0, u: 0, e: 0.8, o: 0 },
+  6: { phonemes: 'j, i, ɪ', mouthOpen: 0.5, a: 0, i: 1, u: 0, e: 0, o: 0 },
 
   // Diphthongs - blended vowel shapes
-  9:  { phonemes: 'aʊ',            mouthOpen: 0.7, a: 0.5, i: 0,   u: 0,   e: 0,   o: 0.5 },
-  10: { phonemes: 'ɔɪ',            mouthOpen: 0.7, a: 0,   i: 0.5, u: 0,   e: 0,   o: 0.5 },
-  11: { phonemes: 'aɪ',            mouthOpen: 0.7, a: 0.5, i: 0.5, u: 0,   e: 0,   o: 0   },
+  9: { phonemes: 'aʊ', mouthOpen: 0.7, a: 0.5, i: 0, u: 0, e: 0, o: 0.5 },
+  10: { phonemes: 'ɔɪ', mouthOpen: 0.7, a: 0, i: 0.5, u: 0, e: 0, o: 0.5 },
+  11: { phonemes: 'aɪ', mouthOpen: 0.7, a: 0.5, i: 0.5, u: 0, e: 0, o: 0 },
 
   // Consonants - minimal mouth opening
-  12: { phonemes: 'h',             mouthOpen: 0.2, a: 0,   i: 0,   u: 0,   e: 0,   o: 0   },
-  13: { phonemes: 'ɹ',             mouthOpen: 0.3, a: 0,   i: 0,   u: 0,   e: 0,   o: 0   },
-  14: { phonemes: 'l',             mouthOpen: 0.3, a: 0,   i: 0,   u: 0,   e: 0,   o: 0   },
-  15: { phonemes: 's, z',          mouthOpen: 0.2, a: 0,   i: 0.3, u: 0,   e: 0,   o: 0   },
-  16: { phonemes: 'ʃ, tʃ, dʒ, ʒ',  mouthOpen: 0.3, a: 0,   i: 0,   u: 0.3, e: 0,   o: 0   },
-  17: { phonemes: 'θ, ð',          mouthOpen: 0.2, a: 0,   i: 0,   u: 0,   e: 0,   o: 0   },
-  18: { phonemes: 'f, v',          mouthOpen: 0.2, a: 0,   i: 0,   u: 0,   e: 0,   o: 0   },
-  19: { phonemes: 'd, t, n',       mouthOpen: 0.3, a: 0,   i: 0,   u: 0,   e: 0,   o: 0   },
-  20: { phonemes: 'k, g, ŋ',       mouthOpen: 0.2, a: 0,   i: 0,   u: 0,   e: 0,   o: 0   },
-  21: { phonemes: 'p, b, m',       mouthOpen: 0.1, a: 0,   i: 0,   u: 0,   e: 0,   o: 0   },
+  12: { phonemes: 'h', mouthOpen: 0.2, a: 0, i: 0, u: 0, e: 0, o: 0 },
+  13: { phonemes: 'ɹ', mouthOpen: 0.3, a: 0, i: 0, u: 0, e: 0, o: 0 },
+  14: { phonemes: 'l', mouthOpen: 0.3, a: 0, i: 0, u: 0, e: 0, o: 0 },
+  15: { phonemes: 's, z', mouthOpen: 0.2, a: 0, i: 0.3, u: 0, e: 0, o: 0 },
+  16: { phonemes: 'ʃ, tʃ, dʒ, ʒ', mouthOpen: 0.3, a: 0, i: 0, u: 0.3, e: 0, o: 0 },
+  17: { phonemes: 'θ, ð', mouthOpen: 0.2, a: 0, i: 0, u: 0, e: 0, o: 0 },
+  18: { phonemes: 'f, v', mouthOpen: 0.2, a: 0, i: 0, u: 0, e: 0, o: 0 },
+  19: { phonemes: 'd, t, n', mouthOpen: 0.3, a: 0, i: 0, u: 0, e: 0, o: 0 },
+  20: { phonemes: 'k, g, ŋ', mouthOpen: 0.2, a: 0, i: 0, u: 0, e: 0, o: 0 },
+  21: { phonemes: 'p, b, m', mouthOpen: 0.1, a: 0, i: 0, u: 0, e: 0, o: 0 },
 };
 
 /** Default closed mouth state */
@@ -244,7 +248,11 @@ export function Live2DAvatarExample(): JSX.Element {
 
         // Check if model files are missing (404 error)
         const errorMessage = err instanceof Error ? err.message : String(err);
-        if (errorMessage.includes('404') || errorMessage.includes('Network') || errorMessage.includes('Failed to load')) {
+        if (
+          errorMessage.includes('404') ||
+          errorMessage.includes('Network') ||
+          errorMessage.includes('Failed to load')
+        ) {
           setModelNotFound(true);
         } else {
           setError(`Failed to load Live2D model: ${errorMessage}`);
@@ -316,9 +324,15 @@ export function Live2DAvatarExample(): JSX.Element {
    */
   const updateMouthParameters = useCallback((): void => {
     const model = modelRef.current;
-    const coreModel = (model as { internalModel?: { coreModel?: {
-      setParameterValueById: (id: string, value: number) => void;
-    } } })?.internalModel?.coreModel;
+    const coreModel = (
+      model as {
+        internalModel?: {
+          coreModel?: {
+            setParameterValueById: (id: string, value: number) => void;
+          };
+        };
+      }
+    )?.internalModel?.coreModel;
 
     if (!coreModel) return;
 
@@ -461,7 +475,9 @@ export function Live2DAvatarExample(): JSX.Element {
                   lineHeight: 1.8,
                 }}
               >
-                <strong style={{ display: 'block', marginBottom: '8px' }}>Setup Instructions:</strong>
+                <strong style={{ display: 'block', marginBottom: '8px' }}>
+                  Setup Instructions:
+                </strong>
                 <ol style={{ margin: 0, paddingLeft: '20px' }}>
                   <li>
                     Download from{' '}
@@ -477,7 +493,13 @@ export function Live2DAvatarExample(): JSX.Element {
                   <li>Accept the license agreement</li>
                   <li>
                     Extract to{' '}
-                    <code style={{ background: 'rgba(0,0,0,0.3)', padding: '2px 6px', borderRadius: '3px' }}>
+                    <code
+                      style={{
+                        background: 'rgba(0,0,0,0.3)',
+                        padding: '2px 6px',
+                        borderRadius: '3px',
+                      }}
+                    >
                       public/models/kei_vowels_pro/
                     </code>
                   </li>

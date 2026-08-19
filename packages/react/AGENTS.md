@@ -4,16 +4,16 @@ Package: `@iloveagents/foundry-voice-live-react` — the browser/React layer for
 
 ## Exports
 
-| Export | Type | Description |
-| ------ | ---- | ----------- |
-| `useVoiceLive` | Hook | Voice Live session (WebSocket or WebRTC transport, agents, tools, transcripts, auto-reconnect) |
-| `useAudioCapture` | Hook | Microphone capture → PCM16 (WebSocket transport) |
-| `VoiceLiveAvatar` | Component | Avatar rendering with WebGL chroma key |
-| `sessionConfig()` / `with*()` | Helpers | Fluent + functional session configuration |
-| `buildSessionConfig` / `buildAgentSessionConfig` / `convertToSessionUpdate` | Utils | camelCase config → wire format |
-| `buildVoiceLiveUrl`, `buildGreetingEvents`, `createLogger`, constants | Utils | Pure helpers |
-| `VoiceLiveServerEvent`, `VoiceLiveClientEvent`, … | Types | Typed wire-format events |
-| `WebSocketTransport`, `WebRtcTransport`, `OutputAudioGraph`, `PcmPlayer`, `AvatarConnection`, `WebRtcMicrophone` | Core (advanced) | Framework-agnostic building blocks the hook is made of |
+| Export                                                                                                           | Type            | Description                                                                                    |
+| ---------------------------------------------------------------------------------------------------------------- | --------------- | ---------------------------------------------------------------------------------------------- |
+| `useVoiceLive`                                                                                                   | Hook            | Voice Live session (WebSocket or WebRTC transport, agents, tools, transcripts, auto-reconnect) |
+| `useAudioCapture`                                                                                                | Hook            | Microphone capture → PCM16 (WebSocket transport)                                               |
+| `VoiceLiveAvatar`                                                                                                | Component       | Avatar rendering with WebGL chroma key                                                         |
+| `sessionConfig()` / `with*()`                                                                                    | Helpers         | Fluent + functional session configuration                                                      |
+| `buildSessionConfig` / `buildAgentSessionConfig` / `convertToSessionUpdate`                                      | Utils           | camelCase config → wire format                                                                 |
+| `buildVoiceLiveUrl`, `buildGreetingEvents`, `createLogger`, constants                                            | Utils           | Pure helpers                                                                                   |
+| `VoiceLiveServerEvent`, `VoiceLiveClientEvent`, …                                                                | Types           | Typed wire-format events                                                                       |
+| `WebSocketTransport`, `WebRtcTransport`, `OutputAudioGraph`, `PcmPlayer`, `AvatarConnection`, `WebRtcMicrophone` | Core (advanced) | Framework-agnostic building blocks the hook is made of                                         |
 
 ## Commands
 
@@ -50,7 +50,7 @@ Tests: `core/*.test.ts` (transports, audio, avatar, mic, reconnect), `hooks/useV
 ## Key Concepts
 
 - **Transports** implement `core/transports/types.ts` (`connect`/`send`/`close`/`setMicrophoneTrack`,
-  callbacks `onOpen`/`onEvent`/`onClose`/`onError`/`onReady`/`onRemoteStream`) and deliver *parsed*
+  callbacks `onOpen`/`onEvent`/`onClose`/`onError`/`onReady`/`onRemoteStream`) and deliver _parsed_
   events. `WebSocketTransport`: PCM16 + events over one socket. `WebRtcTransport`: control WS on
   `/voice-live/realtime/calls`, `rtc.call.sdp.create` with the session embedded (no `session.update`),
   answer applied on `rtc.call.sdp.created`, negotiation timeout, readiness = media connected + data
@@ -80,13 +80,13 @@ Tests: `core/*.test.ts` (transports, audio, avatar, mic, reconnect), `hooks/useV
   Update the allow-list there when Microsoft's enums catch up.
 - **Two lifetimes, one mechanism — `Scope` (`core/lifecycle.ts`).** Anything awaited
   (`getUserMedia`, avatar SDP, tool executors, worklet loading) can resolve after the work it
-  belonged to has ended. Capture the scope *before* the await and check `scope.isActive` after —
+  belonged to has ended. Capture the scope _before_ the await and check `scope.isActive` after —
   do **not** add another counter or boolean flag for this; that sprawl was the bug.
   - `connectionScopeRef` — `connect()` → `disconnect()`, survives reconnects (microphone, audio graph)
   - `sessionRef.current.scope` — one control channel / one server-side conversation, replaced per
     (re)connect attempt (response + tool-call ids, readiness). It is a child of the connection
     scope, so `disconnect()` ends both; use `scope.onAbort()` for cleanup instead of manual clears.
-  Identity checks go against the record (`sessionRef.current !== session`), not against numbers.
+    Identity checks go against the record (`sessionRef.current !== session`), not against numbers.
 - **`response.create` is serialized by `ResponseGate` (`core/responseGate.ts`)**, a three-state
   machine (`idle → requested → active`): the service rejects overlapping responses and
   `response.created` alone cannot tell you a request is in flight. **Never send `response.create`
@@ -95,7 +95,7 @@ Tests: `core/*.test.ts` (transports, audio, avatar, mic, reconnect), `hooks/useV
   The gate also reserves the slot when server VAD is about to create a response (speculative,
   self-healing after `SPECULATIVE_RESPONSE_TIMEOUT_MS`) and correlates `error` events by
   `event_id` so an unrelated failure does not release it. Announcements that arrive while the gate
-  is busy are **counted** (bounded by `MAX_DEFERRED_AUTOMATIC`) and taken by *every* path that
+  is busy are **counted** (bounded by `MAX_DEFERRED_AUTOMATIC`) and taken by _every_ path that
   frees the gate — `response.done`, a rejection, a request that never reached the service, and the
   watchdog. Missing one of those paths is how a queued turn ends up overlapping the service's own
   response; that class of bug is guarded by `core/responseGate.fuzz.test.ts`, so **when you change
@@ -113,7 +113,7 @@ Tests: `core/*.test.ts` (transports, audio, avatar, mic, reconnect), `hooks/useV
   cannot tell you whether more are coming; `response.done`'s own `output` list can, so it
   **reserves a batch** for the calls it declares (and the count is remembered in
   `completedResponsesRef` for services that omit the list). `batchOwesOutputs()` is the single
-  definition of "still owes outputs", used by the finish check *and* by `pendingToolBatch()`.
+  definition of "still owes outputs", used by the finish check _and_ by `pendingToolBatch()`.
   A declared call that never arrives is abandoned after `LATE_TOOL_CALL_TIMEOUT_MS`: holding every
   later turn forever is the worse failure. Once a response's batch has been answered its expected
   count is zeroed, so a call arriving afterwards cannot resurrect a batch waiting for work that was
@@ -121,9 +121,9 @@ Tests: `core/*.test.ts` (transports, audio, avatar, mic, reconnect), `hooks/useV
   (`toolExecutor`); consumers handling calls manually sequence their own follow-ups.
 - **Automatic tool results are batched per response** (`toolBatchesRef`, keyed by `response_id`
   and scoped to the session record): outputs are sent with `triggerResponse: false`; the single
-  `response.create` waits for **both** `response.done` *and* the last executor, and goes through
+  `response.create` waits for **both** `response.done` _and_ the last executor, and goes through
   `ResponseGate` like every other turn. A user turn submitted while **any** batch of the session
-  still owes outputs is *handed over* to it (`pendingToolBatch()` → `followUpOwed`, and the gate's
+  still owes outputs is _handed over_ to it (`pendingToolBatch()` → `followUpOwed`, and the gate's
   own queue via `consumeQueuedRequest()`), because answering before the `function_call_output`
   exists would make the model reply to a conversation with an unanswered tool call — one follow-up
   covers both. **The gate being idle is not sufficient reason to send: check the batches too.**
@@ -133,7 +133,7 @@ Tests: `core/*.test.ts` (transports, audio, avatar, mic, reconnect), `hooks/useV
   `sessionRef.current === session && session.scope.isActive`.
 - **`onError` is advisory, `onClose` decides the lifecycle** (stated in
   `core/transports/types.ts`): a transport that cannot continue must close itself, because
-  reconnect *and* teardown — including releasing the microphone — key off `onClose`.
+  reconnect _and_ teardown — including releasing the microphone — key off `onClose`.
 - **Consumer callbacks can never affect control flow.** In the transports every callback goes
   through `notify()`, in the hook through `safeCall()`; teardown and negotiation must complete even
   when the caller's handler throws. Equally, **cleanup must not sit behind anything that can
@@ -141,7 +141,7 @@ Tests: `core/*.test.ts` (transports, audio, avatar, mic, reconnect), `hooks/useV
 - **Terminal failures must close the transport**, not just report `onError`: state `'open'` blocks
   both `connect()` and the reconnect policy. Close codes: `4001` reconnect setup, `4002` connect
   timeout, `4008` negotiation timeout, `4009` SDP answer, `4010` `rtc.call.error`, `4011` peer
-  connection `failed`, `4012` control-channel setup. All are exported. (`'disconnected'` is *not* terminal — it can recover.)
+  connection `failed`, `4012` control-channel setup. All are exported. (`'disconnected'` is _not_ terminal — it can recover.)
   In `WebRtcTransport` they all go through `failTerminally()`, which re-checks the generation after
   `onError`: a consumer may close (or reconnect) the transport from that handler, and continuing
   would fire `onClose` after `close()` promised no further callbacks.
@@ -193,7 +193,9 @@ function App() {
 
   return (
     <>
-      <button onClick={connectionState === 'connected' ? disconnect : connect}>{connectionState}</button>
+      <button onClick={connectionState === 'connected' ? disconnect : connect}>
+        {connectionState}
+      </button>
       <audio ref={(el) => el && audioStream && (el.srcObject = audioStream)} autoPlay />
     </>
   );

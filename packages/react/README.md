@@ -23,14 +23,14 @@ npm install @iloveagents/foundry-voice-live-react
 
 ## Which setup do I need?
 
-| You want… | Transport | Auth | Start here |
-| --- | --- | --- | --- |
-| Voice in the browser, lowest latency, no avatar | `transport: 'webrtc'` (preview) | proxy (any) or direct token/key | [WebRTC Transport](#webrtc-transport-preview) |
-| Voice + Azure video avatar, visemes, word timestamps, custom playback | `websocket` (default) | proxy (any) or direct token/key | [With Avatar](#with-avatar) |
-| Foundry agent built in the portal | either | proxy + `DefaultAzureCredential`, or per-user Entra token | [Foundry Agent Service](#foundry-agent-service) |
-| Production deployment | either | **proxy** — keys/identity stay server-side | [Production](#production) |
-| Local hacking with an API key | either | `connection.apiKey` (dev only) | [Voice Only](#voice-only) |
-| Flaky networks / mobile | either | any | `reconnect: true` — see [Auto-Reconnect](#auto-reconnect) |
+| You want…                                                             | Transport                       | Auth                                                      | Start here                                                |
+| --------------------------------------------------------------------- | ------------------------------- | --------------------------------------------------------- | --------------------------------------------------------- |
+| Voice in the browser, lowest latency, no avatar                       | `transport: 'webrtc'` (preview) | proxy (any) or direct token/key                           | [WebRTC Transport](#webrtc-transport-preview)             |
+| Voice + Azure video avatar, visemes, word timestamps, custom playback | `websocket` (default)           | proxy (any) or direct token/key                           | [With Avatar](#with-avatar)                               |
+| Foundry agent built in the portal                                     | either                          | proxy + `DefaultAzureCredential`, or per-user Entra token | [Foundry Agent Service](#foundry-agent-service)           |
+| Production deployment                                                 | either                          | **proxy** — keys/identity stay server-side                | [Production](#production)                                 |
+| Local hacking with an API key                                         | either                          | `connection.apiKey` (dev only)                            | [Voice Only](#voice-only)                                 |
+| Flaky networks / mobile                                               | either                          | any                                                       | `reconnect: true` — see [Auto-Reconnect](#auto-reconnect) |
 
 ## Quick Start
 
@@ -44,8 +44,8 @@ import { useVoiceLive } from '@iloveagents/foundry-voice-live-react';
 function App() {
   const { connect, disconnect, connectionState, audioStream } = useVoiceLive({
     connection: {
-      resourceName: 'your-foundry-resource',  // Microsoft Foundry resource name
-      apiKey: 'your-foundry-api-key',         // For dev only - see "Production" below
+      resourceName: 'your-foundry-resource', // Microsoft Foundry resource name
+      apiKey: 'your-foundry-api-key', // For dev only - see "Production" below
     },
     session: {
       instructions: 'You are a helpful assistant.',
@@ -55,9 +55,18 @@ function App() {
   return (
     <>
       <p>Status: {connectionState}</p>
-      <button onClick={connect} disabled={connectionState === 'connected'}>Start</button>
-      <button onClick={disconnect} disabled={connectionState !== 'connected'}>Stop</button>
-      <audio ref={el => { if (el && audioStream) el.srcObject = audioStream; }} autoPlay />
+      <button onClick={connect} disabled={connectionState === 'connected'}>
+        Start
+      </button>
+      <button onClick={disconnect} disabled={connectionState !== 'connected'}>
+        Stop
+      </button>
+      <audio
+        ref={(el) => {
+          if (el && audioStream) el.srcObject = audioStream;
+        }}
+        autoPlay
+      />
     </>
   );
 }
@@ -157,7 +166,7 @@ import { useVoiceLive } from '@iloveagents/foundry-voice-live-react';
 function App() {
   const { connect, disconnect, connectionState, audioStream } = useVoiceLive({
     connection: {
-      proxyUrl: 'ws://localhost:8080/ws',  // Proxy handles auth
+      proxyUrl: 'ws://localhost:8080/ws', // Proxy handles auth
     },
     session: {
       instructions: 'You are a helpful assistant.',
@@ -169,7 +178,12 @@ function App() {
       <p>Status: {connectionState}</p>
       <button onClick={connect}>Start</button>
       <button onClick={disconnect}>Stop</button>
-      <audio ref={el => { if (el && audioStream) el.srcObject = audioStream; }} autoPlay />
+      <audio
+        ref={(el) => {
+          if (el && audioStream) el.srcObject = audioStream;
+        }}
+        autoPlay
+      />
     </>
   );
 }
@@ -200,7 +214,12 @@ function App() {
     <>
       <button onClick={connect}>Start</button>
       <button onClick={disconnect}>Stop</button>
-      <audio ref={el => { if (el && audioStream) el.srcObject = audioStream; }} autoPlay />
+      <audio
+        ref={(el) => {
+          if (el && audioStream) el.srcObject = audioStream;
+        }}
+        autoPlay
+      />
     </>
   );
 }
@@ -216,13 +235,13 @@ For direct connections (no proxy) pass `agentName`, `projectName` and an Entra `
 
 ### Authentication Options
 
-| Option | How | Use for |
-| --- | --- | --- |
-| **Proxy + API key** | `proxyUrl`; the backend holds `FOUNDRY_API_KEY` | Production, simplest |
-| **Proxy + Entra token** | `proxyUrl + '?token=' + msalToken` (proxy moves it into an `Authorization` header) | Per-user auth |
-| **Proxy + DefaultAzureCredential** | `proxyUrl`, no key/token | Keyless (managed identity, `az login`) |
-| **Direct Entra token** | `connection.token` — sent as the documented `Authorization=Bearer <token>` query parameter | Dev, or when tokens in URLs are acceptable |
-| **Direct API key** | `connection.apiKey` (query param) | Local development only |
+| Option                             | How                                                                                        | Use for                                    |
+| ---------------------------------- | ------------------------------------------------------------------------------------------ | ------------------------------------------ |
+| **Proxy + API key**                | `proxyUrl`; the backend holds `FOUNDRY_API_KEY`                                            | Production, simplest                       |
+| **Proxy + Entra token**            | `proxyUrl + '?token=' + msalToken` (proxy moves it into an `Authorization` header)         | Per-user auth                              |
+| **Proxy + DefaultAzureCredential** | `proxyUrl`, no key/token                                                                   | Keyless (managed identity, `az login`)     |
+| **Direct Entra token**             | `connection.token` — sent as the documented `Authorization=Bearer <token>` query parameter | Dev, or when tokens in URLs are acceptable |
+| **Direct API key**                 | `connection.apiKey` (query param)                                                          | Local development only                     |
 
 See the [proxy package docs](https://www.npmjs.com/package/@iloveagents/foundry-voice-live-proxy-node) and [proxy examples](https://github.com/iLoveAgents/foundry-voice-live/tree/main/examples/src/pages).
 
@@ -252,37 +271,37 @@ const { videoStream, audioStream } = useVoiceLive({
 
 ### Builder Methods
 
-| Method | Description |
-| ------ | ----------- |
-| `.instructions(text)` | Set system prompt (ignored in agent mode) |
-| `.voice(name \| VoiceConfig)` | Set voice by name or full config |
-| `.hdVoice(name, options?)` | Azure HD voice with `temperature`, `rate`, `pitch`, `volume`, `style`, `preferLocales`, `locale`, … |
-| `.customVoice(name)` | Custom neural voice |
-| `.personalVoice(name, model, options?)` | Azure personal voice (`DragonHDOmniLatestNeural`, `MAI-Voice-1`, …) |
-| `.azureRealtimeVoice(name)` | Azure Realtime native voice (`ava`, `andrew`, `diya`, …) — model `azure-realtime` only |
-| `.avatar(character, style, options?)` | Configure avatar |
-| `.transparentBackground()` | Enable chroma key background |
-| `.backgroundImage(url)` | Set avatar background image |
-| `.avatarCrop(crop)` | Crop the avatar video (portrait mode) |
-| `.semanticVAD(options?)` | Turn detection (`multilingual`, `interruptResponse`, `autoTruncate`, `appendedTextAfterTruncation`, …) |
-| `.endOfUtterance(options?)` | End-of-utterance detection (`semantic_detection_v1*` or `smart_end_of_turn_detection`) |
-| `.noTurnDetection()` | Manual turn mode (use `commitInputAudio()`) |
-| `.echoCancellation(options?)` | Server echo cancellation (`referenceSource: 'client'` is sent on the wire, but stereo reference capture is not implemented yet) |
-| `.noiseReduction(type?)` | Noise reduction (`'deep'` or `'nearField'`) |
-| `.sampleRate(rate)` | Input sample rate (16000 / 24000) |
-| `.transcription(options?)` | Input transcription (`azure-speech`, `whisper-1`, `gpt-4o-transcribe`, `mai-transcribe`, …) |
-| `.viseme()` | Viseme output (lip-sync) |
-| `.wordTimestamps()` | Word timestamps |
-| `.tools(tools)` | Set function tools (replaces) |
-| `.toolChoice(choice)` | Tool choice mode |
-| `.mcpServer(server)` | Add a remote MCP server (appends) |
-| `.foundryAgentTool(agent)` | Add a Foundry agent as a tool (appends) |
-| `.parallelToolCalls(enabled)` | Allow/forbid parallel tool calls |
-| `.reasoningEffort(effort)` | Reasoning effort for reasoning models |
-| `.metadata(map)` | Session metadata (shows up in Foundry logs) |
-| `.interimResponse(config)` | Filler messages while tools run / latency is high |
-| `.greeting(config)` | Assistant speaks first |
-| `.build()` | Build the final config |
+| Method                                  | Description                                                                                                                     |
+| --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `.instructions(text)`                   | Set system prompt (ignored in agent mode)                                                                                       |
+| `.voice(name \| VoiceConfig)`           | Set voice by name or full config                                                                                                |
+| `.hdVoice(name, options?)`              | Azure HD voice with `temperature`, `rate`, `pitch`, `volume`, `style`, `preferLocales`, `locale`, …                             |
+| `.customVoice(name)`                    | Custom neural voice                                                                                                             |
+| `.personalVoice(name, model, options?)` | Azure personal voice (`DragonHDOmniLatestNeural`, `MAI-Voice-1`, …)                                                             |
+| `.azureRealtimeVoice(name)`             | Azure Realtime native voice (`ava`, `andrew`, `diya`, …) — model `azure-realtime` only                                          |
+| `.avatar(character, style, options?)`   | Configure avatar                                                                                                                |
+| `.transparentBackground()`              | Enable chroma key background                                                                                                    |
+| `.backgroundImage(url)`                 | Set avatar background image                                                                                                     |
+| `.avatarCrop(crop)`                     | Crop the avatar video (portrait mode)                                                                                           |
+| `.semanticVAD(options?)`                | Turn detection (`multilingual`, `interruptResponse`, `autoTruncate`, `appendedTextAfterTruncation`, …)                          |
+| `.endOfUtterance(options?)`             | End-of-utterance detection (`semantic_detection_v1*` or `smart_end_of_turn_detection`)                                          |
+| `.noTurnDetection()`                    | Manual turn mode (use `commitInputAudio()`)                                                                                     |
+| `.echoCancellation(options?)`           | Server echo cancellation (`referenceSource: 'client'` is sent on the wire, but stereo reference capture is not implemented yet) |
+| `.noiseReduction(type?)`                | Noise reduction (`'deep'` or `'nearField'`)                                                                                     |
+| `.sampleRate(rate)`                     | Input sample rate (16000 / 24000)                                                                                               |
+| `.transcription(options?)`              | Input transcription (`azure-speech`, `whisper-1`, `gpt-4o-transcribe`, `mai-transcribe`, …)                                     |
+| `.viseme()`                             | Viseme output (lip-sync)                                                                                                        |
+| `.wordTimestamps()`                     | Word timestamps                                                                                                                 |
+| `.tools(tools)`                         | Set function tools (replaces)                                                                                                   |
+| `.toolChoice(choice)`                   | Tool choice mode                                                                                                                |
+| `.mcpServer(server)`                    | Add a remote MCP server (appends)                                                                                               |
+| `.foundryAgentTool(agent)`              | Add a Foundry agent as a tool (appends)                                                                                         |
+| `.parallelToolCalls(enabled)`           | Allow/forbid parallel tool calls                                                                                                |
+| `.reasoningEffort(effort)`              | Reasoning effort for reasoning models                                                                                           |
+| `.metadata(map)`                        | Session metadata (shows up in Foundry logs)                                                                                     |
+| `.interimResponse(config)`              | Filler messages while tools run / latency is high                                                                               |
+| `.greeting(config)`                     | Assistant speaks first                                                                                                          |
+| `.build()`                              | Build the final config                                                                                                          |
 
 Most builder methods also exist as standalone `withX()` helpers (`withMcpServer`, `withInterimResponse`, `withGreeting`, `withAzureRealtimeVoice`, `withSemanticVAD`, …) for functional composition via `compose()`.
 
@@ -313,12 +332,18 @@ const { connect } = useVoiceLive({
   connection: { resourceName: 'your-foundry-resource', apiKey: 'your-key' },
   session: {
     instructions: 'You can check the weather.',
-    tools: [{
-      type: 'function',
-      name: 'get_weather',
-      description: 'Get weather for a location',
-      parameters: { type: 'object', properties: { location: { type: 'string' } }, required: ['location'] },
-    }],
+    tools: [
+      {
+        type: 'function',
+        name: 'get_weather',
+        description: 'Get weather for a location',
+        parameters: {
+          type: 'object',
+          properties: { location: { type: 'string' } },
+          required: ['location'],
+        },
+      },
+    ],
     toolChoice: 'auto',
   },
   toolExecutor: async (name, args) => {
@@ -345,12 +370,12 @@ Bridge tool-call latency with short spoken filler messages — either LLM-genera
 ```tsx
 session: sessionConfig()
   .interimResponse({
-    type: 'llm_interim_response',       // or 'static_interim_response' with texts: [...]
-    triggers: ['tool', 'latency'],       // OR logic; default ['latency']
-    latencyThresholdInMs: 1500,          // default 2000
+    type: 'llm_interim_response', // or 'static_interim_response' with texts: [...]
+    triggers: ['tool', 'latency'], // OR logic; default ['latency']
+    latencyThresholdInMs: 1500, // default 2000
     instructions: 'Briefly say you are looking it up.', // llm only; model defaults to gpt-4.1-mini
   })
-  .build()
+  .build();
 ```
 
 Supported in Foundry agent mode and with cascaded text models (`gpt-4.1`, `gpt-5`, …) + Azure voices. Native audio models (`gpt-realtime`, `gpt-realtime-mini`, `azure-realtime`) don't support interim responses — the SDK warns at connect time.
@@ -366,7 +391,7 @@ session: sessionConfig()
   .voice({ name: 'en-US-AvaMultilingualNeural', type: 'azure-standard' })
   .greeting({ type: 'pregenerated', text: 'Hi! How can I help you today?' }) // exact text, spoken by Azure TTS
   // or .greeting({ type: 'llm', text: 'Greet the user warmly and briefly.' }) // model generates it
-  .build()
+  .build();
 ```
 
 Pre-generated greetings are synthesized by Azure TTS, so they need an **Azure voice** — with an OpenAI voice (e.g. the default `alloy` on `gpt-realtime`) the message is added to the conversation as text only (verified live). Use `type: 'llm'` with OpenAI voices; the SDK warns about the combination at connect time.
@@ -382,7 +407,7 @@ const { approveMcpCall } = useVoiceLive({
     .mcpServer({
       serverLabel: 'mslearn',
       serverUrl: 'https://learn.microsoft.com/api/mcp',
-      requireApproval: 'always',   // 'never' | 'always' | { always: [...], never: [...] }
+      requireApproval: 'always', // 'never' | 'always' | { always: [...], never: [...] }
     })
     .build(),
   onMcpApprovalRequest: ({ approvalRequestId, serverLabel, name }) => {
@@ -400,7 +425,11 @@ The `azure-realtime` model (GA) ships native voices with ~100 ms lower latency t
 
 ```tsx
 useVoiceLive({
-  connection: { resourceName: 'your-foundry-resource', apiKey: 'your-key', model: 'azure-realtime' },
+  connection: {
+    resourceName: 'your-foundry-resource',
+    apiKey: 'your-key',
+    model: 'azure-realtime',
+  },
   session: sessionConfig().azureRealtimeVoice('ava').build(),
 });
 ```
@@ -423,9 +452,13 @@ Opt in with `reconnect: true` (exponential backoff 500 ms → 8 s, 5 attempts, �
 ```tsx
 const { connectionState, reconnectAttempt } = useVoiceLive({
   connection: {
-    proxyUrl: 'wss://api.example.com/ws?agentName=Support&projectName=cs&conversationId=' + conversationId,
+    proxyUrl:
+      'wss://api.example.com/ws?agentName=Support&projectName=cs&conversationId=' + conversationId,
     // Fresh token per (re)connect — takes precedence over `token`
-    getToken: () => msal.acquireTokenSilent({ scopes: ['https://ai.azure.com/.default'] }).then((r) => r.accessToken),
+    getToken: () =>
+      msal
+        .acquireTokenSilent({ scopes: ['https://ai.azure.com/.default'] })
+        .then((r) => r.accessToken),
   },
   reconnect: { maxAttempts: 8, initialDelayMs: 300, maxDelayMs: 5000 },
   onReconnecting: (attempt, delayMs) => console.log(`reconnect #${attempt} in ${delayMs} ms`),
@@ -434,7 +467,7 @@ const { connectionState, reconnectAttempt } = useVoiceLive({
 // connectionState: 'reconnecting' while attempts run; reconnectAttempt = 1, 2, …
 ```
 
-Triggered by any unclean close, plus a clean `1001 Going Away` (which only the *service* sends to us): a network drop (`1006`), a service restart, a connect that times out (`connectTimeoutMs`, default 15 s), and every terminal WebRTC failure — SDP answer rejected (`4009`), `rtc.call.error` (`4010`) and a peer connection that goes `failed`, e.g. switching from Wi‑Fi to cellular mid-call (`4011`). Never after `disconnect()`, after a clean `1000`, or after a close that rejects the request itself (`1003`, `1008`, `1010`) — the proxy closes with `1008` for invalid connection parameters, and reconnecting would be rejected identically.
+Triggered by any unclean close, plus a clean `1001 Going Away` (which only the _service_ sends to us): a network drop (`1006`), a service restart, a connect that times out (`connectTimeoutMs`, default 15 s), and every terminal WebRTC failure — SDP answer rejected (`4009`), `rtc.call.error` (`4010`) and a peer connection that goes `failed`, e.g. switching from Wi‑Fi to cellular mid-call (`4011`). Never after `disconnect()`, after a clean `1000`, or after a close that rejects the request itself (`1003`, `1008`, `1010`) — the proxy closes with `1008` for invalid connection parameters, and reconnecting would be rejected identically.
 
 While reconnecting, microphone audio is dropped rather than queued — speech during the gap is lost by design instead of being replayed into a session that has not been configured yet.
 
@@ -517,11 +550,11 @@ Returns:
 
 ```tsx
 <VoiceLiveAvatar
-  videoStream={videoStream}                 // Required: video from useVoiceLive
-  audioStream={audioStream}                 // Required: audio from useVoiceLive
-  transparentBackground={true}              // Remove green screen via WebGL chroma key (default true)
+  videoStream={videoStream} // Required: video from useVoiceLive
+  audioStream={audioStream} // Required: audio from useVoiceLive
+  transparentBackground={true} // Remove green screen via WebGL chroma key (default true)
   chromaKeyConfig={{ keyColor: [0, 1, 0], similarity: 0.4, smoothness: 0.1 }} // optional
-  loadingMessage="Loading..."               // Shown before video starts
+  loadingMessage="Loading..." // Shown before video starts
 />
 ```
 
@@ -545,29 +578,29 @@ Microsoft's `@azure/ai-voicelive` is a typed protocol client: it has no audio ca
 
 Working examples for all features:
 
-| Example | Description |
-| --- | --- |
-| [Voice Basic](https://github.com/iLoveAgents/foundry-voice-live/blob/main/examples/src/pages/VoiceOnlyBasic.tsx) | Minimal voice chat |
-| [Voice Advanced](https://github.com/iLoveAgents/foundry-voice-live/blob/main/examples/src/pages/VoiceAdvanced.tsx) | VAD, noise reduction, mute, transcripts |
-| [Voice over WebRTC](https://github.com/iLoveAgents/foundry-voice-live/blob/main/examples/src/pages/VoiceWebRTC.tsx) | WebRTC transport (preview) |
-| [Voice Proxy](https://github.com/iLoveAgents/foundry-voice-live/blob/main/examples/src/pages/VoiceProxy.tsx) | Secure proxy pattern |
-| [Voice MSAL](https://github.com/iLoveAgents/foundry-voice-live/blob/main/examples/src/pages/VoiceProxyMSAL.tsx) | Entra ID auth |
-| [Avatar Basic](https://github.com/iLoveAgents/foundry-voice-live/blob/main/examples/src/pages/AvatarBasic.tsx) | Avatar video |
-| [Avatar Advanced](https://github.com/iLoveAgents/foundry-voice-live/blob/main/examples/src/pages/AvatarAdvanced.tsx) | Chroma key, 1080p |
-| [Avatar via Proxy](https://github.com/iLoveAgents/foundry-voice-live/blob/main/examples/src/pages/AvatarProxy.tsx) | Avatar through the proxy (no key in the browser) |
-| [Avatar via Proxy (MSAL)](https://github.com/iLoveAgents/foundry-voice-live/blob/main/examples/src/pages/AvatarProxyMSAL.tsx) | Avatar through the proxy with per-user Entra auth |
-| [Function Calling](https://github.com/iLoveAgents/foundry-voice-live/blob/main/examples/src/pages/FunctionCalling.tsx) | Tools with auto-sent results |
-| [Interim Responses](https://github.com/iLoveAgents/foundry-voice-live/blob/main/examples/src/pages/InterimResponse.tsx) | Filler messages during slow tools |
-| [MCP Server Tools](https://github.com/iLoveAgents/foundry-voice-live/blob/main/examples/src/pages/McpTools.tsx) | Server-side MCP tools + approval flow |
-| [Azure Realtime](https://github.com/iLoveAgents/foundry-voice-live/blob/main/examples/src/pages/AzureRealtime.tsx) | `azure-realtime` model with native voices |
-| [Audio Visualizer](https://github.com/iLoveAgents/foundry-voice-live/blob/main/examples/src/pages/AudioVisualizer.tsx) | Waveform display |
-| [Viseme](https://github.com/iLoveAgents/foundry-voice-live/blob/main/examples/src/pages/VisemeExample.tsx) | Lip-sync data |
-| [Live2D Avatar](https://github.com/iLoveAgents/foundry-voice-live/blob/main/examples/src/pages/Live2DAvatarExample.tsx) | Live2D integration |
-| [3D Avatar](https://github.com/iLoveAgents/foundry-voice-live/blob/main/examples/src/pages/Avatar3DExample.tsx) | React Three Fiber |
-| [Foundry Agent - Voice](https://github.com/iLoveAgents/foundry-voice-live/blob/main/examples/src/pages/FoundryAgent.tsx) | Foundry Agent Service (server-side auth) |
-| [Foundry Agent - Voice MSAL](https://github.com/iLoveAgents/foundry-voice-live/blob/main/examples/src/pages/FoundryAgentMSAL.tsx) | Foundry Agent Service (MSAL auth) |
-| [Foundry Agent - Avatar](https://github.com/iLoveAgents/foundry-voice-live/blob/main/examples/src/pages/FoundryAgentAvatar.tsx) | Foundry Agent Service with avatar |
-| [Foundry Agent - Avatar MSAL](https://github.com/iLoveAgents/foundry-voice-live/blob/main/examples/src/pages/FoundryAgentAvatarMSAL.tsx) | Foundry Agent Service avatar (MSAL) |
+| Example                                                                                                                                  | Description                                       |
+| ---------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------- |
+| [Voice Basic](https://github.com/iLoveAgents/foundry-voice-live/blob/main/examples/src/pages/VoiceOnlyBasic.tsx)                         | Minimal voice chat                                |
+| [Voice Advanced](https://github.com/iLoveAgents/foundry-voice-live/blob/main/examples/src/pages/VoiceAdvanced.tsx)                       | VAD, noise reduction, mute, transcripts           |
+| [Voice over WebRTC](https://github.com/iLoveAgents/foundry-voice-live/blob/main/examples/src/pages/VoiceWebRTC.tsx)                      | WebRTC transport (preview)                        |
+| [Voice Proxy](https://github.com/iLoveAgents/foundry-voice-live/blob/main/examples/src/pages/VoiceProxy.tsx)                             | Secure proxy pattern                              |
+| [Voice MSAL](https://github.com/iLoveAgents/foundry-voice-live/blob/main/examples/src/pages/VoiceProxyMSAL.tsx)                          | Entra ID auth                                     |
+| [Avatar Basic](https://github.com/iLoveAgents/foundry-voice-live/blob/main/examples/src/pages/AvatarBasic.tsx)                           | Avatar video                                      |
+| [Avatar Advanced](https://github.com/iLoveAgents/foundry-voice-live/blob/main/examples/src/pages/AvatarAdvanced.tsx)                     | Chroma key, 1080p                                 |
+| [Avatar via Proxy](https://github.com/iLoveAgents/foundry-voice-live/blob/main/examples/src/pages/AvatarProxy.tsx)                       | Avatar through the proxy (no key in the browser)  |
+| [Avatar via Proxy (MSAL)](https://github.com/iLoveAgents/foundry-voice-live/blob/main/examples/src/pages/AvatarProxyMSAL.tsx)            | Avatar through the proxy with per-user Entra auth |
+| [Function Calling](https://github.com/iLoveAgents/foundry-voice-live/blob/main/examples/src/pages/FunctionCalling.tsx)                   | Tools with auto-sent results                      |
+| [Interim Responses](https://github.com/iLoveAgents/foundry-voice-live/blob/main/examples/src/pages/InterimResponse.tsx)                  | Filler messages during slow tools                 |
+| [MCP Server Tools](https://github.com/iLoveAgents/foundry-voice-live/blob/main/examples/src/pages/McpTools.tsx)                          | Server-side MCP tools + approval flow             |
+| [Azure Realtime](https://github.com/iLoveAgents/foundry-voice-live/blob/main/examples/src/pages/AzureRealtime.tsx)                       | `azure-realtime` model with native voices         |
+| [Audio Visualizer](https://github.com/iLoveAgents/foundry-voice-live/blob/main/examples/src/pages/AudioVisualizer.tsx)                   | Waveform display                                  |
+| [Viseme](https://github.com/iLoveAgents/foundry-voice-live/blob/main/examples/src/pages/VisemeExample.tsx)                               | Lip-sync data                                     |
+| [Live2D Avatar](https://github.com/iLoveAgents/foundry-voice-live/blob/main/examples/src/pages/Live2DAvatarExample.tsx)                  | Live2D integration                                |
+| [3D Avatar](https://github.com/iLoveAgents/foundry-voice-live/blob/main/examples/src/pages/Avatar3DExample.tsx)                          | React Three Fiber                                 |
+| [Foundry Agent - Voice](https://github.com/iLoveAgents/foundry-voice-live/blob/main/examples/src/pages/FoundryAgent.tsx)                 | Foundry Agent Service (server-side auth)          |
+| [Foundry Agent - Voice MSAL](https://github.com/iLoveAgents/foundry-voice-live/blob/main/examples/src/pages/FoundryAgentMSAL.tsx)        | Foundry Agent Service (MSAL auth)                 |
+| [Foundry Agent - Avatar](https://github.com/iLoveAgents/foundry-voice-live/blob/main/examples/src/pages/FoundryAgentAvatar.tsx)          | Foundry Agent Service with avatar                 |
+| [Foundry Agent - Avatar MSAL](https://github.com/iLoveAgents/foundry-voice-live/blob/main/examples/src/pages/FoundryAgentAvatarMSAL.tsx) | Foundry Agent Service avatar (MSAL)               |
 
 Run examples locally:
 

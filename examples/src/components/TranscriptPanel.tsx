@@ -31,8 +31,7 @@ export function TranscriptPanel({
               margin: '0.25rem 0',
             }}
           >
-            <strong>{entry.role === 'user' ? 'You' : 'Assistant'}:</strong>{' '}
-            {entry.text}
+            <strong>{entry.role === 'user' ? 'You' : 'Assistant'}:</strong> {entry.text}
           </p>
         ))}
       </div>

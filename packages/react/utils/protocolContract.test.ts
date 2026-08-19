@@ -27,7 +27,10 @@ type AzureModels = Record<string, any>;
 let azure: AzureModels;
 
 beforeAll(async () => {
-  const modelsUrl = new URL('../node_modules/@azure/ai-voicelive/dist/esm/models/models.js', import.meta.url);
+  const modelsUrl = new URL(
+    '../node_modules/@azure/ai-voicelive/dist/esm/models/models.js',
+    import.meta.url
+  );
   azure = await import(/* @vite-ignore */ modelsUrl.href);
 });
 
@@ -62,13 +65,17 @@ const NOT_IN_SDK_ENUM_YET = new Set<string>([
 describe('event names match the official SDK enums', () => {
   it('server event names are known to @azure/ai-voicelive', () => {
     const known = new Set<string>(Object.values<string>(azure.KnownServerEventType));
-    const unknown = OUR_SERVER_EVENTS.filter((name) => !known.has(name) && !NOT_IN_SDK_ENUM_YET.has(name));
+    const unknown = OUR_SERVER_EVENTS.filter(
+      (name) => !known.has(name) && !NOT_IN_SDK_ENUM_YET.has(name)
+    );
     expect(unknown).toEqual([]);
   });
 
   it('client event names are known to @azure/ai-voicelive', () => {
     const known = new Set<string>(Object.values<string>(azure.KnownClientEventType));
-    const unknown = OUR_CLIENT_EVENTS.filter((name) => !known.has(name) && !NOT_IN_SDK_ENUM_YET.has(name));
+    const unknown = OUR_CLIENT_EVENTS.filter(
+      (name) => !known.has(name) && !NOT_IN_SDK_ENUM_YET.has(name)
+    );
     expect(unknown).toEqual([]);
   });
 
@@ -83,7 +90,9 @@ describe('event names match the official SDK enums', () => {
 
   it('the SDK does not know server events we have not modelled (informational)', () => {
     const ours = new Set<string>(OUR_SERVER_EVENTS);
-    const missing = Object.values<string>(azure.KnownServerEventType).filter((name) => !ours.has(name));
+    const missing = Object.values<string>(azure.KnownServerEventType).filter(
+      (name) => !ours.has(name)
+    );
     // Keep this list explicit so new upstream events are noticed on SDK bumps.
     expect(missing).toEqual([]);
   });
@@ -105,7 +114,11 @@ describe('session.update wire format matches requestSessionSerializer', () => {
       inputAudioFormat: 'pcm16',
       outputAudioFormat: 'pcm16',
       inputAudioSamplingRate: 24000,
-      inputAudioEchoCancellation: { type: 'server_echo_cancellation', referenceSource: 'client', channels: 2 },
+      inputAudioEchoCancellation: {
+        type: 'server_echo_cancellation',
+        referenceSource: 'client',
+        channels: 2,
+      },
       inputAudioNoiseReduction: { type: 'azure_deep_noise_suppression' },
       inputAudioTranscription: {
         model: 'azure-speech',
@@ -137,10 +150,19 @@ describe('session.update wire format matches requestSessionSerializer', () => {
         autoTruncate: true,
         createResponse: true,
         interruptResponse: true,
-        endOfUtteranceDetection: { model: 'semantic_detection_v1', thresholdLevel: 'medium', timeoutMs: 1000 },
+        endOfUtteranceDetection: {
+          model: 'semantic_detection_v1',
+          thresholdLevel: 'medium',
+          timeoutMs: 1000,
+        },
       },
       tools: [
-        { type: 'function', name: 'get_weather', description: 'Weather', parameters: { type: 'object' } },
+        {
+          type: 'function',
+          name: 'get_weather',
+          description: 'Weather',
+          parameters: { type: 'object' },
+        },
         {
           type: 'mcp',
           serverLabel: 'mslearn',
@@ -187,7 +209,11 @@ describe('session.update wire format matches requestSessionSerializer', () => {
       inputAudioFormat: 'pcm16',
       outputAudioFormat: 'pcm16',
       inputAudioSamplingRate: 24000,
-      inputAudioEchoCancellation: { type: 'server_echo_cancellation', referenceSource: 'client', channels: 2 },
+      inputAudioEchoCancellation: {
+        type: 'server_echo_cancellation',
+        referenceSource: 'client',
+        channels: 2,
+      },
       inputAudioNoiseReduction: { type: 'azure_deep_noise_suppression' },
       inputAudioTranscription: {
         model: 'azure-speech',
@@ -219,10 +245,19 @@ describe('session.update wire format matches requestSessionSerializer', () => {
         autoTruncate: true,
         createResponse: true,
         interruptResponse: true,
-        endOfUtteranceDetection: { model: 'semantic_detection_v1', thresholdLevel: 'medium', timeoutInMs: 1000 },
+        endOfUtteranceDetection: {
+          model: 'semantic_detection_v1',
+          thresholdLevel: 'medium',
+          timeoutInMs: 1000,
+        },
       },
       tools: [
-        { type: 'function', name: 'get_weather', description: 'Weather', parameters: { type: 'object' } },
+        {
+          type: 'function',
+          name: 'get_weather',
+          description: 'Weather',
+          parameters: { type: 'object' },
+        },
         {
           type: 'mcp',
           serverLabel: 'mslearn',
@@ -265,7 +300,12 @@ describe('session.update wire format matches requestSessionSerializer', () => {
 
   it('serializes static interim responses, personal / native voices and server_vad identically', () => {
     const ours = convertToSessionUpdate({
-      voice: { name: 'my-personal', type: 'azure-personal', model: 'DragonHDOmniLatestNeural', temperature: 0.6 },
+      voice: {
+        name: 'my-personal',
+        type: 'azure-personal',
+        model: 'DragonHDOmniLatestNeural',
+        temperature: 0.6,
+      },
       turnDetection: {
         type: 'server_vad',
         threshold: 0.4,
@@ -282,7 +322,12 @@ describe('session.update wire format matches requestSessionSerializer', () => {
       },
     });
     const theirs = azure.requestSessionSerializer({
-      voice: { name: 'my-personal', type: 'azure-personal', model: 'DragonHDOmniLatestNeural', temperature: 0.6 },
+      voice: {
+        name: 'my-personal',
+        type: 'azure-personal',
+        model: 'DragonHDOmniLatestNeural',
+        temperature: 0.6,
+      },
       turnDetection: {
         type: 'server_vad',
         threshold: 0.4,
@@ -300,8 +345,11 @@ describe('session.update wire format matches requestSessionSerializer', () => {
     });
     expect(ours).toEqual(theirs);
 
-    expect(convertToSessionUpdate({ voice: { name: 'ava', type: 'azure-realtime-native' } }).voice).toEqual(
-      azure.requestSessionSerializer({ voice: { name: 'ava', type: 'azure-realtime-native' } }).voice
+    expect(
+      convertToSessionUpdate({ voice: { name: 'ava', type: 'azure-realtime-native' } }).voice
+    ).toEqual(
+      azure.requestSessionSerializer({ voice: { name: 'ava', type: 'azure-realtime-native' } })
+        .voice
     );
     expect(convertToSessionUpdate({ voice: { name: 'marin', type: 'openai' } }).voice).toEqual(
       azure.requestSessionSerializer({ voice: { name: 'marin', type: 'openai' } }).voice
@@ -346,11 +394,18 @@ describe('client events match the official SDK serializers', () => {
     expect(item).toEqual(
       azure.clientEventConversationItemCreateSerializer({
         type: 'conversation.item.create',
-        item: { type: 'message', role: 'system', content: [{ type: 'input_text', text: 'Greet the user.' }] },
+        item: {
+          type: 'message',
+          role: 'system',
+          content: [{ type: 'input_text', text: 'Greet the user.' }],
+        },
       })
     );
     expect(create).toEqual(
-      azure.clientEventResponseCreateSerializer({ type: 'response.create', eventId: 'evt_llmgreeting_2' })
+      azure.clientEventResponseCreateSerializer({
+        type: 'response.create',
+        eventId: 'evt_llmgreeting_2',
+      })
     );
   });
 

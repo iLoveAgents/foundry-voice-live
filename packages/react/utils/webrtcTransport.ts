@@ -84,7 +84,8 @@ export function waitForIceGathering(
  */
 export async function createWebRtcOffer(options: CreateWebRtcOfferOptions): Promise<WebRtcOffer> {
   const createPc =
-    options.createPeerConnection ?? ((configuration?: RTCConfiguration) => new RTCPeerConnection(configuration));
+    options.createPeerConnection ??
+    ((configuration?: RTCConfiguration) => new RTCPeerConnection(configuration));
   const pc = createPc(options.rtcConfiguration);
 
   // Assistant audio arrives as a remote track

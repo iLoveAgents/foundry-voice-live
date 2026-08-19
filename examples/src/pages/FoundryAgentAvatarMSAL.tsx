@@ -57,7 +57,7 @@ export function FoundryAgentAvatarMSAL(): JSX.Element {
       .avatar(
         import.meta.env.VITE_AVATAR_CHARACTER || 'lisa',
         import.meta.env.VITE_AVATAR_STYLE || 'casual-sitting',
-        { codec: 'h264' },
+        { codec: 'h264' }
       )
       .semanticVAD({ interruptResponse: true })
       .echoCancellation()
@@ -115,8 +115,7 @@ export function FoundryAgentAvatarMSAL(): JSX.Element {
             </p>
             <ul>
               <li>
-                <code>VITE_AZURE_CLIENT_ID</code> - Azure AD application (client)
-                ID
+                <code>VITE_AZURE_CLIENT_ID</code> - Azure AD application (client) ID
               </li>
               <li>
                 <code>VITE_AZURE_TENANT_ID</code> - Azure AD tenant ID
@@ -145,12 +144,10 @@ export function FoundryAgentAvatarMSAL(): JSX.Element {
             </p>
             <ul>
               <li>
-                <code>VITE_FOUNDRY_AGENT_NAME</code> - Agent name from Azure AI
-                Foundry portal
+                <code>VITE_FOUNDRY_AGENT_NAME</code> - Agent name from Azure AI Foundry portal
               </li>
               <li>
-                <code>VITE_FOUNDRY_PROJECT_NAME</code> - Azure AI Foundry project
-                name
+                <code>VITE_FOUNDRY_PROJECT_NAME</code> - Azure AI Foundry project name
               </li>
             </ul>
           </AlertBox>
@@ -193,10 +190,7 @@ export function FoundryAgentAvatarMSAL(): JSX.Element {
       <StatusBadge status={connectionState} />
 
       <ControlGroup>
-        <button
-          onClick={handleStart}
-          disabled={isConnected || !signedIn || !agentConfigured}
-        >
+        <button onClick={handleStart} disabled={isConnected || !signedIn || !agentConfigured}>
           Start Avatar
         </button>
         <button onClick={handleStop} disabled={!isConnected}>
@@ -217,7 +211,6 @@ export function FoundryAgentAvatarMSAL(): JSX.Element {
 
       <TextInput onSend={sendText} disabled={!isConnected} />
       <TranscriptPanel transcripts={transcripts} />
-
     </SampleLayout>
   );
 }

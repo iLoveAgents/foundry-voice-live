@@ -5,10 +5,7 @@ interface ConfigPanelProps {
   children: ReactNode;
 }
 
-export function ConfigPanel({
-  title = 'Configuration',
-  children,
-}: ConfigPanelProps): JSX.Element {
+export function ConfigPanel({ title = 'Configuration', children }: ConfigPanelProps): JSX.Element {
   return (
     <div className="config-panel">
       <h3 className="config-panel__title">{title}</h3>

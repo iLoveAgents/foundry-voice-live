@@ -5,11 +5,7 @@
 import type { Logger } from '../../utils/logger';
 import { parseServerEvent } from '../serverEvents';
 import { CONTROL_CHANNEL_SETUP_FAILED_CLOSE_CODE } from './webrtcTransport';
-import type {
-  TransportCallbacks,
-  TransportState,
-  VoiceLiveTransport,
-} from './types';
+import type { TransportCallbacks, TransportState, VoiceLiveTransport } from './types';
 
 export interface WebSocketTransportOptions {
   log?: Logger;
@@ -47,7 +43,9 @@ export class WebSocketTransport implements VoiceLiveTransport {
 
   connect(url: string): void {
     if (this.ws) {
-      throw new Error('WebSocketTransport.connect() called twice — create a new transport per connection');
+      throw new Error(
+        'WebSocketTransport.connect() called twice — create a new transport per connection'
+      );
     }
     const create = this.options.createWebSocket ?? ((u: string): WebSocket => new WebSocket(u));
     let ws: WebSocket;
@@ -57,7 +55,9 @@ export class WebSocketTransport implements VoiceLiveTransport {
       // No socket means no handlers will ever fire: report terminally rather than silently
       this.currentState = 'closed';
       const message =
-        err instanceof Error ? `Failed to open the WebSocket: ${err.message}` : 'Failed to open the WebSocket';
+        err instanceof Error
+          ? `Failed to open the WebSocket: ${err.message}`
+          : 'Failed to open the WebSocket';
       this.options.log?.error(message);
       this.notify('onError', this.callbacks.onError, message, err);
       this.notify('onClose', this.callbacks.onClose, {

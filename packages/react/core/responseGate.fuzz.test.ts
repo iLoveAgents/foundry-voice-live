@@ -125,7 +125,8 @@ describe('ResponseGate (fuzz)', () => {
         }
 
         // The gate may only report `active` while a response really is running
-        if (gate.currentState === 'active') expect({ seed, running }).toEqual({ seed, running: true });
+        if (gate.currentState === 'active')
+          expect({ seed, running }).toEqual({ seed, running: true });
       }
 
       // Liveness: settle everything the service still owes us. The gate must then be idle —

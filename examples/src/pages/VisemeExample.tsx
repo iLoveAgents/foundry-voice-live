@@ -5,13 +5,7 @@ import {
   withViseme,
 } from '@iloveagents/foundry-voice-live-react';
 import type { VoiceLiveServerEvent } from '@iloveagents/foundry-voice-live-react';
-import {
-  SampleLayout,
-  StatusBadge,
-  Section,
-  ControlGroup,
-  ErrorPanel,
-} from '../components';
+import { SampleLayout, StatusBadge, Section, ControlGroup, ErrorPanel } from '../components';
 import { directOrProxyConnection } from '../lib/connection';
 
 interface VisemeData {
@@ -23,9 +17,7 @@ export function VisemeExample(): JSX.Element {
   const [currentViseme, setCurrentViseme] = useState<number | null>(null);
   /** Mirror of `currentViseme` for the animation loop (see the effect below) */
   const currentVisemeRef = useRef<number | null>(null);
-  const [visemeHistory, setVisemeHistory] = useState<
-    Array<{ viseme: number; offset: number }>
-  >([]);
+  const [visemeHistory, setVisemeHistory] = useState<Array<{ viseme: number; offset: number }>>([]);
   const [error, setError] = useState<string | null>(null);
   const visemeBufferRef = useRef<VisemeData[]>([]);
   const animationFrameRef = useRef<number>();
@@ -37,8 +29,7 @@ export function VisemeExample(): JSX.Element {
     // Direct with the dev API key when configured, otherwise through the proxy (keyless)
     connection: directOrProxyConnection(),
     session: withViseme({
-      instructions:
-        'You are a helpful assistant. Always respond in English. Keep responses brief.',
+      instructions: 'You are a helpful assistant. Always respond in English. Keep responses brief.',
       voice: {
         name: 'en-US-AvaNeural', // Standard voice (HD voices don't support viseme)
         type: 'azure-standard',
@@ -46,13 +37,7 @@ export function VisemeExample(): JSX.Element {
     }),
   });
 
-  const {
-    connect,
-    disconnect,
-    connectionState,
-    getAudioPlaybackTime,
-    audioStream,
-  } = useVoiceLive({
+  const { connect, disconnect, connectionState, getAudioPlaybackTime, audioStream } = useVoiceLive({
     ...config,
     logLevel: 'debug',
     // Typed server events: `event.type` narrows to the viseme delta shape
@@ -65,10 +50,7 @@ export function VisemeExample(): JSX.Element {
           viseme_id: visemeId,
           audio_offset_ms: audioOffset,
         });
-        setVisemeHistory((prev) => [
-          ...prev.slice(-20),
-          { viseme: visemeId, offset: audioOffset },
-        ]);
+        setVisemeHistory((prev) => [...prev.slice(-20), { viseme: visemeId, offset: audioOffset }]);
       }
       if (event.type === 'response.created') {
         // Clear buffer for new response
@@ -194,14 +176,10 @@ export function VisemeExample(): JSX.Element {
           {currentViseme !== null ? (
             <>
               <div className="viseme-display__id">{currentViseme}</div>
-              <div className="viseme-display__name">
-                {getVisemeName(currentViseme)}
-              </div>
+              <div className="viseme-display__name">{getVisemeName(currentViseme)}</div>
             </>
           ) : (
-            <div className="viseme-display__placeholder">
-              No viseme data yet...
-            </div>
+            <div className="viseme-display__placeholder">No viseme data yet...</div>
           )}
         </div>
       </Section>
@@ -209,9 +187,7 @@ export function VisemeExample(): JSX.Element {
       <Section title="Viseme History">
         <div className="code-block code-block--compact">
           {visemeHistory.length === 0 ? (
-            <div className="code-block__placeholder">
-              No visemes yet... Start talking!
-            </div>
+            <div className="code-block__placeholder">No visemes yet... Start talking!</div>
           ) : (
             visemeHistory.map((v, i) => (
               <div key={i}>

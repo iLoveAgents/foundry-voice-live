@@ -61,8 +61,14 @@ export function FoundryAgent(): JSX.Element {
     logLevel: 'debug',
   });
 
-  const { connect, disconnect, connectionState, audioStream, sendText, error: sessionError } =
-    useVoiceLive(config);
+  const {
+    connect,
+    disconnect,
+    connectionState,
+    audioStream,
+    sendText,
+    error: sessionError,
+  } = useVoiceLive(config);
 
   useEffect(() => {
     if (audioRef.current && audioStream) {
@@ -76,9 +82,7 @@ export function FoundryAgent(): JSX.Element {
       setError(null);
       clearTranscripts();
       await connect();
-      console.log(
-        '[Foundry Agent] Connected - microphone will auto-start when session ready'
-      );
+      console.log('[Foundry Agent] Connected - microphone will auto-start when session ready');
     } catch (err) {
       console.error('[Foundry Agent] Start error:', err);
       setError(err instanceof Error ? err.message : String(err));
@@ -107,18 +111,15 @@ export function FoundryAgent(): JSX.Element {
             </p>
             <ul>
               <li>
-                <code>VITE_FOUNDRY_AGENT_NAME</code> - Agent name from Azure AI
-                Foundry portal
+                <code>VITE_FOUNDRY_AGENT_NAME</code> - Agent name from Azure AI Foundry portal
               </li>
               <li>
-                <code>VITE_FOUNDRY_PROJECT_NAME</code> - Azure AI Foundry
-                project name
+                <code>VITE_FOUNDRY_PROJECT_NAME</code> - Azure AI Foundry project name
               </li>
             </ul>
             <p>
-              The proxy also needs <code>FOUNDRY_RESOURCE_NAME</code>. For local
-              dev, run <code>az login</code>. In production, use managed identity
-              or a service principal.
+              The proxy also needs <code>FOUNDRY_RESOURCE_NAME</code>. For local dev, run{' '}
+              <code>az login</code>. In production, use managed identity or a service principal.
             </p>
           </AlertBox>
         </Section>
@@ -141,10 +142,7 @@ export function FoundryAgent(): JSX.Element {
       <StatusBadge status={connectionState} />
 
       <ControlGroup>
-        <button
-          onClick={handleStart}
-          disabled={isConnected || !agentConfigured}
-        >
+        <button onClick={handleStart} disabled={isConnected || !agentConfigured}>
           Start Conversation
         </button>
         <button onClick={handleStop} disabled={!isConnected}>

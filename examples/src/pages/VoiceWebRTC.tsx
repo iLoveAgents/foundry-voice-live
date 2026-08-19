@@ -67,7 +67,10 @@ export function VoiceWebRTC(): JSX.Element {
       .semanticVAD({ interruptResponse: true })
       .transcription({ model: 'whisper-1' })
       // The assistant speaks first — audio arrives over RTP, the transcript over the data channel
-      .greeting({ type: 'pregenerated', text: 'Hi! You are connected over WebRTC. How can I help?' })
+      .greeting({
+        type: 'pregenerated',
+        text: 'Hi! You are connected over WebRTC. How can I help?',
+      })
       .build(),
     onTranscript,
     logLevel: 'debug',
@@ -161,8 +164,8 @@ export function VoiceWebRTC(): JSX.Element {
               <code>transport: 'websocket'</code> for avatar sessions).
             </li>
             <li>
-              Requires api-version <code>{MIN_WEBRTC_API_VERSION}</code> or later; the
-              WebRTC transport defaults to <code>{DEFAULT_WEBRTC_API_VERSION}</code>.
+              Requires api-version <code>{MIN_WEBRTC_API_VERSION}</code> or later; the WebRTC
+              transport defaults to <code>{DEFAULT_WEBRTC_API_VERSION}</code>.
             </li>
             <li>
               Needs outbound UDP for the RTP media path. On UDP-restricted networks pass{' '}
@@ -170,13 +173,13 @@ export function VoiceWebRTC(): JSX.Element {
               <code>transport: 'websocket'</code>.
             </li>
             <li>
-              No viseme or word-timestamp events, and <code>getAudioPlaybackTime()</code>{' '}
-              always returns <code>null</code> — the browser's RTP pipeline plays the audio.
+              No viseme or word-timestamp events, and <code>getAudioPlaybackTime()</code> always
+              returns <code>null</code> — the browser's RTP pipeline plays the audio.
             </li>
             <li>
-              Tool/function-call events arrive on the WebSocket control channel; VAD,
-              transcript and response lifecycle events arrive on the{' '}
-              <code>voice-live-events</code> data channel. <code>onEvent</code> sees both.
+              Tool/function-call events arrive on the WebSocket control channel; VAD, transcript and
+              response lifecycle events arrive on the <code>voice-live-events</code> data channel.{' '}
+              <code>onEvent</code> sees both.
             </li>
           </ul>
         </AlertBox>
@@ -195,9 +198,7 @@ export function VoiceWebRTC(): JSX.Element {
       <StatusBadge status={connectionState} />
 
       {isConnected && (
-        <p style={{ margin: '0.5rem 0', fontStyle: 'italic' }}>
-          {sessionStateLabel(sessionState)}
-        </p>
+        <p style={{ margin: '0.5rem 0', fontStyle: 'italic' }}>{sessionStateLabel(sessionState)}</p>
       )}
 
       <ControlGroup>
@@ -207,9 +208,7 @@ export function VoiceWebRTC(): JSX.Element {
         <button onClick={handleStop} disabled={!isConnected}>
           Stop
         </button>
-        {isConnected && (
-          <button onClick={toggleMute}>{isMuted ? 'Unmute' : 'Mute'}</button>
-        )}
+        {isConnected && <button onClick={toggleMute}>{isMuted ? 'Unmute' : 'Mute'}</button>}
       </ControlGroup>
 
       {/* `connected` only means the control socket is open — text turns need the call itself
