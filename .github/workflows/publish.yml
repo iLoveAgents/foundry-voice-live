@@ -57,5 +57,15 @@ jobs:
           # GitHub-side (permissions/context) rather than the npm trusted-publisher config
           echo "OIDC request url set: ${ACTIONS_ID_TOKEN_REQUEST_URL:+yes}"
           echo "OIDC request token set: ${ACTIONS_ID_TOKEN_REQUEST_TOKEN:+yes}"
-          (cd packages/react && npm publish --provenance --access public)
-          (cd packages/proxy-node && npm publish --provenance --access public)
+          publish() {
+            # --loglevel=verbose makes npm report the OIDC exchange it attempts and what the
+            # registry answers; without it a rejected identity is indistinguishable from
+            # "no credentials configured" (both surface as ENEEDAUTH)
+            (cd "$1" && npm publish --provenance --access public --loglevel=verbose) && return 0
+            echo "::group::npm debug log ($1)"
+            tail -n 120 /home/runner/.npm/_logs/*.log || true
+            echo "::endgroup::"
+            return 1
+          }
+          publish packages/react
+          publish packages/proxy-node
