@@ -192,6 +192,45 @@ describe('useVoiceLive (webrtc)', () => {
     hook.unmount();
   });
 
+  it('releases the old microphone when a reconnect switches transport kind', async () => {
+    const hook = renderHook(({ config }) => useVoiceLive(config), {
+      initialProps: { config: { ...baseConfig, reconnect: true } },
+    });
+    await act(async () => {
+      await hook.result.current.connect();
+    });
+    const pc = FakePeerConnection.instances[FakePeerConnection.instances.length - 1]!;
+    const ws = FakeWebSocket.instances[FakeWebSocket.instances.length - 1]!;
+    await act(async () => {
+      ws.open();
+    });
+    await act(async () => {
+      pc.setConnectionState('connected');
+      pc.dataChannels[0]!.open();
+    });
+    await act(async () => {
+      await hook.result.current.startMic();
+    });
+    expect(hook.result.current.isMicActive).toBe(true);
+
+    // the app switches to the WebSocket transport, then the session drops and reconnects
+    hook.rerender({
+      config: {
+        ...baseConfig,
+        reconnect: true,
+        connection: { ...baseConfig.connection, transport: 'websocket' as const },
+      },
+    });
+    await act(async () => {
+      ws.drop(1006);
+      await vi.waitFor(() => expect(FakeWebSocket.instances.length).toBeGreaterThan(1));
+    });
+
+    // the WebRTC microphone must not keep recording into a session that no longer uses it
+    expect(mic.track.stop).toHaveBeenCalled();
+    hook.unmount();
+  });
+
   it('keeps the microphone controls on the live session when the transport prop changes', async () => {
     const hook = renderHook(({ config }) => useVoiceLive(config), { initialProps: { config: baseConfig } });
     await act(async () => {
