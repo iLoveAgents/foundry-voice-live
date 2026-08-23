@@ -46,7 +46,13 @@ export interface QueryParams {
   agentVersion?: string;
   /** Client ID of the user-assigned managed identity used for agent authentication (Foundry Agents) */
   agentAuthenticationIdentityClientId?: string;
-  /** Override the Foundry resource used by the agent (Foundry Agents) */
+  /**
+   * Bring Your Own Model profile (`byom-azure-openai-realtime` | `byom-azure-openai-chat-completion`
+   * | `byom-foundry-anthropic-messages`). Requires `model` = the deployment name; not supported
+   * with `agentName`. No server-side default on purpose: the profile and the deployment must match.
+   */
+  profile?: string;
+  /** Override the Foundry resource (Foundry Agents, or a BYOM profile whose deployment lives elsewhere) */
   foundryResourceOverride?: string;
   /** Override API version (default: API_VERSION env or built-in default) */
   apiVersion?: string;

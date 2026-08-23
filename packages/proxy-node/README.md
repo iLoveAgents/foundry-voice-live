@@ -198,6 +198,22 @@ const ws = new WebSocket(
 
 **Mode detection is automatic:** Foundry Agent mode activates when `agentName` is present in the URL, or when `FOUNDRY_AGENT_NAME` / `FOUNDRY_PROJECT_NAME` are set in `.env` and the URL has no `model` param. Optional agent params (`conversationId`, `agentVersion`, `agentAuthenticationIdentityClientId`, `foundryResourceOverride`) are forwarded upstream as-is.
 
+### Bring Your Own Model (BYOM)
+
+`?profile=<mode>&model=<deployment-name>` runs Voice Live around a model deployed in your Foundry
+resource (`byom-azure-openai-realtime`, `byom-azure-openai-chat-completion`,
+`byom-foundry-anthropic-messages`). The proxy forwards both upstream and rejects the two
+invalid combinations as client errors: a profile without a `model`, and a profile in agent mode.
+
+There is deliberately **no** `BYOM_PROFILE` environment default: the profile and the deployment
+must match, and a server-side profile combined with a client-supplied model is a confusing
+upstream failure waiting to happen.
+
+Auth for BYOM is resolved exactly as for standard mode. Note that with Entra ID on the
+chat-completion / Anthropic profiles, Azure requires the Foundry resource's managed identity to
+hold _Foundry User_; with `foundryResourceOverride` that applies on both resources, for API keys
+too — see the [BYOM guide](https://learn.microsoft.com/azure/ai-services/speech-service/how-to-bring-your-own-model).
+
 ## Transports
 
 | Transport           | Client URL                                    | Upstream path                | Default API version                   |
@@ -277,18 +293,19 @@ Prefer keyless: assign a managed identity to the container app with the "Cogniti
 
 ### WebSocket Query Parameters
 
-| Parameter                             | Required    | Description                                                        | Example                                |
-| ------------------------------------- | ----------- | ------------------------------------------------------------------ | -------------------------------------- |
-| `model`                               | No          | Model for standard mode (default `gpt-realtime`)                   | `gpt-realtime`                         |
-| `token`                               | No          | Entra ID / MSAL access token (moved to the `Authorization` header) | `eyJ0eXAi...`                          |
-| `agentName`                           | Conditional | Foundry Agent name (enables agent mode; `.env` fallback)           | `MyAgent`                              |
-| `projectName`                         | Conditional | Foundry project name (with `agentName`; `.env` fallback)           | `my-project`                           |
-| `conversationId`                      | No          | Resume a previous conversation (agent mode)                        | `conv_abc123`                          |
-| `agentVersion`                        | No          | Pin a specific agent version (agent mode)                          | `1.0`                                  |
-| `agentAuthenticationIdentityClientId` | No          | Client ID of the user-assigned managed identity the agent runs as  | `00000000-0000-0000-0000-000000000000` |
-| `foundryResourceOverride`             | No          | Override the Foundry resource used by the agent                    | `other-resource`                       |
-| `transport`                           | No          | `websocket` (default) or `webrtc` (preview)                        | `webrtc`                               |
-| `apiVersion`                          | No          | Override the API version for this connection                       | `2026-01-01-preview`                   |
+| Parameter                             | Required    | Description                                                            | Example                                |
+| ------------------------------------- | ----------- | ---------------------------------------------------------------------- | -------------------------------------- |
+| `model`                               | No          | Model for standard mode (default `gpt-realtime`)                       | `gpt-realtime`                         |
+| `token`                               | No          | Entra ID / MSAL access token (moved to the `Authorization` header)     | `eyJ0eXAi...`                          |
+| `agentName`                           | Conditional | Foundry Agent name (enables agent mode; `.env` fallback)               | `MyAgent`                              |
+| `projectName`                         | Conditional | Foundry project name (with `agentName`; `.env` fallback)               | `my-project`                           |
+| `conversationId`                      | No          | Resume a previous conversation (agent mode)                            | `conv_abc123`                          |
+| `agentVersion`                        | No          | Pin a specific agent version (agent mode)                              | `1.0`                                  |
+| `agentAuthenticationIdentityClientId` | No          | Client ID of the user-assigned managed identity the agent runs as      | `00000000-0000-0000-0000-000000000000` |
+| `profile`                             | No          | BYOM profile; requires `model` = deployment name, not with `agentName` | `byom-azure-openai-chat-completion`    |
+| `foundryResourceOverride`             | No          | Override the Foundry resource (agent mode, or BYOM cross-resource)     | `other-resource`                       |
+| `transport`                           | No          | `websocket` (default) or `webrtc` (preview)                            | `webrtc`                               |
+| `apiVersion`                          | No          | Override the API version for this connection                           | `2026-01-01-preview`                   |
 
 Upstream parameter names: `agentName` → `agent-name`, `projectName` → `agent-project-name`, `conversationId` → `conversation-id`, `agentVersion` → `agent-version`, `agentAuthenticationIdentityClientId` → `agent-authentication-identity-client-id`, `foundryResourceOverride` → `foundry-resource-override`. `token` and `transport` are consumed by the proxy and not forwarded.
 

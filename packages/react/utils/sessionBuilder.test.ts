@@ -570,3 +570,122 @@ describe('validateConfig', () => {
     expect(() => validateConfig({ instructions: 'x' }, true)).not.toThrow();
   });
 });
+
+describe('validateConfig — BYOM profiles', () => {
+  const REALTIME = { profile: 'byom-azure-openai-realtime' };
+  const CHAT = { profile: 'byom-azure-openai-chat-completion' };
+
+  it('does not misjudge a realtime deployment by its deployment name (semantic_vad)', () => {
+    // `my-rt-deploy` is not in the model list — without the profile this warned falsely
+    const warnings = validateConfig(
+      { turnDetection: { type: 'semantic_vad' } },
+      false,
+      'my-rt-deploy',
+      REALTIME
+    );
+    expect(warnings.filter((w) => w.includes('semantic_vad'))).toEqual([]);
+    // ...and a chat-completion deployment genuinely does not support it
+    expect(
+      validateConfig({ turnDetection: { type: 'semantic_vad' } }, false, 'my-gpt5', CHAT).some(
+        (w) => w.includes('semantic_vad')
+      )
+    ).toBe(true);
+  });
+
+  it('does not misjudge a realtime deployment by its deployment name (transcription)', () => {
+    const whisper = { inputAudioTranscription: { model: 'whisper-1' as const } };
+    expect(
+      validateConfig(whisper, false, 'my-rt-deploy', REALTIME).filter((w) =>
+        w.includes('whisper-1')
+      )
+    ).toEqual([]);
+    expect(
+      validateConfig(whisper, false, 'my-gpt5', CHAT).some((w) => w.includes('whisper-1'))
+    ).toBe(true);
+    // azure-speech is the right choice for a cascaded deployment, wrong for a realtime one
+    const azure = { inputAudioTranscription: { model: 'azure-speech' as const } };
+    expect(validateConfig(azure, false, 'my-gpt5', CHAT)).toEqual([]);
+    expect(
+      validateConfig(azure, false, 'my-rt-deploy', REALTIME).some((w) => w.includes('azure-speech'))
+    ).toBe(true);
+  });
+
+  it('skips model-family checks for an unknown/future profile instead of guessing', () => {
+    // `VoiceLiveProfile` is intentionally extensible. A profile we do not recognize gives us no way
+    // to infer the model family from a deployment name, so we must not emit family-specific warnings
+    // that could be wrong.
+    const FUTURE = { profile: 'byom-some-future-backend' };
+    expect(
+      validateConfig(
+        { turnDetection: { type: 'semantic_vad' } },
+        false,
+        'my-deploy',
+        FUTURE
+      ).filter((w) => w.includes('semantic_vad'))
+    ).toEqual([]);
+    expect(
+      validateConfig(
+        { inputAudioTranscription: { model: 'whisper-1' as const } },
+        false,
+        'my-deploy',
+        FUTURE
+      ).filter((w) => w.includes('whisper-1'))
+    ).toEqual([]);
+  });
+
+  it('knows a realtime profile is native audio (no interim responses), a chat profile is not', () => {
+    const interim = {
+      interimResponse: {
+        type: 'static_interim_response' as const,
+        triggers: ['tool' as const],
+        texts: ['…'],
+      },
+    };
+    expect(
+      validateConfig(interim, false, 'my-rt-deploy', REALTIME).some((w) =>
+        w.includes('interimResponse')
+      )
+    ).toBe(true);
+    expect(validateConfig(interim, false, 'my-gpt5', CHAT)).toEqual([]);
+  });
+
+  it('warns when a profile is combined with agent mode (reachable through a proxy)', () => {
+    expect(
+      validateConfig({}, true, undefined, CHAT).some((w) =>
+        w.includes('ignored for Foundry agents')
+      )
+    ).toBe(true);
+  });
+
+  it('warns when a profile is used over the WebRTC transport', () => {
+    expect(
+      validateConfig({}, false, 'd', { ...CHAT, transport: 'webrtc' }).some((w) =>
+        w.includes('WebSocket transport only')
+      )
+    ).toBe(true);
+    expect(validateConfig({}, false, 'd', { ...CHAT, transport: 'websocket' })).toEqual([]);
+  });
+
+  it('warns when foundryResourceOverride is set without a profile or an agent', () => {
+    expect(
+      validateConfig({}, false, 'gpt-realtime', { foundryResourceOverride: 'other' }).some((w) =>
+        w.includes('foundryResourceOverride')
+      )
+    ).toBe(true);
+    expect(validateConfig({}, false, 'd', { ...CHAT, foundryResourceOverride: 'other' })).toEqual(
+      []
+    );
+    expect(validateConfig({}, true, undefined, { foundryResourceOverride: 'other' })).toEqual([]);
+  });
+
+  it('changes nothing for connections without a profile', () => {
+    expect(
+      validateConfig({ turnDetection: { type: 'semantic_vad' } }, false, 'gpt-realtime')
+    ).toEqual([]);
+    expect(
+      validateConfig({ turnDetection: { type: 'semantic_vad' } }, false, 'gpt-4.1').some((w) =>
+        w.includes('semantic_vad')
+      )
+    ).toBe(true);
+  });
+});

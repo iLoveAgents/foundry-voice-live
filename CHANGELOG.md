@@ -3,6 +3,33 @@
 All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### `@iloveagents/foundry-voice-live-agui` (new package)
+
+#### Added
+- **AG-UI protocol bridge** — turns a Voice Live session into a standard AG-UI run (`RUN_STARTED` … `TEXT_MESSAGE_*` … `TOOL_CALL_*` … `RUN_FINISHED`) that any AG-UI consumer can render. Subpath entries: `.` (core + `VoiceLiveAgent`), `./core` (React/rxjs-free mapper, run policy, voice-state), `./react` (`useVoiceLiveAgent` + `useVoiceLiveAgentBinding`), `./doctor` (endpoint probe + CLI).
+- **`VoiceLiveAgent`** extends `AbstractAgent` (not `HttpAgent`), so it renders in CopilotKit or any AG-UI UI — or with plain React. Self-pumped, cluster-scoped runs; a ReplaySubject per run so a short turn that opens and closes before the pump subscribes is still delivered.
+- **Transport-agnostic** — the same mapper drives WebSocket and WebRTC (a function-call event opening a run before `response.created`, and `response.done` before its tool-call args, are handled).
+- **`doctor`** — `npx foundry-voice-live-agui doctor <url>` (and `probeEndpoint`): POSTs a minimal `RunAgentInput`, verifies the SSE against AG-UI ordering, checks server-side thread memory, and prints a `ready` / `usable` / `unfit` voice-readiness verdict. Exit code drops into CI / a proxy healthcheck.
+- Example page `/agui-voice` renders the bridge with plain React (transcript, live AG-UI event stream, WebSocket/WebRTC toggle, offline simulate).
+
+### `@iloveagents/foundry-voice-live-react`
+
+#### Added
+- **Bring Your Own Model** — `connection.profile` (`byom-azure-openai-realtime` | `byom-azure-openai-chat-completion` | `byom-foundry-anthropic-messages`) runs Voice Live around a model deployed in your own Foundry resource; `model` is then the deployment name and is required. `foundryResourceOverride` now also applies to standard-mode (cross-resource BYOM). `validateConfig` takes a fourth `connection` argument and derives model capabilities from the profile, because a deployment name says nothing about the model — without this, every BYOM connection produced false `semantic_vad` / `whisper-1` warnings.
+
+#### Fixed
+- `VoiceLiveModel` (and the new `VoiceLiveProfile`) now actually accept arbitrary strings as documented. The `string & Record<string, never>` idiom used for "extensible union" rejects every non-literal string under strict mode; it is `string & {}` now.
+
+### `@iloveagents/foundry-voice-live-proxy-node`
+
+#### Added
+- `?profile=` (BYOM) and `?foundryResourceOverride=` are forwarded in standard mode. A profile without `model`, or in agent mode, is rejected as a client error. The profile is logged with the mode and advertised on `GET /`.
+
+### Examples
+- `/byom` page (`VITE_BYOM_PROFILE` + `VITE_BYOM_MODEL`); `directOrProxyConnection()` passes `profile` / `foundryResourceOverride` in both direct and proxy shapes.
+
 ## [0.5.0] - 2026-08-18
 
 Targets Voice Live API **`2026-07-15` (GA)**. This release contains breaking changes (see **Removed** / **Changed**).

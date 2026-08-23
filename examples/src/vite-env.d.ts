@@ -10,6 +10,9 @@ interface ImportMetaEnv {
   readonly VITE_AZURE_TENANT_ID?: string;
   readonly VITE_FOUNDRY_AGENT_NAME?: string;
   readonly VITE_FOUNDRY_PROJECT_NAME?: string;
+  readonly VITE_BYOM_PROFILE?: string;
+  readonly VITE_BYOM_MODEL?: string;
+  readonly VITE_BYOM_RESOURCE_OVERRIDE?: string;
 }
 
 interface ImportMeta {

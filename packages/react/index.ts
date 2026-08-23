@@ -43,6 +43,7 @@ export {
   buildAgentSessionConfig,
   convertToSessionUpdate,
   validateConfig,
+  type ValidateConfigConnection,
   DEFAULT_SESSION_CONFIG,
   AGENT_OWNED_FIELDS,
 } from './utils/sessionBuilder';
@@ -245,6 +246,8 @@ export type {
   VoiceLiveTransport,
   KnownVoiceLiveModel,
   VoiceLiveModel,
+  KnownVoiceLiveProfile,
+  VoiceLiveProfile,
   ConnectionState,
 
   // Session configuration types

@@ -14,6 +14,10 @@
  *  3. WebRTC control channel probe on /calls (bogus SDP → expect rtc.call.error; proves endpoint + auth + api-version).
  *     Note: observed to require API-key auth (401 for Entra tokens) — set FOUNDRY_API_KEY to exercise it.
  *  4. azure-realtime + azure-realtime-native voice: session.update accepted.
+ *  5. BYOM (if FOUNDRY_BYOM_PROFILE + FOUNDRY_BYOM_MODEL set): session.created at the SDK default api-version
+ *     AND at 2026-04-10 (the version Microsoft documents BYOM with). Verified 2026-08-19 against a
+ *     gpt-5.4-mini deployment: both versions accept the profile and the deployment answers, so no
+ *     MIN_BYOM_API_VERSION constant is needed (unlike the WebRTC /calls precedent).
  */
 import WebSocket from 'ws';
 import {
@@ -29,6 +33,8 @@ const token = process.env.FOUNDRY_TOKEN;
 const apiKey = process.env.FOUNDRY_API_KEY;
 const agentName = process.env.FOUNDRY_AGENT_NAME;
 const projectName = process.env.FOUNDRY_PROJECT_NAME;
+const byomProfile = process.env.FOUNDRY_BYOM_PROFILE;
+const byomModel = process.env.FOUNDRY_BYOM_MODEL;
 if (!resourceName || (!token && !apiKey)) {
   throw new Error('FOUNDRY_RESOURCE_NAME and FOUNDRY_TOKEN (or FOUNDRY_API_KEY) are required');
 }
@@ -340,6 +346,65 @@ async function testAzureRealtime() {
   }).catch((err) => record('azure-realtime: session', false, err.message));
 }
 
+/**
+ * BYOM: the service must accept `profile=` + a deployment name and start a session. Probed at the
+ * SDK default api-version and at the version Microsoft documents BYOM with, because this repo has
+ * already met one feature (WebRTC /calls) that the GA version does not serve.
+ */
+async function testByom(apiVersion) {
+  const label = `byom(${apiVersion ?? 'default'})`;
+  const { url } = buildVoiceLiveUrl({
+    resourceName,
+    ...auth,
+    model: byomModel,
+    profile: byomProfile,
+    ...(apiVersion ? { apiVersion } : {}),
+  });
+  console.log(`\n[5] ${label}`, redactUrl(url));
+  const session = buildSessionConfig({
+    instructions: 'Reply with exactly: BYOM OK',
+    voice: { name: 'en-US-AvaMultilingualNeural', type: 'azure-standard' },
+    inputAudioTranscription: { model: 'azure-speech', language: 'en' },
+  });
+  let transcript = '';
+  return openSession(url, {
+    timeoutMs: 30000,
+    onEvent: (ev, api) => {
+      if (ev.type === 'error') {
+        record(`${label}: session`, false, JSON.stringify(ev.error));
+        api.done();
+      }
+      if (ev.type === 'session.created') api.send({ type: 'session.update', session });
+      if (ev.type === 'session.updated') {
+        record(
+          `${label}: session.update accepted`,
+          true,
+          `model=${JSON.stringify(ev.session?.model)}`
+        );
+        // A text turn proves the deployment actually answers, not just that the URL was accepted
+        api.send({
+          type: 'conversation.item.create',
+          item: {
+            type: 'message',
+            role: 'user',
+            content: [{ type: 'input_text', text: 'Say the magic words.' }],
+          },
+        });
+        api.send({ type: 'response.create' });
+      }
+      if (ev.type === 'response.audio_transcript.delta') transcript += ev.delta ?? '';
+      if (ev.type === 'response.done') {
+        record(
+          `${label}: deployment answered`,
+          transcript.length > 0,
+          `transcript=${JSON.stringify(transcript)}`
+        );
+        api.done();
+      }
+    },
+  }).catch((err) => record(`${label}: session`, false, err.message));
+}
+
 try {
   await testStandardSession();
 } catch (err) {
@@ -354,6 +419,14 @@ await testWebRtcProbe();
 // Documented quirk (Aug 2026): the GA api-version does not serve /calls — a 404 is expected here
 await testWebRtcProbe('2026-07-15', { expectUnserved: true });
 await testAzureRealtime();
+if (byomProfile && byomModel) {
+  await testByom();
+  await testByom('2026-04-10');
+} else {
+  console.log(
+    '\n[5] BYOM skipped (set FOUNDRY_BYOM_PROFILE and FOUNDRY_BYOM_MODEL to a deployment in the resource)'
+  );
+}
 
 console.log('\n==== SUMMARY ====');
 for (const r of results)

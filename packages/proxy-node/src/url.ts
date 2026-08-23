@@ -201,6 +201,11 @@ export async function buildAzureUrl(
 
   // ===== Foundry Agents: agentName-based =====
   if (mode === "foundry-agent") {
+    if (query.profile) {
+      throw new ProxyRequestError(
+        "profile (BYOM) is not supported in Foundry agent mode — an agent owns its model"
+      );
+    }
     const { agentName, projectName } = resolveAgent(query, cfg);
     if (!agentName || !projectName) {
       throw new ProxyRequestError(
@@ -233,7 +238,20 @@ export async function buildAzureUrl(
   }
 
   // ===== Standard mode: Voice/Avatar =====
+  if (query.profile && !query.model) {
+    // Refuse rather than default: a BYOM request that fell back to gpt-realtime would connect
+    // and answer from the wrong model
+    throw new ProxyRequestError(
+      "profile (BYOM) requires the model parameter set to the deployment name"
+    );
+  }
   params.push(["model", query.model || DEFAULT_MODEL]);
+  if (query.profile) {
+    params.push(["profile", query.profile]);
+  }
+  if (query.foundryResourceOverride) {
+    params.push(["foundry-resource-override", query.foundryResourceOverride]);
+  }
 
   // Auth priority: browser token > API key > server-side DefaultAzureCredential
   if (query.token) {

@@ -79,6 +79,64 @@ const NATIVE_AUDIO_MODELS = [
 /** Models that support OpenAI `semantic_vad` and near/far-field noise reduction */
 const OPENAI_REALTIME_MODELS = ['gpt-realtime', 'gpt-realtime-mini'];
 
+/** What the configured model can do, as far as the compatibility checks care */
+interface ModelFamily {
+  /** gpt-realtime family: OpenAI `semantic_vad`, whisper/gpt-4o transcription, no azure-speech */
+  realtimeFamily: boolean;
+  /** Native audio model: no interim responses */
+  nativeAudio: boolean;
+  /** The model is `azure-realtime` (Azure Realtime native voices) */
+  azureRealtime: boolean;
+  /** Whether anything is known at all (no model name and no profile → skip model checks) */
+  known: boolean;
+}
+
+/**
+ * Resolve the model family from the model name — or from the BYOM profile.
+ *
+ * With a `profile`, `model` is a *deployment name* chosen by the user (`my-claude-prod`), so the
+ * name-based lookups would misfire on every BYOM connection: `semantic_vad` would be flagged as
+ * unsupported for a realtime deployment, `whisper-1` likewise. The profile says what the
+ * deployment is, and wins.
+ */
+function resolveModelFamily(model: string | undefined, profile: string | undefined): ModelFamily {
+  if (profile === 'byom-azure-openai-realtime') {
+    return { realtimeFamily: true, nativeAudio: true, azureRealtime: false, known: true };
+  }
+  if (
+    profile === 'byom-azure-openai-chat-completion' ||
+    profile === 'byom-foundry-anthropic-messages'
+  ) {
+    // chat-completion / anthropic-messages: a cascaded text model behind Azure STT/TTS
+    return { realtimeFamily: false, nativeAudio: false, azureRealtime: false, known: true };
+  }
+  if (profile) {
+    // An unknown / future BYOM profile (the type is intentionally extensible): we cannot infer the
+    // model family from a deployment name, so leave it unknown and skip the family-specific checks
+    // rather than emit warnings that may be wrong.
+    return { realtimeFamily: false, nativeAudio: false, azureRealtime: false, known: false };
+  }
+  const name = model?.toLowerCase();
+  if (!name)
+    return { realtimeFamily: false, nativeAudio: false, azureRealtime: false, known: false };
+  return {
+    realtimeFamily: OPENAI_REALTIME_MODELS.includes(name),
+    nativeAudio: NATIVE_AUDIO_MODELS.includes(name),
+    azureRealtime: name === 'azure-realtime',
+    known: true,
+  };
+}
+
+/** Connection-level facts `validateConfig` needs (a subset of `VoiceLiveConnectionConfig`) */
+export interface ValidateConfigConnection {
+  /** BYOM profile (`?profile=`) */
+  profile?: string;
+  /** `foundry-resource-override` */
+  foundryResourceOverride?: string;
+  /** Transport in use */
+  transport?: 'websocket' | 'webrtc';
+}
+
 /**
  * Build session configuration from user config
  *
@@ -627,16 +685,42 @@ function deepMerge<T>(target: T, source: Partial<T>): T {
  *
  * @param config - Session configuration to validate
  * @param isAgentMode - Whether this is a Foundry agent session
- * @param model - Model name for standard mode (used for model-specific checks)
+ * @param model - Model name for standard mode (used for model-specific checks). With a BYOM
+ *   `connection.profile` this is a deployment name, and the profile decides the model family.
+ * @param connection - Connection-level settings that affect compatibility (BYOM profile, resource
+ *   override, transport)
  * @returns List of warnings (empty when the configuration looks fine)
  */
 export function validateConfig(
   config: VoiceLiveSessionConfig,
   isAgentMode: boolean,
-  model?: string
+  model?: string,
+  connection: ValidateConfigConnection = {}
 ): string[] {
   const warnings: string[] = [];
   const modelName = model?.toLowerCase();
+  const family = resolveModelFamily(model, connection.profile);
+  const modelLabel = connection.profile
+    ? `${connection.profile} (${modelName ?? 'deployment'})`
+    : modelName;
+
+  // BYOM is a standard-mode feature: an agent owns its model, and the WebRTC control channel is
+  // only documented for Voice Live's own models
+  if (connection.profile && isAgentMode) {
+    warnings.push(
+      'connection.profile (BYOM) is ignored for Foundry agents — the agent owns its model. Remove the profile or the agent.'
+    );
+  }
+  if (connection.profile && connection.transport === 'webrtc') {
+    warnings.push(
+      'connection.profile (BYOM) is documented for the WebSocket transport only; the WebRTC control channel is untested with it.'
+    );
+  }
+  if (connection.foundryResourceOverride && !connection.profile && !isAgentMode) {
+    warnings.push(
+      'connection.foundryResourceOverride only applies to Foundry agents and BYOM profiles; it has no effect in standard mode.'
+    );
+  }
 
   // Agent mode: model behaviour is configured in the Foundry portal
   if (isAgentMode) {
@@ -652,14 +736,9 @@ export function validateConfig(
   }
 
   // Interim responses require a cascaded (text) model or agent mode
-  if (
-    config.interimResponse &&
-    !isAgentMode &&
-    modelName &&
-    NATIVE_AUDIO_MODELS.includes(modelName)
-  ) {
+  if (config.interimResponse && !isAgentMode && family.known && family.nativeAudio) {
     warnings.push(
-      `interimResponse is not supported by native audio models (${modelName}). ` +
+      `interimResponse is not supported by native audio models (${modelLabel}). ` +
         'Use a cascaded model such as gpt-4.1 with an Azure voice, or agent mode.'
     );
   }
@@ -668,8 +747,8 @@ export function validateConfig(
   if (
     config.turnDetection?.type === 'semantic_vad' &&
     !isAgentMode &&
-    modelName &&
-    !OPENAI_REALTIME_MODELS.includes(modelName)
+    family.known &&
+    !family.realtimeFamily
   ) {
     warnings.push(
       `turnDetection.type 'semantic_vad' is only supported by ${OPENAI_REALTIME_MODELS.join('/')}; ` +
@@ -682,8 +761,8 @@ export function validateConfig(
     typeof config.voice === 'object' &&
     config.voice?.type === 'azure-realtime-native' &&
     !isAgentMode &&
-    modelName &&
-    modelName !== 'azure-realtime'
+    family.known &&
+    !family.azureRealtime
   ) {
     warnings.push("voice.type 'azure-realtime-native' requires model 'azure-realtime'.");
   }
@@ -714,8 +793,8 @@ export function validateConfig(
   const transcriptionModel = config.inputAudioTranscription?.model;
   if (transcriptionModel && transcriptionModel !== 'mai-transcribe') {
     const openAiTranscription = transcriptionModel !== 'azure-speech';
-    const realtimeFamily = !!modelName && OPENAI_REALTIME_MODELS.includes(modelName);
-    if (openAiTranscription && (isAgentMode || (modelName && !realtimeFamily))) {
+    const realtimeFamily = family.known && family.realtimeFamily;
+    if (openAiTranscription && (isAgentMode || (family.known && !realtimeFamily))) {
       warnings.push(
         `inputAudioTranscription.model '${transcriptionModel}' is only supported by ${OPENAI_REALTIME_MODELS.join('/')}; ` +
           "use 'azure-speech' (or 'mai-transcribe') for other models and Foundry agents."

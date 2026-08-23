@@ -60,7 +60,32 @@ export type KnownVoiceLiveModel =
  * Voice Live model - extensible to support future models
  * Use any string, but known models provide better type hints
  */
-export type VoiceLiveModel = KnownVoiceLiveModel | (string & Record<string, never>);
+// `(string & {})` keeps the known literals in autocompletion while still accepting any string
+// (`string & Record<string, never>` looks equivalent but rejects every arbitrary string).
+// eslint-disable-next-line @typescript-eslint/ban-types
+export type VoiceLiveModel = KnownVoiceLiveModel | (string & {});
+
+/**
+ * Bring Your Own Model (BYOM) integration modes.
+ *
+ * Selects how Voice Live talks to a model *you* deployed in your Foundry resource
+ * (fine-tunes, PTU deployments, Foundry catalog models such as Claude or Grok).
+ *
+ * - `byom-azure-openai-realtime` — native audio realtime deployments (`gpt-realtime`, `gpt-realtime-mini`)
+ * - `byom-azure-openai-chat-completion` — any chat-completion deployment (`gpt-5.x`, `grok-4`, model routers, …);
+ *   Voice Live runs STT and TTS around it
+ * - `byom-foundry-anthropic-messages` — Claude deployments via the Messages API (preview)
+ *
+ * @see {@link https://learn.microsoft.com/azure/ai-services/speech-service/how-to-bring-your-own-model}
+ */
+export type KnownVoiceLiveProfile =
+  | 'byom-azure-openai-realtime'
+  | 'byom-azure-openai-chat-completion'
+  | 'byom-foundry-anthropic-messages';
+
+/** BYOM profile — extensible so a profile Microsoft ships later is not a type error */
+// eslint-disable-next-line @typescript-eslint/ban-types
+export type VoiceLiveProfile = KnownVoiceLiveProfile | (string & {});
 
 /**
  * Transport used for the realtime session.
@@ -110,6 +135,21 @@ export interface VoiceLiveConnectionConfig {
   model?: VoiceLiveModel;
 
   /**
+   * Bring Your Own Model: use a model deployed in your own Foundry resource instead of one
+   * Voice Live hosts. Sent as `?profile=`.
+   *
+   * With a profile, `model` is the **deployment name** from the Foundry portal (not a Voice Live
+   * model id) and is required — there is no default, because falling back to `gpt-realtime`
+   * would silently answer from the wrong model. Not supported together with `agentName`
+   * (an agent owns its model).
+   *
+   * Entra ID auth with the chat-completion and Anthropic profiles needs the Foundry resource's
+   * system-assigned managed identity to hold the *Foundry User* role
+   * (`53ca6127-db72-4b80-b1b0-d745d6d5456d`) — see the BYOM docs linked on {@link VoiceLiveProfile}.
+   */
+  profile?: VoiceLiveProfile;
+
+  /**
    * Voice Live API version.
    * @default '2026-07-15' (DEFAULT_API_VERSION); WebRTC transport defaults to
    *   '2026-01-01-preview' (DEFAULT_WEBRTC_API_VERSION)
@@ -144,8 +184,12 @@ export interface VoiceLiveConnectionConfig {
   agentVersion?: string;
 
   /**
-   * Run the agent on a different Foundry resource than the one serving audio
-   * (cross-resource agents). Sent as `foundry-resource-override`.
+   * Use a different Foundry resource than the one serving audio — for cross-resource agents,
+   * or for a BYOM `profile` whose model deployment lives elsewhere. Sent as
+   * `foundry-resource-override` (the resource name without the domain suffix).
+   *
+   * Cross-resource use requires the Voice Live resource's managed identity to hold the
+   * *Foundry User* role on the model resource, regardless of how the client authenticates.
    */
   foundryResourceOverride?: string;
 

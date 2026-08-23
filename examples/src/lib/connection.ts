@@ -36,17 +36,25 @@ export function proxyWsUrl(params: Record<string, string | undefined> = {}): str
  * appended as query parameters in proxy mode, so pages work in both setups.
  */
 export function directOrProxyConnection(
-  options: Pick<VoiceLiveConnectionConfig, 'model' | 'transport' | 'apiVersion'> = {}
+  options: Pick<
+    VoiceLiveConnectionConfig,
+    'model' | 'transport' | 'apiVersion' | 'profile' | 'foundryResourceOverride'
+  > = {}
 ): VoiceLiveConnectionConfig {
-  const { model, ...rest } = options;
+  const { model, profile, foundryResourceOverride, ...rest } = options;
   const apiKey = import.meta.env.VITE_FOUNDRY_API_KEY;
   const resourceName = import.meta.env.VITE_FOUNDRY_RESOURCE_NAME;
 
   if (apiKey && resourceName) {
-    return { resourceName, apiKey, model, ...rest };
+    return { resourceName, apiKey, model, profile, foundryResourceOverride, ...rest };
   }
 
   // Always name the model for the proxy: without a `model` param the proxy falls back to its
   // .env Foundry agent (if configured), which would turn a standard-mode page into an agent session.
-  return { proxyUrl: proxyWsUrl({ model: model ?? DEFAULT_MODEL }), ...rest };
+  // BYOM settings are proxy query params too; the SDK would also add them from the config, but
+  // naming them here keeps the URL readable in the network tab.
+  return {
+    proxyUrl: proxyWsUrl({ model: model ?? DEFAULT_MODEL, profile, foundryResourceOverride }),
+    ...rest,
+  };
 }
