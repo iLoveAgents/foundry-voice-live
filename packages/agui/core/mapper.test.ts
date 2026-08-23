@@ -475,7 +475,12 @@ describe('VoiceLiveAguiMapper — barge-in, cancel, error', () => {
       },
     ]);
     expect(ofType(failed, EventType.RUN_ERROR)).toHaveLength(1);
-    expect(first(failed, EventType.RUN_ERROR).message).toBe('boom');
+    const err = first(failed, EventType.RUN_ERROR);
+    expect(err.message).toBe('boom');
+    // RUN_ERROR carries runId/threadId like the other run lifecycle events, so a consumer can
+    // correlate it to the run it saw start.
+    expect(err.runId).toBe(first(failed, EventType.RUN_STARTED).runId);
+    expect(err.threadId).toBe('thread-1');
   });
 });
 

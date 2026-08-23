@@ -131,6 +131,15 @@ export function buildVoiceLiveUrl(connection: VoiceLiveConnectionConfig): Resolv
       parsed.searchParams.set(key, value);
     }
     const isAgentMode = isProxyAgentMode(connection, parsed);
+    const effectiveProfile = parsed.searchParams.get('profile') ?? undefined;
+    const effectiveModel = parsed.searchParams.get('model') ?? undefined;
+    // Fail fast on BYOM-without-model rather than deferring to the proxy: a profile answers from the
+    // named deployment, so a missing model would silently fall back to the proxy's default model.
+    if (!isAgentMode && effectiveProfile && !effectiveModel) {
+      throw new Error(
+        'connection.profile (BYOM) requires a model — add it to connection.model or the proxy URL (?model=<deployment>).'
+      );
+    }
     return {
       // Leave the caller's URL byte-for-byte untouched when nothing was added
       url: Object.keys(overrides).length > 0 ? serialize(parsed) : (connection.proxyUrl as string),
@@ -139,8 +148,8 @@ export function buildVoiceLiveUrl(connection: VoiceLiveConnectionConfig): Resolv
       modeLabel: isAgentMode ? 'Proxy (Foundry Agent)' : 'Proxy (Standard)',
       // Resolve from the effective URL params so BYOM put directly in `proxyUrl` is seen too, not
       // only `connection.profile`. Same for the model/deployment.
-      profile: parsed.searchParams.get('profile') ?? undefined,
-      model: parsed.searchParams.get('model') ?? undefined,
+      profile: effectiveProfile,
+      model: effectiveModel,
     };
   }
 

@@ -731,6 +731,10 @@ export class VoiceLiveAguiMapper {
           if (d.reason === 'error') {
             events.push(
               this.base(EventType.RUN_ERROR, {
+                // Carry runId/threadId like RUN_STARTED/RUN_FINISHED so a consumer can correlate the
+                // error to the run it saw start (and match VoiceLiveAgent.errorRun()).
+                threadId: this.threadId,
+                runId,
                 message: errorDetail?.message ?? 'Voice Live response failed',
                 code: errorDetail?.code,
               })

@@ -117,6 +117,12 @@ describe('buildVoiceLiveUrl — proxy mode', () => {
     expect(resolved.model).toBe('my-claude');
   });
 
+  it('throws early when a proxy BYOM profile has no model', () => {
+    expect(() =>
+      buildVoiceLiveUrl({ proxyUrl: 'ws://localhost:8080/ws?profile=byom-azure-openai-realtime' })
+    ).toThrow(/requires a model/);
+  });
+
   it('detects agent mode from proxy query params or the agentMode flag', () => {
     expect(buildVoiceLiveUrl({ proxyUrl: 'ws://x/ws?agentName=a&projectName=p' }).isAgentMode).toBe(
       true
