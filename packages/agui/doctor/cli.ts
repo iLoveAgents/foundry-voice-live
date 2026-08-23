@@ -79,12 +79,14 @@ async function main(): Promise<void> {
     checkContinuity: args.continuity,
   });
 
-  if (args.json) {
-    process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
-  } else {
-    process.stdout.write(`${formatReport(report, { color: args.color })}\n`);
-  }
-  process.exit(report.ok ? 0 : 1);
+  const out = args.json
+    ? `${JSON.stringify(report, null, 2)}\n`
+    : `${formatReport(report, { color: args.color })}\n`;
+  // Set exitCode rather than calling process.exit(): a large --json report piped to CI can exceed
+  // the pipe buffer, and process.exit() would terminate before stdout finished flushing, truncating
+  // the JSON. Setting exitCode lets Node drain stdout and exit on its own.
+  await new Promise<void>((resolve) => process.stdout.write(out, () => resolve()));
+  process.exitCode = report.ok ? 0 : 1;
 }
 
 main().catch((err) => {

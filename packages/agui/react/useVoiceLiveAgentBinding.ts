@@ -40,6 +40,11 @@ export function useVoiceLiveAgentBinding(
   const configRef = useRef(config);
   configRef.current = config;
 
+  // The bridge's canSend() reads the live connection state through this ref (the bridge object is
+  // attached once and must not go stale). prevConnectionRef gates the one-time mount 'disconnected'.
+  const connectionStateRef = useRef<UseVoiceLiveReturn['connectionState']>('disconnected');
+  const prevConnectionRef = useRef<UseVoiceLiveReturn['connectionState'] | null>(null);
+
   const onEvent = useCallback(
     (event: VoiceLiveServerEvent) => {
       // Ingest first, and never let a throwing consumer callback strand the bridge: useVoiceLive
@@ -104,18 +109,34 @@ export function useVoiceLiveAgentBinding(
     ...(config.toolExecutor ? { toolExecutor } : {}),
   });
 
+  connectionStateRef.current = voice.connectionState;
+
   // Wire the write side once the session controls exist (and whenever their identity changes).
+  // canSend() reflects the live connection so a typed turn while disconnected is rejected, not dropped.
   useEffect(() => {
-    agent.attachBridge({ sendEvent: voice.sendEvent, cancelResponse: voice.cancelResponse });
+    agent.attachBridge({
+      sendEvent: voice.sendEvent,
+      cancelResponse: voice.cancelResponse,
+      canSend: () => connectionStateRef.current === 'connected',
+    });
   }, [agent, voice.sendEvent, voice.cancelResponse]);
 
-  // Reflect connection state; a drop to 'disconnected' also closes any orphaned run.
+  // Reflect connection state. Only forward 'disconnected' on a real transition *away from* a live
+  // state — never for the initial mount value, which would close the mapper before it ever connected.
   useEffect(() => {
     agent.ingestHostEvent({ type: 'connection_state', state: voice.connectionState });
-    if (voice.connectionState === 'disconnected') {
+    const prev = prevConnectionRef.current;
+    if (voice.connectionState === 'disconnected' && prev !== null && prev !== 'disconnected') {
       agent.ingestHostEvent({ type: 'disconnected' });
     }
+    prevConnectionRef.current = voice.connectionState;
   }, [agent, voice.connectionState]);
+
+  // Advertise the active transport in voice state (the agent's initial value can be stale, e.g. a
+  // default-websocket agent bound to a webrtc session).
+  useEffect(() => {
+    agent.ingestHostEvent({ type: 'transport', transport: voice.transport });
+  }, [agent, voice.transport]);
 
   // Readiness both ways: an auto-reconnect can drop `isReady` back to false without a full
   // disconnect, and consumers must not re-enable input while the replacement session is not ready.

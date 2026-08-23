@@ -128,6 +128,27 @@ describe('probeEndpoint', () => {
     expect(report.voiceReadiness.verdict).toBe('unfit');
   });
 
+  it('does not count a user-role echo as assistant output', async () => {
+    // A backend that only echoes the prompt as a user message produced no answer.
+    const runId = 'r1';
+    const echo = [
+      { type: EventType.RUN_STARTED, threadId: 't', runId },
+      { type: EventType.TEXT_MESSAGE_START, messageId: 'u1', role: 'user' },
+      { type: EventType.TEXT_MESSAGE_CONTENT, messageId: 'u1', delta: 'the prompt echoed back' },
+      { type: EventType.TEXT_MESSAGE_END, messageId: 'u1' },
+      { type: EventType.RUN_FINISHED, threadId: 't', runId },
+    ].map((e) => rec(e as unknown as BaseEvent));
+    const report = await probeEndpoint({
+      url: 'https://x/agui',
+      fetchImpl: fetchReturning(echo),
+      checkContinuity: false,
+      generateId: genId,
+    });
+    expect(report.features.textStreaming).toBe(false);
+    expect(report.voiceReadiness.answerCharCount).toBe(0);
+    expect(report.voiceReadiness.verdict).toBe('unfit');
+  });
+
   it('reports thread continuity when a second parentRunId run also streams cleanly', async () => {
     const report = await probeEndpoint({
       url: 'https://x/agui',

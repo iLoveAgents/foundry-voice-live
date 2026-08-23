@@ -107,6 +107,16 @@ describe('buildVoiceLiveUrl — proxy mode', () => {
     expect(isAgentMode).toBe(false);
   });
 
+  it('resolves BYOM profile and model from the proxy URL query (documented proxy form)', () => {
+    const resolved = buildVoiceLiveUrl({
+      proxyUrl: 'ws://localhost:8080/ws?model=my-claude&profile=byom-foundry-anthropic-messages',
+    });
+    // These feed validateConfig, so the family checks must see the profile even when it is only in
+    // the proxyUrl and not on connection.profile.
+    expect(resolved.profile).toBe('byom-foundry-anthropic-messages');
+    expect(resolved.model).toBe('my-claude');
+  });
+
   it('detects agent mode from proxy query params or the agentMode flag', () => {
     expect(buildVoiceLiveUrl({ proxyUrl: 'ws://x/ws?agentName=a&projectName=p' }).isAgentMode).toBe(
       true

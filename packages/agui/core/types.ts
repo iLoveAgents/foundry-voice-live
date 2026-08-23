@@ -45,6 +45,7 @@ export interface MapperOutput {
 export type HostEvent =
   | { type: 'connection_state'; state: ConnectionState }
   | { type: 'ready'; ready?: boolean }
+  | { type: 'transport'; transport: 'websocket' | 'webrtc' }
   | { type: 'mic'; active: boolean; muted: boolean }
   | { type: 'tool_result'; callId: string; output: unknown }
   | { type: 'tool_error'; callId: string; error: string }

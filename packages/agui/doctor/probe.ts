@@ -214,6 +214,7 @@ async function observeRun(
 
   const events: BaseEvent[] = [];
   const eventTypes: EventType[] = [];
+  const messageRoles = new Map<string, string>();
   let keepalives = 0;
   let assistantText = '';
   let deltaCount = 0;
@@ -258,10 +259,20 @@ async function observeRun(
       events.push(parsed);
       const type = (parsed as { type: EventType }).type;
       eventTypes.push(type);
+      if (type === EventType.TEXT_MESSAGE_START) {
+        const m = parsed as { messageId?: string; role?: string };
+        if (m.messageId) messageRoles.set(m.messageId, m.role ?? 'assistant');
+      }
       if (type === EventType.TEXT_MESSAGE_CONTENT) {
-        deltaCount += 1;
-        assistantText += String((parsed as { delta?: unknown }).delta ?? '');
-        if (firstTokenMs === null) firstTokenMs = Date.now() - started;
+        // Count only assistant output — a backend that merely echoes the user prompt as a user-role
+        // message must not be scored as if it produced an answer.
+        const m = parsed as { messageId?: string; delta?: unknown };
+        const role = m.messageId ? messageRoles.get(m.messageId) : 'assistant';
+        if (role === 'assistant') {
+          deltaCount += 1;
+          assistantText += String(m.delta ?? '');
+          if (firstTokenMs === null) firstTokenMs = Date.now() - started;
+        }
       }
       if (type === EventType.RUN_FINISHED && isInterruptOutcome(parsed)) sawInterrupt = true;
     }

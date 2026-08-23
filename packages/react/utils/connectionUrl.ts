@@ -34,6 +34,8 @@ export interface ResolvedConnection {
   modeLabel: string;
   /** BYOM profile in effect (standard mode only) */
   profile?: string;
+  /** Model/deployment in effect (standard mode) — resolved from the connection or a proxy URL */
+  model?: string;
 }
 
 const REALTIME_PATH = 'voice-live/realtime';
@@ -135,7 +137,10 @@ export function buildVoiceLiveUrl(connection: VoiceLiveConnectionConfig): Resolv
       mode,
       isAgentMode,
       modeLabel: isAgentMode ? 'Proxy (Foundry Agent)' : 'Proxy (Standard)',
-      profile: connection.profile,
+      // Resolve from the effective URL params so BYOM put directly in `proxyUrl` is seen too, not
+      // only `connection.profile`. Same for the model/deployment.
+      profile: parsed.searchParams.get('profile') ?? undefined,
+      model: parsed.searchParams.get('model') ?? undefined,
     };
   }
 
@@ -219,6 +224,7 @@ export function buildVoiceLiveUrl(connection: VoiceLiveConnectionConfig): Resolv
     isAgentMode: false,
     modeLabel: connection.profile ? `BYOM ${connection.profile} (${model})` : `Standard (${model})`,
     profile: connection.profile,
+    model,
   };
 }
 

@@ -146,6 +146,25 @@ describe('VoiceLiveAgent', () => {
     expect(agent.pendingRunCount).toBe(1);
   });
 
+  it('rejects a typed turn when the wire is attached but not connected (canSend false)', async () => {
+    const agent = new VoiceLiveAgent({ threadId: 't8', generateId: seq() });
+    const sent: unknown[] = [];
+    // Bridge is attached (as the binding does on mount) but the transport is not connected.
+    agent.attachBridge({
+      sendEvent: (e) => sent.push(e),
+      cancelResponse: () => {},
+      canSend: () => false,
+    });
+    agent.addMessage({ id: 'u1', role: 'user', content: 'hi' });
+    const errors: BaseEvent[] = [];
+    agent.events$.subscribe((e) => {
+      if ((e as { type: EventType }).type === EventType.RUN_ERROR) errors.push(e);
+    });
+    await agent.runAgent().catch(() => {});
+    expect(errors).toHaveLength(1); // errored cleanly, not left generating
+    expect(sent).toHaveLength(0); // nothing dropped onto a dead wire
+  });
+
   it('cancels the response on abortRun (barge-in)', () => {
     const agent = new VoiceLiveAgent({ threadId: 't6', generateId: seq() });
     let cancelled = 0;

@@ -1507,7 +1507,13 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
         if (!connectionScope.isActive) return; // disconnected while acquiring the token
         const resolvedConnection = token ? { ...currentConnection, token } : currentConnection;
 
-        const { url, isAgentMode, modeLabel } = buildVoiceLiveUrl(resolvedConnection);
+        const {
+          url,
+          isAgentMode,
+          modeLabel,
+          profile: resolvedProfile,
+          model: resolvedModel,
+        } = buildVoiceLiveUrl(resolvedConnection);
         isAgentModeRef.current = isAgentMode;
         if (transportKindRef.current !== kind) {
           // The consumer changed `connection.transport` and this attempt picks it up. The
@@ -1526,11 +1532,18 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
         if (mode === 'initial') {
           // Local compatibility warnings reach `onWarning` like the service's own `warning`
           // events, so an app can surface them in its UI instead of only in the console
-          validateConfig(currentSession ?? {}, isAgentMode, currentConnection.model, {
-            profile: currentConnection.profile,
-            foundryResourceOverride: currentConnection.foundryResourceOverride,
-            transport: kind,
-          }).forEach((warning) => {
+          // Use the profile/model resolved by buildVoiceLiveUrl so BYOM supplied directly in a
+          // proxyUrl (the documented proxy form) is validated too, not only connection.profile.
+          validateConfig(
+            currentSession ?? {},
+            isAgentMode,
+            resolvedModel ?? currentConnection.model,
+            {
+              profile: resolvedProfile ?? currentConnection.profile,
+              foundryResourceOverride: currentConnection.foundryResourceOverride,
+              transport: kind,
+            }
+          ).forEach((warning) => {
             log.warn(warning);
             safeCall('onWarning', configRef.current.onWarning, {
               message: warning,

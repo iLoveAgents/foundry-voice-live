@@ -354,6 +354,40 @@ describe('VoiceLiveAguiMapper — tool calls', () => {
     verifyStream(out);
     expect(ofType(out, EventType.RUN_FINISHED)).toHaveLength(1);
   });
+
+  it('opens a run when a function-call event arrives before response.created (WebRTC channels)', () => {
+    // The tool-call events use the control channel and can beat response.created on the data channel.
+    // Without opening a run first, the TOOL_CALL_* events would be emitted outside any run.
+    const m = mapper();
+    const out: BaseEvent[] = [];
+    const push = (e: VoiceLiveServerEvent): void => {
+      out.push(...m.handleServerEvent(e).events);
+    };
+    push({
+      type: 'response.function_call_arguments.done',
+      response_id: 'r',
+      item_id: 'fc',
+      output_index: 0,
+      call_id: 'c',
+      name: 'lookup',
+      arguments: '{}',
+    });
+    // A RUN_STARTED must precede the tool spans (verifyStream would throw otherwise).
+    expect(types(out)[0]).toBe(EventType.RUN_STARTED);
+    expect(types(out)).toContain(EventType.TOOL_CALL_START);
+    // drain to a clean close
+    out.push(...m.handleHostEvent({ type: 'tool_result', callId: 'c', output: 'ok' }).events);
+    push({ type: 'response.created', response: { id: 'r2' } });
+    push({ type: 'response.done', response: { id: 'r2', status: 'completed', output: [] } });
+    verifyStream(out);
+    expect(ofType(out, EventType.RUN_FINISHED)).toHaveLength(1);
+  });
+
+  it('reflects the active transport in voice state via a host event', () => {
+    const m = mapper();
+    m.handleHostEvent({ type: 'transport', transport: 'webrtc' });
+    expect(m.snapshot.state.transport).toBe('webrtc');
+  });
 });
 
 describe('VoiceLiveAguiMapper — barge-in, cancel, error', () => {
@@ -544,6 +578,19 @@ describe('VoiceLiveAguiMapper — dedup, idle, reconnect, close', () => {
     expect(ofType(out, EventType.RUN_FINISHED)).toHaveLength(2); // stale run closed + the new one
     expect(ofType(out, EventType.RUN_STARTED)).toHaveLength(2);
     expect(m.snapshot.state.currentResponseId).toBeNull();
+  });
+
+  it('revives the close guard on session.created so a later run can still be closed', () => {
+    // The binding emits an initial 'disconnected' before the first connection, which would set the
+    // close guard and make a later abortRun()/disconnect a no-op. session.created must reset it.
+    const m = mapper();
+    m.handleHostEvent({ type: 'disconnected' }); // closeInternal('session_end') → closed = true
+    m.handleServerEvent({ type: 'session.created', session: { id: 's', model: 'gpt-4.1' } });
+    m.handleServerEvent({ type: 'response.created', response: { id: 'r' } });
+    const closed = m.close('cancelled');
+    expect(closed.events.map((e) => (e as { type: EventType }).type)).toContain(
+      EventType.RUN_FINISHED
+    );
   });
 
   it('resets isReady when the host reports the session is no longer ready', () => {

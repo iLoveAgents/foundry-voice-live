@@ -134,6 +134,8 @@ export class VoiceLiveAguiMapper {
             )
           : this.emit(this.stateDelta({ isReady: false }));
       }
+      case 'transport':
+        return this.emit(this.stateDelta({ transport: event.transport }));
       case 'mic':
         return this.emit(this.stateDelta({ isMicActive: event.active, isMuted: event.muted }));
       case 'tool_result': {
@@ -307,6 +309,9 @@ export class VoiceLiveAguiMapper {
     if (this.policy.isRunActive) {
       events.push(...this.applyDecisions(this.policy.onForceClose('interrupted')).events);
     }
+    // A fresh session revives a mapper that a prior (possibly spurious mount-time) disconnect closed,
+    // so a later abortRun()/disconnect can still close the run.
+    this.closed = false;
     // A fresh session invalidates every per-conversation id
     this.openMessage = null;
     this.openToolCalls.clear();
@@ -482,7 +487,9 @@ export class VoiceLiveAguiMapper {
       this.openToolCalls.set(toolCallId, call);
     }
     const name = this.toolNames.get(event.item_id);
-    const events: BaseEvent[] = [];
+    // Over WebRTC a function-call event can arrive before response.created (separate channels).
+    // Ensure a run is open so the tool spans land inside a run and reach the agent, not just events$.
+    const events: BaseEvent[] = this.applyDecisions([this.policy.onTurnSignal()]).events;
     if (!call.started && name) {
       call.started = true;
       events.push(
@@ -513,7 +520,8 @@ export class VoiceLiveAguiMapper {
       started: false,
     };
     const name = event.name ?? this.toolNames.get(event.item_id) ?? 'unknown';
-    const events: BaseEvent[] = [];
+    // WebRTC can deliver this before response.created — open a run so the tool spans stay in a run.
+    const events: BaseEvent[] = this.applyDecisions([this.policy.onTurnSignal()]).events;
     if (!call.started) {
       events.push(
         this.base(EventType.TOOL_CALL_START, {

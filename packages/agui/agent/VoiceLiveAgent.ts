@@ -37,6 +37,12 @@ export interface VoiceSessionBridge {
   sendEvent: (event: VoiceLiveClientEvent) => void;
   /** Cancel the in-flight response (barge-in / stop button). */
   cancelResponse: () => void;
+  /**
+   * Whether a send would actually reach the wire right now. The bridge is attached on mount, before
+   * the transport connects, so a typed turn submitted while disconnected/reconnecting would be
+   * silently dropped and leave the UI generating. Defaults to true when not provided.
+   */
+  canSend?: () => boolean;
 }
 
 export interface VoiceLiveAgentOptions {
@@ -186,7 +192,11 @@ export class VoiceLiveAgent extends AbstractAgent {
   private applyBetweenRunEvent(ev: BaseEvent): void {
     const type = (ev as { type: EventType }).type;
     if (type === EventType.STATE_SNAPSHOT || type === EventType.STATE_DELTA) {
-      this.setState(toAguiState(this.mapper.snapshot.state) as State);
+      // Merge the voice snapshot into current state rather than replacing it, so any app-specific
+      // fields a consumer stored alongside `voice` survive a between-run update (an in-run STATE_DELTA
+      // patches only `/voice/...`, so this keeps the two paths consistent).
+      const current = (this.state ?? {}) as Record<string, unknown>;
+      this.setState({ ...current, ...toAguiState(this.mapper.snapshot.state) } as State);
     }
   }
 
@@ -239,10 +249,13 @@ export class VoiceLiveAgent extends AbstractAgent {
     const text =
       last && last.role === 'user' && typeof last.content === 'string' ? last.content.trim() : '';
 
-    if (!text || !this.bridge || (last && this.forwardedUserIds.has(last.id))) {
-      // Nothing to say, or no live session — a one-shot error run keeps the UI out of "generating".
+    const canSend = !!this.bridge && (this.bridge.canSend?.() ?? true);
+    if (!text || !canSend || (last && this.forwardedUserIds.has(last.id))) {
+      // Nothing to say, or the wire can't reach a live session (disconnected/reconnecting) — a
+      // one-shot error run keeps the UI out of "generating" and lets the user retry, instead of
+      // opening a run and marking the message forwarded while the commands are silently dropped.
       return this.errorRun(
-        !this.bridge ? 'Voice session is not connected.' : 'No user message to send.'
+        !canSend ? 'Voice session is not connected.' : 'No user message to send.'
       );
     }
 
