@@ -27,7 +27,10 @@ import type { TranscriptEntry } from '../lib/useTranscripts';
  */
 export function AguiVoice(): JSX.Element {
   const [transport, setTransport] = useState<'websocket' | 'webrtc'>('websocket');
-  const agent = useVoiceLiveAgent({ threadId: 'agui-demo', transport });
+  // The agent is transport-agnostic — the connection below carries the transport and the status row
+  // reads the live value from `voice.transport`. We deliberately don't pass `transport` into the
+  // agent: its options are read once on mount, so it would go stale when you flip the radio.
+  const agent = useVoiceLiveAgent({ threadId: 'agui-demo' });
 
   const config = useMemo(
     () =>

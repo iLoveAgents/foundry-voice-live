@@ -103,9 +103,18 @@ function resolveModelFamily(model: string | undefined, profile: string | undefin
   if (profile === 'byom-azure-openai-realtime') {
     return { realtimeFamily: true, nativeAudio: true, azureRealtime: false, known: true };
   }
-  if (profile) {
+  if (
+    profile === 'byom-azure-openai-chat-completion' ||
+    profile === 'byom-foundry-anthropic-messages'
+  ) {
     // chat-completion / anthropic-messages: a cascaded text model behind Azure STT/TTS
     return { realtimeFamily: false, nativeAudio: false, azureRealtime: false, known: true };
+  }
+  if (profile) {
+    // An unknown / future BYOM profile (the type is intentionally extensible): we cannot infer the
+    // model family from a deployment name, so leave it unknown and skip the family-specific checks
+    // rather than emit warnings that may be wrong.
+    return { realtimeFamily: false, nativeAudio: false, azureRealtime: false, known: false };
   }
   const name = model?.toLowerCase();
   if (!name)

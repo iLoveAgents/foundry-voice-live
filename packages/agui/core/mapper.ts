@@ -52,6 +52,21 @@ const DROP_ALWAYS = new Set<string>([
   'rtc.call.sdp.created',
 ]);
 
+/**
+ * Turn a non-string tool output into a string for `TOOL_CALL_RESULT.content`, without ever
+ * producing `undefined` or throwing: `JSON.stringify` returns `undefined` for `undefined`/functions
+ * and throws on `BigInt`/circular structures, either of which would emit an invalid AG-UI event or
+ * crash the mapper. Fall back to `String(...)` so the content is always a valid string.
+ */
+function stringifyToolOutput(output: unknown): string {
+  try {
+    const json = JSON.stringify(output);
+    return json === undefined ? String(output) : json;
+  } catch {
+    return String(output);
+  }
+}
+
 export class VoiceLiveAguiMapper {
   private readonly threadId: string;
   private readonly generateId: () => string;
@@ -636,7 +651,7 @@ export class VoiceLiveAguiMapper {
   }
 
   private toolResult(callId: string, output: unknown): BaseEvent[] {
-    const content = typeof output === 'string' ? output : JSON.stringify(output);
+    const content = typeof output === 'string' ? output : stringifyToolOutput(output);
     return [
       this.base(EventType.TOOL_CALL_RESULT, {
         messageId: toolResultMessageId(callId),

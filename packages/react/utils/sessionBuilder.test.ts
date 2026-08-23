@@ -610,6 +610,29 @@ describe('validateConfig — BYOM profiles', () => {
     ).toBe(true);
   });
 
+  it('skips model-family checks for an unknown/future profile instead of guessing', () => {
+    // `VoiceLiveProfile` is intentionally extensible. A profile we do not recognize gives us no way
+    // to infer the model family from a deployment name, so we must not emit family-specific warnings
+    // that could be wrong.
+    const FUTURE = { profile: 'byom-some-future-backend' };
+    expect(
+      validateConfig(
+        { turnDetection: { type: 'semantic_vad' } },
+        false,
+        'my-deploy',
+        FUTURE
+      ).filter((w) => w.includes('semantic_vad'))
+    ).toEqual([]);
+    expect(
+      validateConfig(
+        { inputAudioTranscription: { model: 'whisper-1' as const } },
+        false,
+        'my-deploy',
+        FUTURE
+      ).filter((w) => w.includes('whisper-1'))
+    ).toEqual([]);
+  });
+
   it('knows a realtime profile is native audio (no interim responses), a chat profile is not', () => {
     const interim = {
       interimResponse: {

@@ -267,6 +267,23 @@ describe('VoiceLiveAguiMapper — tool calls', () => {
     expect(toolStart.parentMessageId).toBe('fc1');
   });
 
+  it('produces a valid string tool result for non-serializable outputs (no throw, no undefined)', () => {
+    // JSON.stringify returns undefined for `undefined`/functions and throws on BigInt/circular —
+    // the mapper must still emit a string TOOL_CALL_RESULT.content in every case.
+    const circular: Record<string, unknown> = {};
+    circular.self = circular;
+    const cases: unknown[] = [undefined, 10n, circular, () => 0];
+    for (const output of cases) {
+      const m = mapper();
+      const result = first(
+        m.handleHostEvent({ type: 'tool_result', callId: 'c', output }).events,
+        EventType.TOOL_CALL_RESULT
+      );
+      expect(typeof result.content).toBe('string');
+      expect((result.content as string).length).toBeGreaterThan(0);
+    }
+  });
+
   it('buffers arguments until the tool name is known, emitting one clean START at .done', () => {
     const m = mapper();
     const out: BaseEvent[] = [];
