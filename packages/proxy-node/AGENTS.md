@@ -67,6 +67,9 @@ docker-compose.yml
   `docker build -f packages/proxy-node/Dockerfile .`; `docker-compose.yml` sets that context
 - Only `ProxyRequestError`s (bad client parameters) are echoed to the browser; every other failure
   is reported as a generic message and logged server-side
+- BYOM: `?profile=` + `?model=<deployment>` are forwarded in standard mode only, with
+  `foundry-resource-override`. `ProxyRequestError` for profile-without-model and profile-in-agent-mode.
+  No env default for the profile on purpose (it must match the deployment the client names).
 - Foundry Agents params forwarded upstream: `agent-name`, `agent-project-name`, `conversation-id`,
   `agent-version`, `agent-authentication-identity-client-id`, `foundry-resource-override`
 - `.env` agent fallback (`FOUNDRY_AGENT_NAME`/`FOUNDRY_PROJECT_NAME`) applies only when the URL has no `model` param

@@ -320,3 +320,94 @@ describe('redactUrl (encoded and differently-cased parameter names)', () => {
     expect(redactUrl(url)).toBe(url);
   });
 });
+
+describe('buildVoiceLiveUrl — BYOM profile', () => {
+  it('appends profile to a standard connection and reports it', () => {
+    const result = buildVoiceLiveUrl({
+      resourceName: 'r',
+      apiKey: 'k',
+      model: 'my-claude-prod',
+      profile: 'byom-foundry-anthropic-messages',
+    });
+    expect(params(result.url).get('model')).toBe('my-claude-prod');
+    expect(params(result.url).get('profile')).toBe('byom-foundry-anthropic-messages');
+    expect(result.mode).toBe('standard');
+    expect(result.isAgentMode).toBe(false); // BYOM must never strip instructions/tools
+    expect(result.profile).toBe('byom-foundry-anthropic-messages');
+    expect(result.modeLabel).toContain('BYOM');
+  });
+
+  it('percent-encodes the profile value', () => {
+    const { url } = buildVoiceLiveUrl({
+      resourceName: 'r',
+      apiKey: 'k',
+      model: 'd',
+      profile: 'byom future&mode' as never,
+    });
+    expect(url).toContain('profile=byom%20future%26mode');
+  });
+
+  it('forwards foundryResourceOverride in standard mode (cross-resource BYOM)', () => {
+    const { url } = buildVoiceLiveUrl({
+      resourceName: 'voice-res',
+      apiKey: 'k',
+      model: 'gpt-5-deploy',
+      profile: 'byom-azure-openai-chat-completion',
+      foundryResourceOverride: 'model-res',
+    });
+    expect(params(url).get('foundry-resource-override')).toBe('model-res');
+  });
+
+  it('refuses a profile without a deployment name instead of defaulting to gpt-realtime', () => {
+    expect(() =>
+      buildVoiceLiveUrl({ resourceName: 'r', apiKey: 'k', profile: 'byom-azure-openai-realtime' })
+    ).toThrow(/requires connection\.model/);
+  });
+
+  it('refuses a profile together with a Foundry agent', () => {
+    expect(() =>
+      buildVoiceLiveUrl({
+        resourceName: 'r',
+        token: 't',
+        agentName: 'a',
+        projectName: 'p',
+        profile: 'byom-azure-openai-chat-completion',
+      })
+    ).toThrow(/cannot be combined with agentName/);
+  });
+
+  it('forwards profile and foundryResourceOverride to the proxy, replacing stale values', () => {
+    const { url, profile } = buildVoiceLiveUrl({
+      proxyUrl: 'ws://proxy.local/ws?model=d&profile=byom-azure-openai-realtime',
+      profile: 'byom-azure-openai-chat-completion',
+      foundryResourceOverride: 'other',
+    });
+    const p = new URL(url).searchParams;
+    expect(p.get('profile')).toBe('byom-azure-openai-chat-completion');
+    expect(p.get('foundryResourceOverride')).toBe('other');
+    expect(profile).toBe('byom-azure-openai-chat-completion');
+  });
+
+  it('leaves a proxy URL byte-for-byte untouched when no BYOM settings are given', () => {
+    const raw = 'ws://proxy.local/ws?model=gpt-realtime';
+    expect(buildVoiceLiveUrl({ proxyUrl: raw }).url).toBe(raw);
+  });
+
+  it('emits the profile on the WebRTC control channel path too', () => {
+    const { url } = buildVoiceLiveUrl({
+      resourceName: 'r',
+      apiKey: 'k',
+      model: 'd',
+      profile: 'byom-azure-openai-realtime',
+      transport: 'webrtc',
+    });
+    expect(url).toContain('/voice-live/realtime/calls?');
+    expect(params(url).get('profile')).toBe('byom-azure-openai-realtime');
+  });
+
+  it('is not a secret: redactUrl leaves it intact', () => {
+    const url =
+      'wss://r.services.ai.azure.com/voice-live/realtime?model=d&profile=byom-azure-openai-realtime';
+    expect(redactUrl(url)).toBe(url);
+  });
+});

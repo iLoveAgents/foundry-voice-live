@@ -32,6 +32,8 @@ export interface ResolvedConnection {
   isAgentMode: boolean;
   /** Human-readable label for logs */
   modeLabel: string;
+  /** BYOM profile in effect (standard mode only) */
+  profile?: string;
 }
 
 const REALTIME_PATH = 'voice-live/realtime';
@@ -118,6 +120,11 @@ export function buildVoiceLiveUrl(connection: VoiceLiveConnectionConfig): Resolv
       overrides.transport = 'websocket';
     }
     if (connection.apiVersion) overrides.apiVersion = connection.apiVersion;
+    // BYOM travels as the proxy's own query parameters; the proxy validates the combination
+    if (connection.profile) overrides.profile = connection.profile;
+    if (connection.foundryResourceOverride) {
+      overrides.foundryResourceOverride = connection.foundryResourceOverride;
+    }
     for (const [key, value] of Object.entries(overrides)) {
       parsed.searchParams.set(key, value);
     }
@@ -128,6 +135,7 @@ export function buildVoiceLiveUrl(connection: VoiceLiveConnectionConfig): Resolv
       mode,
       isAgentMode,
       modeLabel: isAgentMode ? 'Proxy (Foundry Agent)' : 'Proxy (Standard)',
+      profile: connection.profile,
     };
   }
 
@@ -143,6 +151,12 @@ export function buildVoiceLiveUrl(connection: VoiceLiveConnectionConfig): Resolv
 
   // ===== Foundry Agents =====
   if (mode === 'foundry-agent') {
+    if (connection.profile) {
+      // Not a compatibility warning: the agent branch emits no `model=`, so the URL cannot exist
+      throw new Error(
+        'connection.profile (BYOM) cannot be combined with agentName — a Foundry agent owns its model.'
+      );
+    }
     if (!connection.projectName) {
       throw new Error('projectName is required together with agentName (Foundry Agents).');
     }
@@ -175,8 +189,21 @@ export function buildVoiceLiveUrl(connection: VoiceLiveConnectionConfig): Resolv
   }
 
   // ===== Standard (model) mode =====
+  if (connection.profile && !connection.model) {
+    // Checked before the default applies: a BYOM connection that silently fell back to
+    // gpt-realtime would *work* — and answer from the wrong model, which is the worst failure
+    throw new Error(
+      'connection.profile (BYOM) requires connection.model set to the deployment name from the Foundry portal.'
+    );
+  }
   const model = connection.model || DEFAULT_MODEL;
   let url = `${base}&model=${encodeURIComponent(model)}`;
+  if (connection.profile) {
+    url += `&profile=${encodeURIComponent(connection.profile)}`;
+  }
+  if (connection.foundryResourceOverride) {
+    url += `&foundry-resource-override=${encodeURIComponent(connection.foundryResourceOverride)}`;
+  }
 
   if (connection.token) {
     url += `&Authorization=${encodeURIComponent(`Bearer ${connection.token}`)}`;
@@ -186,7 +213,13 @@ export function buildVoiceLiveUrl(connection: VoiceLiveConnectionConfig): Resolv
     throw new Error('Standard mode requires apiKey or token (or use proxyUrl).');
   }
 
-  return { url, mode, isAgentMode: false, modeLabel: `Standard (${model})` };
+  return {
+    url,
+    mode,
+    isAgentMode: false,
+    modeLabel: connection.profile ? `BYOM ${connection.profile} (${model})` : `Standard (${model})`,
+    profile: connection.profile,
+  };
 }
 
 /**

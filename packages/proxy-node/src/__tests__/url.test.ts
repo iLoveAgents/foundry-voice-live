@@ -525,3 +525,80 @@ describe("redactUrl (encoded parameter names)", () => {
     ).not.toContain("SECRET");
   });
 });
+
+describe("buildAzureUrl — BYOM profile", () => {
+  it("forwards profile and foundry-resource-override in standard mode", async () => {
+    const result = await buildAzureUrl(
+      {
+        model: "my-claude-prod",
+        profile: "byom-foundry-anthropic-messages",
+        foundryResourceOverride: "model-res",
+      },
+      cfg({ foundryApiKey: API_KEY }),
+      deps()
+    );
+    const { pathname, params } = parseUrl(result.url);
+    expect(pathname).toBe(REALTIME_PATH);
+    expect(params.get("model")).toBe("my-claude-prod");
+    expect(params.get("profile")).toBe("byom-foundry-anthropic-messages");
+    expect(params.get("foundry-resource-override")).toBe("model-res");
+    expect(result.mode).toBe("standard");
+    expect(result.authMethod).toBe("api-key"); // auth resolution is unchanged by BYOM
+  });
+
+  it("percent-encodes the profile upstream", async () => {
+    const result = await buildAzureUrl(
+      { model: "d", profile: "byom x&y" },
+      cfg({ foundryApiKey: API_KEY }),
+      deps()
+    );
+    expect(result.url).toContain("profile=byom%20x%26y");
+  });
+
+  it("rejects a profile without a model as a client error", async () => {
+    await expect(
+      buildAzureUrl(
+        { profile: "byom-azure-openai-realtime" },
+        cfg({ foundryApiKey: API_KEY }),
+        deps()
+      )
+    ).rejects.toThrow(/requires the model parameter/);
+  });
+
+  it("rejects a profile in Foundry agent mode as a client error", async () => {
+    await expect(
+      buildAzureUrl(
+        { agentName: "a", projectName: "p", profile: "byom-azure-openai-chat-completion" },
+        cfg(),
+        deps()
+      )
+    ).rejects.toThrow(/not supported in Foundry agent mode/);
+  });
+
+  it("stays in standard mode when the proxy has a .env agent configured", async () => {
+    // A BYOM request always carries `model`, which suppresses the .env agent fallback — the
+    // proxy must not turn it into an agent session (and then reject the profile)
+    const result = await buildAzureUrl(
+      { model: "my-gpt5", profile: "byom-azure-openai-chat-completion" },
+      cfg({
+        foundryApiKey: API_KEY,
+        foundryAgentName: "env-agent",
+        foundryProjectName: "env-project",
+      }),
+      deps()
+    );
+    expect(result.mode).toBe("standard");
+    expect(parseUrl(result.url).params.has("agent-name")).toBe(false);
+    expect(parseUrl(result.url).params.get("profile")).toBe("byom-azure-openai-chat-completion");
+  });
+
+  it("emits the profile on the WebRTC control channel path", async () => {
+    const result = await buildAzureUrl(
+      { model: "my-rt", profile: "byom-azure-openai-realtime", transport: "webrtc" },
+      cfg({ foundryApiKey: API_KEY }),
+      deps()
+    );
+    expect(parseUrl(result.url).pathname).toBe(REALTIME_CALLS_PATH);
+    expect(parseUrl(result.url).params.get("profile")).toBe("byom-azure-openai-realtime");
+  });
+});

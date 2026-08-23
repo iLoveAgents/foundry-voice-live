@@ -29,6 +29,12 @@ const samples: Record<string, SampleInfo[]> = {
       description: 'azure-realtime model with native voices — ~100 ms lower latency',
     },
     {
+      path: '/byom',
+      title: 'Bring Your Own Model',
+      description:
+        'Voice Live around a model deployed in your Foundry resource — Claude, Grok, gpt-5.x, fine-tunes',
+    },
+    {
       path: '/voice-proxy',
       title: 'Voice with Proxy',
       description: 'Secure backend proxy pattern with API key protection',

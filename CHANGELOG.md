@@ -3,6 +3,24 @@
 All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### `@iloveagents/foundry-voice-live-react`
+
+#### Added
+- **Bring Your Own Model** — `connection.profile` (`byom-azure-openai-realtime` | `byom-azure-openai-chat-completion` | `byom-foundry-anthropic-messages`) runs Voice Live around a model deployed in your own Foundry resource; `model` is then the deployment name and is required. `foundryResourceOverride` now also applies to standard-mode (cross-resource BYOM). `validateConfig` takes a fourth `connection` argument and derives model capabilities from the profile, because a deployment name says nothing about the model — without this, every BYOM connection produced false `semantic_vad` / `whisper-1` warnings.
+
+#### Fixed
+- `VoiceLiveModel` (and the new `VoiceLiveProfile`) now actually accept arbitrary strings as documented. The `string & Record<string, never>` idiom used for "extensible union" rejects every non-literal string under strict mode; it is `string & {}` now.
+
+### `@iloveagents/foundry-voice-live-proxy-node`
+
+#### Added
+- `?profile=` (BYOM) and `?foundryResourceOverride=` are forwarded in standard mode. A profile without `model`, or in agent mode, is rejected as a client error. The profile is logged with the mode and advertised on `GET /`.
+
+### Examples
+- `/byom` page (`VITE_BYOM_PROFILE` + `VITE_BYOM_MODEL`); `directOrProxyConnection()` passes `profile` / `foundryResourceOverride` in both direct and proxy shapes.
+
 ## [0.5.0] - 2026-08-18
 
 Targets Voice Live API **`2026-07-15` (GA)**. This release contains breaking changes (see **Removed** / **Changed**).

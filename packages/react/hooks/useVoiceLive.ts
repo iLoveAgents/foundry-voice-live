@@ -1526,15 +1526,17 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
         if (mode === 'initial') {
           // Local compatibility warnings reach `onWarning` like the service's own `warning`
           // events, so an app can surface them in its UI instead of only in the console
-          validateConfig(currentSession ?? {}, isAgentMode, currentConnection.model).forEach(
-            (warning) => {
-              log.warn(warning);
-              safeCall('onWarning', configRef.current.onWarning, {
-                message: warning,
-                code: CLIENT_CONFIG_WARNING_CODE,
-              });
-            }
-          );
+          validateConfig(currentSession ?? {}, isAgentMode, currentConnection.model, {
+            profile: currentConnection.profile,
+            foundryResourceOverride: currentConnection.foundryResourceOverride,
+            transport: kind,
+          }).forEach((warning) => {
+            log.warn(warning);
+            safeCall('onWarning', configRef.current.onWarning, {
+              message: warning,
+              code: CLIENT_CONFIG_WARNING_CODE,
+            });
+          });
           // A consumer may `disconnect()` from `onWarning`. Continuing would open a socket whose
           // scope is already aborted — its close handler runs before `connect()` and the transport
           // would be left open with nothing able to shut it down.

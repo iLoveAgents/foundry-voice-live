@@ -16,6 +16,7 @@ import { FunctionCalling } from './pages/FunctionCalling';
 import { InterimResponse } from './pages/InterimResponse';
 import { McpTools } from './pages/McpTools';
 import { AzureRealtime } from './pages/AzureRealtime';
+import { Byom } from './pages/Byom';
 import { AudioVisualizer } from './pages/AudioVisualizer';
 import { VisemeExample } from './pages/VisemeExample';
 import { Live2DAvatarExample } from './pages/Live2DAvatarExample';
@@ -76,6 +77,7 @@ function App(): JSX.Element {
           <Route path="/interim-response" element={<InterimResponse />} />
           <Route path="/mcp-tools" element={<McpTools />} />
           <Route path="/azure-realtime" element={<AzureRealtime />} />
+          <Route path="/byom" element={<Byom />} />
           <Route path="/audio-visualizer" element={<AudioVisualizer />} />
           <Route path="/viseme" element={<VisemeExample />} />
           <Route path="/live2d-avatar" element={<Live2DAvatarExample />} />

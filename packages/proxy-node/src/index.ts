@@ -340,11 +340,16 @@ async function connectToAzure(
 
   const { agentName, projectName, source } = resolveAgent(query, config);
   const model = mode === "standard" ? query.model || DEFAULT_MODEL : undefined;
-  logger.info(`[Proxy] Mode: ${MODE_LABELS[mode]}`, {
-    mode,
-    transport,
-    ...(mode === "foundry-agent" ? { agentName, projectName, source } : { model }),
-  });
+  logger.info(
+    `[Proxy] Mode: ${MODE_LABELS[mode]}${mode === "standard" && query.profile ? ` (BYOM ${query.profile})` : ""}`,
+    {
+      mode,
+      transport,
+      ...(mode === "foundry-agent"
+        ? { agentName, projectName, source }
+        : { model, ...(query.profile ? { profile: query.profile } : {}) }),
+    }
+  );
   logger.info(`[Proxy] Auth: ${AUTH_LABELS[authMethod]}`, { authMethod });
   logger.info(`[Proxy] Connecting to Azure (${transport}): ${redactUrl(url)}`, {
     url: redactUrl(url),
@@ -651,7 +656,9 @@ app.get("/", (_req, res) => {
       agentVersion: "Pin an agent version (agent mode)",
       agentAuthenticationIdentityClientId:
         "Managed identity client ID for agent authentication (agent mode)",
-      foundryResourceOverride: "Foundry resource override (agent mode)",
+      profile:
+        "BYOM profile (byom-azure-openai-realtime | byom-azure-openai-chat-completion | byom-foundry-anthropic-messages); requires model=<deployment name>",
+      foundryResourceOverride: "Foundry resource override (agent mode, or BYOM cross-resource)",
       transport: "websocket (default) or webrtc (preview, WebRTC control channel)",
       apiVersion: "Override the API version for this connection",
     },

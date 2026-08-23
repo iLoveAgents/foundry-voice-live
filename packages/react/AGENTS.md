@@ -62,6 +62,11 @@ Tests: `core/*.test.ts` (transports, audio, avatar, mic, reconnect), `hooks/useV
   with `computeBackoffDelay`, sets `connectionState: 'reconnecting'`, re-attaches the mic track
   (WebRTC) and does not resend the greeting (`greetingSentRef`). `connection.getToken` is awaited on
   every attempt.
+- **BYOM (`connection.profile`) is a modifier of standard mode, not a mode**: it adds `?profile=`
+  and keeps `isAgentMode: false` (agent mode would strip the user's instructions/tools). With a
+  profile `model` is a _deployment name_, so `validateConfig` must derive capabilities from the
+  profile via `resolveModelFamily` — never from the model string. The URL builder throws on
+  profile-without-model (a silent `gpt-realtime` fallback would answer from the wrong model).
 - **Agent mode** is auto-detected from a non-empty `agentName` (connection config or proxy URL params — the proxy uses the same rule) or forced via
   `agentMode`; `buildAgentSessionConfig()` strips the agent-owned fields listed in `AGENT_OWNED_FIELDS`
   (`instructions`, `temperature`, `tools`, `toolChoice`, `maxResponseOutputTokens`, `reasoningEffort`,
