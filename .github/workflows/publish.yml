@@ -57,7 +57,22 @@ jobs:
           # GitHub-side (permissions/context) rather than the npm trusted-publisher config
           echo "OIDC request url set: ${ACTIONS_ID_TOKEN_REQUEST_URL:+yes}"
           echo "OIDC request token set: ${ACTIONS_ID_TOKEN_REQUEST_TOKEN:+yes}"
-          (cd packages/react && npm publish --provenance --access public)
-          (cd packages/proxy-node && npm publish --provenance --access public)
-          # Requires a one-time Trusted Publisher on npmjs.com for this package (see CLAUDE.md).
-          (cd packages/agui && npm publish --provenance --access public)
+          # Idempotent: publish a package only if its exact version is not already on npm. This lets
+          # a tag re-run safely, tolerates a partially-published release, and means a package whose
+          # version has not changed since the last release (e.g. a package bootstrapped out of band)
+          # is skipped instead of failing the whole job. Each package still needs its own Trusted
+          # Publisher on npmjs.com (see CLAUDE.md).
+          publish() {
+            local dir="$1" name version
+            name=$(node -p "require('./$dir/package.json').name")
+            version=$(node -p "require('./$dir/package.json').version")
+            if npm view "$name@$version" version >/dev/null 2>&1; then
+              echo "skip: $name@$version is already published"
+            else
+              echo "publish: $name@$version"
+              (cd "$dir" && npm publish --provenance --access public)
+            fi
+          }
+          publish packages/react
+          publish packages/proxy-node
+          publish packages/agui
