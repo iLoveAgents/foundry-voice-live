@@ -11,8 +11,10 @@
  *  2. **No premature close** — the run does not close while the cluster still owes a tool output
  *     or a declared call's arguments have not arrived.
  *
- * A house rule from the repo: a fuzz test that cannot fail a mutation of the code is untested, so
- * `runPolicy.fuzz.mutation.test` (below) checks that a deliberately broken policy is caught.
+ * A house rule from the repo: a fuzz test that cannot fail a mutation of the code is untested. This
+ * one was validated by deliberately breaking the policy (e.g. closing the run while a tool output is
+ * still owed, or dropping the WebRTC pending-declared-calls count) and confirming a seed fails —
+ * preserve that property when editing either the policy or this model.
  */
 
 import { describe, it, expect } from 'vitest';

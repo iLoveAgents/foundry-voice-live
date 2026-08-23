@@ -18,8 +18,15 @@ interface E {
   [k: string]: unknown;
 }
 
-/** Verify one run's worth of events (RUN_STARTED … terminal). Throws on the first violation. */
-export function verifyRun(events: BaseEvent[]): void {
+/**
+ * Verify one run's worth of events (RUN_STARTED … terminal). Throws on the first violation.
+ *
+ * `requireTerminal` (default true) also asserts the run actually ended with RUN_FINISHED/RUN_ERROR;
+ * `verifyStream` sets it false for a trailing segment, since a live stream can legitimately end
+ * mid-turn (the user spoke but the assistant has not answered yet).
+ */
+export function verifyRun(events: BaseEvent[], opts: { requireTerminal?: boolean } = {}): void {
+  const requireTerminal = opts.requireTerminal ?? true;
   const e = events as E[];
   const openMessages = new Set<string>();
   const openTools = new Set<string>();
@@ -31,7 +38,7 @@ export function verifyRun(events: BaseEvent[]): void {
       throw new Error(`event '${ev.type}' after the run finished`);
     }
     if (!started && ev.type !== EventType.RUN_STARTED && ev.type !== EventType.RUN_ERROR) {
-      throw new Error(`first event must be RUN_STARTED, got '${ev.type}'`);
+      throw new Error(`first event must be RUN_STARTED or RUN_ERROR, got '${ev.type}'`);
     }
     switch (ev.type) {
       case EventType.RUN_STARTED:
@@ -81,6 +88,10 @@ export function verifyRun(events: BaseEvent[]): void {
         break;
     }
   }
+
+  if (requireTerminal && started && !finished) {
+    throw new Error('run did not terminate with RUN_FINISHED or RUN_ERROR');
+  }
 }
 
 /**
@@ -119,5 +130,6 @@ export function verifyStream(events: BaseEvent[]): void {
       inRun = false;
     }
   }
-  if (current.length) verifyRun(current);
+  // The trailing segment may be a run still in flight (the stream ended mid-turn), which is legal.
+  if (current.length) verifyRun(current, { requireTerminal: false });
 }
