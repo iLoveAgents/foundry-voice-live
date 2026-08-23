@@ -43,7 +43,10 @@ function parseArgs(argv: string[]): Args {
     } else if (a === '--bearer') {
       args.headers['authorization'] = `Bearer ${rest[++i] ?? ''}`;
     } else if (a === '--timeout') {
-      args.timeoutMs = Number(rest[++i]);
+      // Only accept a positive finite number; otherwise leave it unset so the default applies.
+      // (An unvalidated NaN would make setTimeout fire immediately and the probe fail at once.)
+      const n = Number(rest[++i]);
+      if (Number.isFinite(n) && n > 0) args.timeoutMs = n;
     } else if (a === '--prompt') {
       args.prompt = rest[++i];
     } else if (a === '--no-continuity') {

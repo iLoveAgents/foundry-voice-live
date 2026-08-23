@@ -341,7 +341,9 @@ async function connectToAzure(
   const { agentName, projectName, source } = resolveAgent(query, config);
   const model = mode === "standard" ? query.model || DEFAULT_MODEL : undefined;
   logger.info(
-    `[Proxy] Mode: ${MODE_LABELS[mode]}${mode === "standard" && query.profile ? ` (BYOM ${query.profile})` : ""}`,
+    // Keep the message constant — `query.profile` is user-controlled, so interpolating it invites
+    // log forging. The value travels in the structured `profile` field below.
+    `[Proxy] Mode: ${MODE_LABELS[mode]}${mode === "standard" && query.profile ? " (BYOM)" : ""}`,
     {
       mode,
       transport,
