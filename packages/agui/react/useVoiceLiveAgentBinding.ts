@@ -18,6 +18,7 @@
 import { useCallback, useEffect, useRef } from 'react';
 import { useVoiceLive } from '@iloveagents/foundry-voice-live-react';
 import type {
+  ToolResult,
   UseVoiceLiveConfig,
   UseVoiceLiveReturn,
   VoiceLiveServerEvent,
@@ -41,9 +42,41 @@ export function useVoiceLiveAgentBinding(
 
   const onEvent = useCallback(
     (event: VoiceLiveServerEvent) => {
-      configRef.current.onEvent?.(event);
+      // Ingest first, and never let a throwing consumer callback strand the bridge: useVoiceLive
+      // catches exceptions around this wrapper, so if the caller's onEvent threw before we ingested,
+      // the run would hang until the idle watchdog. Ingest is guaranteed; the callback is guarded.
       const { runOpened } = agent.ingestServerEvent(event);
       if (runOpened) void agent.pump();
+      try {
+        configRef.current.onEvent?.(event);
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.error('[useVoiceLiveAgentBinding] consumer onEvent threw:', err);
+      }
+    },
+    [agent]
+  );
+
+  // Forward tool outputs the app produces into the agent as `tool_result`/`tool_error`, so the
+  // mapper can emit TOOL_CALL_RESULT and close the tool cluster (Voice Live never echoes the output).
+  const toolExecutor = useCallback(
+    async (name: string, args: string, callId: string): Promise<void | ToolResult> => {
+      const original = configRef.current.toolExecutor;
+      try {
+        const result = original ? await original(name, args, callId) : undefined;
+        // A returned result is auto-sent by useVoiceLive; mirror it to the agent. `undefined` means
+        // the app will send it later via sendToolResult (wrapped below), so don't forward here.
+        if (result !== undefined)
+          agent.ingestHostEvent({ type: 'tool_result', callId, output: result });
+        return result;
+      } catch (err) {
+        agent.ingestHostEvent({
+          type: 'tool_error',
+          callId,
+          error: err instanceof Error ? err.message : String(err),
+        });
+        throw err;
+      }
     },
     [agent]
   );
@@ -61,7 +94,15 @@ export function useVoiceLiveAgentBinding(
     agent.ingestHostEvent({ type: 'reconnected' });
   }, [agent]);
 
-  const voice = useVoiceLive({ ...config, onEvent, onReconnecting, onReconnected });
+  const voice = useVoiceLive({
+    ...config,
+    onEvent,
+    onReconnecting,
+    onReconnected,
+    // Only wrap when the caller actually provided an executor — passing one otherwise would change
+    // how useVoiceLive treats tool calls.
+    ...(config.toolExecutor ? { toolExecutor } : {}),
+  });
 
   // Wire the write side once the session controls exist (and whenever their identity changes).
   useEffect(() => {
@@ -76,8 +117,10 @@ export function useVoiceLiveAgentBinding(
     }
   }, [agent, voice.connectionState]);
 
+  // Readiness both ways: an auto-reconnect can drop `isReady` back to false without a full
+  // disconnect, and consumers must not re-enable input while the replacement session is not ready.
   useEffect(() => {
-    if (voice.isReady) agent.ingestHostEvent({ type: 'ready' });
+    agent.ingestHostEvent({ type: 'ready', ready: voice.isReady });
   }, [agent, voice.isReady]);
 
   useEffect(() => {
@@ -94,5 +137,16 @@ export function useVoiceLiveAgentBinding(
     return () => clearInterval(id);
   }, [agent, options.idleTickMs]);
 
-  return voice;
+  // Wrap sendToolResult so a deferred tool output (the app sends it itself, rather than returning it
+  // from the executor) also reaches the agent as a tool_result. Together with the executor wrapper,
+  // exactly one path forwards each result, so the tool cluster always closes.
+  const sendToolResult = useCallback<UseVoiceLiveReturn['sendToolResult']>(
+    (callId, output, opts) => {
+      agent.ingestHostEvent({ type: 'tool_result', callId, output });
+      voice.sendToolResult(callId, output, opts);
+    },
+    [agent, voice]
+  );
+
+  return { ...voice, sendToolResult };
 }

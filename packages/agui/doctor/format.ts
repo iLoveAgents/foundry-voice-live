@@ -38,7 +38,7 @@ export function formatReport(report: DoctorReport, options: FormatOptions = {}):
   lines.push(
     `  ${observed(c, f.keepalives)} keepalives${f.keepalives ? '' : c.dim('  (none seen)')}`
   );
-  lines.push(`  ${continuity(c, f.threadContinuity)} thread continuity (parentRunId)`);
+  lines.push(`  ${continuity(c, f.threadContinuity)} server-side thread memory (parentRunId)`);
 
   lines.push('');
   lines.push(c.bold('  Timing'));

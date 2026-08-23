@@ -123,11 +123,17 @@ export class VoiceLiveAguiMapper {
           this.stateDelta({ connectionState: event.state }),
           this.custom(VOICE_CUSTOM_EVENTS.connection, { state: event.state })
         );
-      case 'ready':
-        return this.emit(
-          this.stateDelta({ isReady: true }),
-          this.custom(VOICE_CUSTOM_EVENTS.ready, {})
-        );
+      case 'ready': {
+        // Readiness is two-way: an auto-reconnect can drop it back to false without a full
+        // disconnect, and consumers must not enable input against a not-yet-ready session.
+        const ready = event.ready ?? true;
+        return ready
+          ? this.emit(
+              this.stateDelta({ isReady: true }),
+              this.custom(VOICE_CUSTOM_EVENTS.ready, {})
+            )
+          : this.emit(this.stateDelta({ isReady: false }));
+      }
       case 'mic':
         return this.emit(this.stateDelta({ isMicActive: event.active, isMuted: event.muted }));
       case 'tool_result': {
@@ -292,23 +298,35 @@ export class VoiceLiveAguiMapper {
   private onSessionCreated(
     event: Extract<VoiceLiveServerEvent, { type: 'session.created' }>
   ): MapperOutput {
-    // A fresh session (including after reconnect) invalidates every per-conversation id
+    const events: BaseEvent[] = [];
+    // A fresh session (typically after an auto-reconnect) starts a new server-side conversation with
+    // no history. If a run was still open on the old session, force-close it first — otherwise the
+    // first turn of the new session would be appended to the stale run (which may still owe tool
+    // calls) instead of opening a fresh RUN_STARTED.
+    // onForceClose → closeOpenSpans ends any open message/tool spans before the terminal event.
+    if (this.policy.isRunActive) {
+      events.push(...this.applyDecisions(this.policy.onForceClose('interrupted')).events);
+    }
+    // A fresh session invalidates every per-conversation id
     this.openMessage = null;
     this.openToolCalls.clear();
     this.toolNames.clear();
     const expires = event.session?.expires_at;
     this.state = {
       ...this.state,
+      currentResponseId: null,
+      sessionState: 'listening',
       sessionExpiresAt: typeof expires === 'number' ? expires * 1000 : this.state.sessionExpiresAt,
       model: typeof event.session?.model === 'string' ? event.session.model : this.state.model,
     };
-    return this.emit(
+    events.push(
       this.base(EventType.STATE_SNAPSHOT, { snapshot: toAguiState(this.state) }),
       this.custom(VOICE_CUSTOM_EVENTS.sessionCreated, {
         sessionId: typeof event.session?.id === 'string' ? event.session.id : null,
         model: this.state.model,
       })
     );
+    return { events };
   }
 
   private onSessionUpdated(
@@ -330,11 +348,16 @@ export class VoiceLiveAguiMapper {
     event: Extract<VoiceLiveServerEvent, { type: 'input_audio_buffer.speech_started' }>
   ): MapperOutput {
     const events: BaseEvent[] = [];
-    // Barge-in: if the assistant is mid-message, end it and close the run before the new turn
-    if (this.openMessage && this.openMessage.role === 'assistant') {
-      const messageId = this.openMessage.messageId;
-      events.push(this.base(EventType.TEXT_MESSAGE_END, { messageId }));
-      this.openMessage = null;
+    // Barge-in: a response is in flight (created, maybe streaming) → end any open assistant message
+    // and close the run before the new user turn. Detected via currentResponseId, not openMessage,
+    // so an interrupt between response.created and the first transcript delta still opens a fresh run
+    // instead of appending the new user turn to the interrupted response's run.
+    if (this.state.currentResponseId !== null) {
+      const messageId = this.openMessage?.role === 'assistant' ? this.openMessage.messageId : null;
+      if (messageId) {
+        events.push(this.base(EventType.TEXT_MESSAGE_END, { messageId }));
+        this.openMessage = null;
+      }
       events.push(
         this.custom(VOICE_CUSTOM_EVENTS.interrupted, {
           messageId,
@@ -342,6 +365,7 @@ export class VoiceLiveAguiMapper {
         })
       );
       events.push(...this.applyDecisions(this.policy.onForceClose('interrupted')).events);
+      events.push(...this.stateDelta({ currentResponseId: null }));
     }
     events.push(...this.stateDelta({ sessionState: 'listening' }));
     events.push(...this.applyDecisions([this.policy.onTurnSignal()]).events);
@@ -536,7 +560,7 @@ export class VoiceLiveAguiMapper {
     if (status === 'cancelled') {
       events.push(this.custom(VOICE_CUSTOM_EVENTS.responseCancelled, { responseId }));
       events.push(...this.applyDecisions(this.policy.onForceClose('cancelled')).events);
-      events.push(...this.stateDelta({ sessionState: 'listening' }));
+      events.push(...this.stateDelta({ sessionState: 'listening', currentResponseId: null }));
       return { events };
     }
     if (status === 'failed') {
@@ -547,7 +571,7 @@ export class VoiceLiveAguiMapper {
           code: detail?.code,
         }).events
       );
-      events.push(...this.stateDelta({ sessionState: 'listening' }));
+      events.push(...this.stateDelta({ sessionState: 'listening', currentResponseId: null }));
       return { events };
     }
 
@@ -557,7 +581,8 @@ export class VoiceLiveAguiMapper {
     const decisions = this.policy.onResponseDone({ responseId, declaredToolCalls, done: true });
     // If this completes the cluster, the turn is over — set 'listening' before RUN_FINISHED
     const willClose = decisions.some((d) => d.kind === 'close-run');
-    if (willClose) events.push(...this.stateDelta({ sessionState: 'listening' }));
+    if (willClose)
+      events.push(...this.stateDelta({ sessionState: 'listening', currentResponseId: null }));
     events.push(...this.applyDecisions(decisions).events);
     return { events };
   }

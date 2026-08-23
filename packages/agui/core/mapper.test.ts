@@ -381,6 +381,43 @@ describe('VoiceLiveAguiMapper — barge-in, cancel, error', () => {
     expect(idx.slice(endPos + 1)).not.toContain(EventType.TEXT_MESSAGE_CONTENT);
   });
 
+  it('closes the run on barge-in that lands after response.created but before the first delta', () => {
+    // Regression: previously the barge-in only closed the run if an assistant message was already
+    // open, so an interrupt in the created→first-delta window left the run open and the next user
+    // turn was appended to it (no fresh RUN_STARTED).
+    const m = mapper();
+    const out: BaseEvent[] = [];
+    const push = (e: VoiceLiveServerEvent) => out.push(...m.handleServerEvent(e).events);
+    push({ type: 'response.created', response: { id: 'r' } });
+    push({ type: 'input_audio_buffer.speech_started', audio_start_ms: 100 }); // barge-in, no delta yet
+    push({
+      type: 'conversation.item.input_audio_transcription.completed',
+      item_id: 'u1',
+      content_index: 0,
+      transcript: 'stop',
+    });
+    verifyStream(out);
+    expect(ofType(out, EventType.RUN_FINISHED)).toHaveLength(1); // the interrupted run closed
+    expect(ofType(out, EventType.RUN_STARTED)).toHaveLength(2); // and a fresh run opened for the user
+  });
+
+  it('clears currentResponseId when a response completes (no stale id between turns)', () => {
+    const m = mapper();
+    run(m, [
+      { type: 'response.created', response: { id: 'resp-9' } },
+      {
+        type: 'response.audio_transcript.done',
+        response_id: 'resp-9',
+        item_id: 'i',
+        output_index: 0,
+        content_index: 0,
+        transcript: 'done',
+      },
+      { type: 'response.done', response: { id: 'resp-9', status: 'completed', output: [] } },
+    ]);
+    expect(m.snapshot.state.currentResponseId).toBeNull();
+  });
+
   it('closes with RUN_FINISHED on a cancelled response and RUN_ERROR on a failed one', () => {
     const cancelled = run(mapper(), [
       { type: 'response.created', response: { id: 'r' } },
@@ -478,6 +515,43 @@ describe('VoiceLiveAguiMapper — dedup, idle, reconnect, close', () => {
     push({ type: 'response.done', response: { id: 'r2', status: 'completed', output: [] } });
     verifyStream(out);
     expect(ofType(out, EventType.STATE_SNAPSHOT)).toHaveLength(1); // from session.created
+  });
+
+  it('force-closes a run still open when a new session.created arrives (reconnect)', () => {
+    // Regression: on auto-reconnect the service sends a fresh session.created. If a run was still
+    // open, the mapper must close it, or the next turn is appended to the stale run (which may owe
+    // tool calls) instead of opening a new RUN_STARTED.
+    const m = mapper();
+    const out: BaseEvent[] = [];
+    const push = (e: VoiceLiveServerEvent): void => {
+      out.push(...m.handleServerEvent(e).events);
+    };
+    push({ type: 'response.created', response: { id: 'r' } });
+    push({
+      type: 'response.audio_transcript.delta',
+      response_id: 'r',
+      item_id: 'i',
+      output_index: 0,
+      content_index: 0,
+      delta: 'mid-answer',
+    });
+    // reconnect mid-response — no response.done for 'r'
+    push({ type: 'session.created', session: { id: 's2', model: 'gpt-4.1' } });
+    // the replacement session's first turn must open a fresh run
+    push({ type: 'response.created', response: { id: 'r2' } });
+    push({ type: 'response.done', response: { id: 'r2', status: 'completed', output: [] } });
+    verifyStream(out);
+    expect(ofType(out, EventType.RUN_FINISHED)).toHaveLength(2); // stale run closed + the new one
+    expect(ofType(out, EventType.RUN_STARTED)).toHaveLength(2);
+    expect(m.snapshot.state.currentResponseId).toBeNull();
+  });
+
+  it('resets isReady when the host reports the session is no longer ready', () => {
+    const m = mapper();
+    m.handleHostEvent({ type: 'ready', ready: true });
+    expect(m.snapshot.state.isReady).toBe(true);
+    m.handleHostEvent({ type: 'ready', ready: false });
+    expect(m.snapshot.state.isReady).toBe(false);
   });
 
   it('close() ends open spans and is idempotent', () => {

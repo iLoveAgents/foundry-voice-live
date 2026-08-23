@@ -122,6 +122,30 @@ describe('VoiceLiveAgent', () => {
     expect(errors).toHaveLength(1);
   });
 
+  it('routes a typed runAgent() to the wire even while a voice run is queued (not the pump)', async () => {
+    // Regression: the pump used to flag its runs with a long-lived boolean, so a composer
+    // runAgent() during a voice turn was misread as the pump and never forwarded to the wire.
+    // Now the pump marks its own invocation, so an un-marked runAgent() is always a typed turn.
+    const agent = new VoiceLiveAgent({ threadId: 't7', generateId: seq() });
+    const sent: unknown[] = [];
+    agent.attachBridge({ sendEvent: (e) => sent.push(e), cancelResponse: () => {} });
+
+    // A server run is queued but not yet pumped.
+    agent.ingestServerEvent(assistantTurn('voice', 'rv', 'av')[0]!);
+    expect(agent.pendingRunCount).toBe(1);
+
+    // A typed turn arrives directly (no pump marker) → it must forward to the wire...
+    agent.addMessage({ id: 'u1', role: 'user', content: 'typed while speaking' });
+    void agent.runAgent();
+    await tick();
+    expect(sent.map((e) => (e as { type: string }).type)).toEqual([
+      'conversation.item.create',
+      'response.create',
+    ]);
+    // ...and must NOT have consumed the queued voice run.
+    expect(agent.pendingRunCount).toBe(1);
+  });
+
   it('cancels the response on abortRun (barge-in)', () => {
     const agent = new VoiceLiveAgent({ threadId: 't6', generateId: seq() });
     let cancelled = 0;

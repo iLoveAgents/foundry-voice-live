@@ -58,7 +58,11 @@ export interface DoctorReport {
     state: boolean;
     interrupts: boolean;
     keepalives: boolean;
-    /** Second run with `parentRunId` verified and streamed. null = not checked. */
+    /**
+     * Server-side thread memory: a second run sending only a follow-up (relying on threadId +
+     * parentRunId) verified and streamed an answer. false = the backend needs the client to resend
+     * history (still a valid AG-UI backend). null = not checked.
+     */
     threadContinuity: boolean | null;
   };
   timing: { firstTokenMs: number | null; totalMs: number };
@@ -90,15 +94,14 @@ export async function probeEndpoint(options: ProbeOptions): Promise<DoctorReport
   let continuity: boolean | null = null;
   const runs: RunObservationInternal[] = [first];
   if (options.checkContinuity !== false && !first.transportError) {
+    // Send ONLY the follow-up (no replayed history) so this measures *server-side* thread memory:
+    // the backend must recover the prior turn from threadId + parentRunId. Resending the earlier
+    // messages would let a fully stateless backend pass, making the verdict meaningless.
     const second = await observeRun(options, {
       threadId,
       runId: genId(),
       parentRunId: firstRunId,
-      messages: [
-        { id: genId(), role: 'user', content: options.prompt ?? DEFAULT_PROMPT },
-        { id: genId(), role: 'assistant', content: first.assistantText || '(no answer)' },
-        { id: genId(), role: 'user', content: FOLLOW_UP },
-      ],
+      messages: [{ id: genId(), role: 'user', content: FOLLOW_UP }],
     });
     runs.push(second);
     continuity =

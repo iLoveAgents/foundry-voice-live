@@ -59,3 +59,5 @@ jobs:
           echo "OIDC request token set: ${ACTIONS_ID_TOKEN_REQUEST_TOKEN:+yes}"
           (cd packages/react && npm publish --provenance --access public)
           (cd packages/proxy-node && npm publish --provenance --access public)
+          # Requires a one-time Trusted Publisher on npmjs.com for this package (see CLAUDE.md).
+          (cd packages/agui && npm publish --provenance --access public)

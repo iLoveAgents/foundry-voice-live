@@ -54,6 +54,9 @@ export interface VoiceLiveAgentOptions {
 
 const DEFAULT_MAX_PENDING_RUNS = 32;
 
+/** Marks a `runAgent()` invocation as pump-initiated (a voice turn), via `forwardedProps`. */
+const VOICE_PUMP_MARKER = '__voiceLivePump';
+
 export class VoiceLiveAgent extends AbstractAgent {
   private readonly mapper: VoiceLiveAguiMapper;
   private readonly generateId: () => string;
@@ -66,8 +69,6 @@ export class VoiceLiveAgent extends AbstractAgent {
   private currentRun: ReplaySubject<BaseEvent> | null = null;
   /** Runs opened by the server but not yet bound to a `runAgent()` call (pump lag). */
   private readonly runQueue: ReplaySubject<BaseEvent>[] = [];
-  /** True while `pump()` is inside `runAgent()`, so `run()` takes the voice path, not the typed one. */
-  private pumpRunActive = false;
   private pumping = false;
   private bridge: VoiceSessionBridge | null = null;
   /** User message ids already forwarded to the wire, so a re-run never double-sends a typed turn. */
@@ -201,13 +202,12 @@ export class VoiceLiveAgent extends AbstractAgent {
     this.pumping = true;
     try {
       while (this.runQueue.length > 0) {
-        this.pumpRunActive = true;
         try {
-          await this.runAgent();
+          // Mark this specific invocation so run() binds it to a queued server run, even if a
+          // composer runAgent() (a typed turn) is interleaved on another tick.
+          await this.runAgent({ forwardedProps: { [VOICE_PUMP_MARKER]: true } });
         } catch {
           // A single failed run must not wedge the pump; the next turn gets a fresh run.
-        } finally {
-          this.pumpRunActive = false;
         }
       }
     } finally {
@@ -224,7 +224,9 @@ export class VoiceLiveAgent extends AbstractAgent {
    *    that the resulting server events flow into.
    */
   run(input: RunAgentInput): Observable<BaseEvent> {
-    if (this.pumpRunActive) {
+    const fromPump =
+      (input.forwardedProps as Record<string, unknown> | undefined)?.[VOICE_PUMP_MARKER] === true;
+    if (fromPump) {
       const queued = this.runQueue.shift();
       return queued ? queued.asObservable() : EMPTY;
     }

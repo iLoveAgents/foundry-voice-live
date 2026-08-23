@@ -19,6 +19,7 @@ just typecheck        # TypeScript checks
 | ------- | ---- | --- |
 | React SDK | `packages/react/` | `@iloveagents/foundry-voice-live-react` |
 | Proxy | `packages/proxy-node/` | `@iloveagents/foundry-voice-live-proxy-node` |
+| AG-UI bridge | `packages/agui/` | `@iloveagents/foundry-voice-live-agui` |
 
 Each package has its own AGENTS.md with specific guidance.
 

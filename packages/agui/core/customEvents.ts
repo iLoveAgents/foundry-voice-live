@@ -50,7 +50,7 @@ export interface VoiceCustomPayloads {
   'voice.session.created': { sessionId: string | null; model: string | null };
   'voice.speech_started': { audioStartMs: number | null; itemId: string | null };
   'voice.speech_stopped': { audioEndMs: number | null; itemId: string | null };
-  'voice.interrupted': { messageId: string; responseId: string | null };
+  'voice.interrupted': { messageId: string | null; responseId: string | null };
   'voice.truncated': { itemId: string; contentIndex: number; audioEndMs: number };
   'voice.transcript.corrected': { messageId: string; role: 'user' | 'assistant'; text: string };
   'voice.transcription_failed': { itemId: string; message: string; code?: string };
