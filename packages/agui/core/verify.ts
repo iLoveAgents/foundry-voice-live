@@ -30,6 +30,7 @@ export function verifyRun(events: BaseEvent[], opts: { requireTerminal?: boolean
   const e = events as E[];
   const openMessages = new Set<string>();
   const openTools = new Set<string>();
+  let openSteps = 0;
   let started = false;
   let finished = false;
 
@@ -47,6 +48,7 @@ export function verifyRun(events: BaseEvent[], opts: { requireTerminal?: boolean
         finished = false;
         openMessages.clear();
         openTools.clear();
+        openSteps = 0;
         break;
       case EventType.RUN_FINISHED:
       case EventType.RUN_ERROR:
@@ -54,7 +56,15 @@ export function verifyRun(events: BaseEvent[], opts: { requireTerminal?: boolean
           throw new Error(`run ended with message '${[...openMessages][0]}' still open`);
         if (openTools.size)
           throw new Error(`run ended with tool call '${[...openTools][0]}' still open`);
+        if (openSteps > 0) throw new Error('run ended with a step still open');
         finished = true;
+        break;
+      case EventType.STEP_STARTED:
+        openSteps += 1;
+        break;
+      case EventType.STEP_FINISHED:
+        if (openSteps === 0) throw new Error('STEP_FINISHED without an open step');
+        openSteps -= 1;
         break;
       case EventType.TEXT_MESSAGE_START:
         if (openMessages.has(ev.messageId!))

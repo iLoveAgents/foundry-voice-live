@@ -13,6 +13,7 @@ import { describe, it, expect } from 'vitest';
 import { EventType } from '@ag-ui/core';
 import type { BaseEvent } from '@ag-ui/core';
 import { VoiceLiveAgent } from './VoiceLiveAgent';
+import { verifyStream } from '../core/verify';
 import type { VoiceLiveServerEvent } from '../core/types';
 
 const assistantTurn = (text: string, responseId = 'r1', itemId = 'a1'): VoiceLiveServerEvent[] =>
@@ -163,6 +164,45 @@ describe('VoiceLiveAgent', () => {
     await agent.runAgent().catch(() => {});
     expect(errors).toHaveLength(1); // errored cleanly, not left generating
     expect(sent).toHaveLength(0); // nothing dropped onto a dead wire
+  });
+
+  it('barges in on an active voice run when a typed turn arrives (legal stream, cancels the wire)', async () => {
+    const agent = new VoiceLiveAgent({ threadId: 'tb', generateId: seq() });
+    let cancelled = 0;
+    const sent: unknown[] = [];
+    agent.attachBridge({
+      sendEvent: (e) => sent.push(e),
+      cancelResponse: () => (cancelled += 1),
+      canSend: () => true,
+    });
+    const seen: BaseEvent[] = [];
+    agent.events$.subscribe((e) => seen.push(e));
+
+    // A voice response is in flight (run active, assistant mid-message).
+    const voice = assistantTurn('speaking…', 'rv', 'av');
+    agent.ingestServerEvent(voice[0]!); // response.created
+    agent.ingestServerEvent(voice[1]!); // a transcript delta
+    void agent.pump();
+    await tick();
+
+    // The user types → barge-in.
+    agent.addMessage({ id: 'u1', role: 'user', content: 'stop, new question' });
+    const run = agent.runAgent();
+    await tick();
+    expect(cancelled).toBe(1); // the spoken response was cancelled on the wire
+    expect(sent.map((e) => (e as { type: string }).type)).toEqual([
+      'conversation.item.create',
+      'response.create',
+    ]);
+
+    // The service answers the typed turn; that closes its run.
+    for (const ev of assistantTurn('New answer.', 'rt', 'at')) agent.ingestServerEvent(ev);
+    await run;
+
+    // The whole event stream is legal AG-UI (nothing outside a run), with both runs terminated.
+    verifyStream(seen);
+    expect(seen.filter((e) => e.type === EventType.RUN_STARTED)).toHaveLength(2);
+    expect(seen.filter((e) => e.type === EventType.RUN_FINISHED)).toHaveLength(2);
   });
 
   it('cancels the response on abortRun (barge-in)', () => {

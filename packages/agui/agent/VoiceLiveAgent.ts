@@ -260,7 +260,15 @@ export class VoiceLiveAgent extends AbstractAgent {
     }
 
     return new Observable<BaseEvent>((subscriber) => {
-      // A typed turn is a barge-in over any open voice run.
+      // A typed turn while a voice run is in flight is a barge-in: cancel the spoken response and
+      // close the mapper's run. Without closing the mapper run, submitUserMessage's onTurnSignal()
+      // sees an already-active policy and emits no RUN_STARTED, so the user's events would land
+      // outside a run (an illegal AG-UI stream) while the wire keeps speaking the prior response.
+      if (this.mapper.snapshot.runId !== null) {
+        this.bridge?.cancelResponse();
+        this.dispatch(this.mapper.close('cancelled')); // emits RUN_FINISHED into currentRun + clears it
+      }
+      // Defensive: close any channel still open before starting the typed run.
       if (this.currentRun) {
         const stale = this.currentRun;
         this.currentRun = null;
@@ -314,6 +322,8 @@ export class VoiceLiveAgent extends AbstractAgent {
     } as unknown as BaseEvent;
     const errored = {
       type: EventType.RUN_ERROR,
+      // Carry threadId like the mapper's RUN_ERROR so consumers can correlate on all lifecycle events.
+      threadId: this.threadId,
       message,
       runId,
     } as unknown as BaseEvent;

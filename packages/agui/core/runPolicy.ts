@@ -118,8 +118,15 @@ export class RunPolicy {
   /** Barge-in / cancel / fatal error / idle watchdog — force the run closed */
   onForceClose(reason: 'cancelled' | 'error' | 'idle' | 'interrupted'): RunPolicyDecision[] {
     if (!this.runActive) return [];
+    const decisions: RunPolicyDecision[] = [];
+    // A step (response) may still be open (barge-in mid-response, cancel, error, idle) — close it
+    // before the run, or the terminal RUN_FINISHED/RUN_ERROR is illegal (steps must be balanced).
+    if (this.openStepId !== null) {
+      decisions.push({ kind: 'close-step', responseId: this.openStepId });
+    }
     this.reset();
-    return [{ kind: 'close-run', reason }];
+    decisions.push({ kind: 'close-run', reason });
+    return decisions;
   }
 
   private reset(): void {
