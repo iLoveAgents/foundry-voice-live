@@ -106,6 +106,11 @@ const samples: Record<string, SampleInfo[]> = {
       description: 'Server-side MCP tools with an approval flow',
     },
     {
+      path: '/agui-voice',
+      title: 'AG-UI Voice',
+      description: 'Bridge a voice session to the AG-UI protocol, rendered with plain React',
+    },
+    {
       path: '/audio-visualizer',
       title: 'Audio Visualizer',
       description: 'Real-time waveform visualization with Web Audio API',
