@@ -66,7 +66,10 @@ Tests: `core/*.test.ts` (transports, audio, avatar, mic, reconnect), `hooks/useV
   and keeps `isAgentMode: false` (agent mode would strip the user's instructions/tools). With a
   profile `model` is a _deployment name_, so `validateConfig` must derive capabilities from the
   profile via `resolveModelFamily` — never from the model string. The URL builder throws on
-  profile-without-model (a silent `gpt-realtime` fallback would answer from the wrong model).
+  profile-without-model (a silent `gpt-realtime` fallback would answer from the wrong model), in
+  both standard and proxy mode. In the proxy form BYOM travels as query params in `proxyUrl`, so
+  `buildVoiceLiveUrl` returns the `profile`/`model` resolved from the effective URL and `useVoiceLive`
+  passes those to `validateConfig` — reading only `connection.profile` would miss it.
 - **Agent mode** is auto-detected from a non-empty `agentName` (connection config or proxy URL params — the proxy uses the same rule) or forced via
   `agentMode`; `buildAgentSessionConfig()` strips the agent-owned fields listed in `AGENT_OWNED_FIELDS`
   (`instructions`, `temperature`, `tools`, `toolChoice`, `maxResponseOutputTokens`, `reasoningEffort`,

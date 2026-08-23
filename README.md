@@ -24,6 +24,7 @@ Microsoft Foundry Voice Live API provides a unified solution for low-latency, hi
 - **Advanced Features**: Noise suppression, echo cancellation, semantic turn detection, interim responses, proactive greetings
 - **Transports**: WebSocket audio, or WebRTC (preview) for lowest browser latency
 - **Foundry Agents & MCP**: Connect to Foundry Agent Service, add remote MCP servers as tools
+- **AG-UI protocol**: bridge a session to [AG-UI](https://github.com/ag-ui-protocol/ag-ui) for CopilotKit or any AG-UI UI — plus a `doctor` CLI (separate [`-agui`](./packages/agui/README.md) package)
 - **Avatar Support**: Text-to-speech avatars synchronized with audio output
 - **Function Calling**: External actions and VoiceRAG patterns
 - **Production hardening**: opt-in auto-reconnect with backoff, token providers, typed events, quiet logging, secure proxy
@@ -36,6 +37,7 @@ This SDK targets Voice Live API **`2026-07-15` (GA)** and contract-tests its wir
 |---------|-------------|---------|
 | [@iloveagents/foundry-voice-live-react](./packages/react/README.md) | React hooks and components | [![npm](https://img.shields.io/npm/v/@iloveagents/foundry-voice-live-react)](https://www.npmjs.com/package/@iloveagents/foundry-voice-live-react) |
 | [@iloveagents/foundry-voice-live-proxy-node](./packages/proxy-node/README.md) | Secure WebSocket proxy server | [![npm](https://img.shields.io/npm/v/@iloveagents/foundry-voice-live-proxy-node)](https://www.npmjs.com/package/@iloveagents/foundry-voice-live-proxy-node) |
+| [@iloveagents/foundry-voice-live-agui](./packages/agui/README.md) | AG-UI protocol bridge (+ doctor CLI) | [![npm](https://img.shields.io/npm/v/@iloveagents/foundry-voice-live-agui)](https://www.npmjs.com/package/@iloveagents/foundry-voice-live-agui) |
 
 ## Quick Start
 

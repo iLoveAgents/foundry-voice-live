@@ -5,6 +5,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### `@iloveagents/foundry-voice-live-agui` (new package)
+
+#### Added
+- **AG-UI protocol bridge** — turns a Voice Live session into a standard AG-UI run (`RUN_STARTED` … `TEXT_MESSAGE_*` … `TOOL_CALL_*` … `RUN_FINISHED`) that any AG-UI consumer can render. Subpath entries: `.` (core + `VoiceLiveAgent`), `./core` (React/rxjs-free mapper, run policy, voice-state), `./react` (`useVoiceLiveAgent` + `useVoiceLiveAgentBinding`), `./doctor` (endpoint probe + CLI).
+- **`VoiceLiveAgent`** extends `AbstractAgent` (not `HttpAgent`), so it renders in CopilotKit or any AG-UI UI — or with plain React. Self-pumped, cluster-scoped runs; a ReplaySubject per run so a short turn that opens and closes before the pump subscribes is still delivered.
+- **Transport-agnostic** — the same mapper drives WebSocket and WebRTC (a function-call event opening a run before `response.created`, and `response.done` before its tool-call args, are handled).
+- **`doctor`** — `npx foundry-voice-live-agui doctor <url>` (and `probeEndpoint`): POSTs a minimal `RunAgentInput`, verifies the SSE against AG-UI ordering, checks server-side thread memory, and prints a `ready` / `usable` / `unfit` voice-readiness verdict. Exit code drops into CI / a proxy healthcheck.
+- Example page `/agui-voice` renders the bridge with plain React (transcript, live AG-UI event stream, WebSocket/WebRTC toggle, offline simulate).
+
 ### `@iloveagents/foundry-voice-live-react`
 
 #### Added
