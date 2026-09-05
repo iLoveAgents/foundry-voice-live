@@ -3,6 +3,17 @@
 All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.5.1] - 2026-09-05
+
+### `@iloveagents/foundry-voice-live-react` 0.5.1
+
+#### Fixed
+- A response no longer stalls forever when WebRTC loses its `response.done` lifecycle event.
+  Tool turns keep their executor-aware watchdog; completed text/audio turns use a short terminal
+  event grace period. Both paths release the response gate, flush one queued follow-up, and ignore
+  a genuinely late completion from the old response so it cannot unlock the response currently
+  speaking.
+
 ## [0.5.0] - 2026-08-18
 
 Targets Voice Live API **`2026-07-15` (GA)**. This release contains breaking changes (see **Removed** / **Changed**).
