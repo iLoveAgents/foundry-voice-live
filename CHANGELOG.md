@@ -20,6 +20,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Bring Your Own Model** — `connection.profile` (`byom-azure-openai-realtime` | `byom-azure-openai-chat-completion` | `byom-foundry-anthropic-messages`) runs Voice Live around a model deployed in your own Foundry resource; `model` is then the deployment name and is required. `foundryResourceOverride` now also applies to standard-mode (cross-resource BYOM). `validateConfig` takes a fourth `connection` argument and derives model capabilities from the profile, because a deployment name says nothing about the model — without this, every BYOM connection produced false `semantic_vad` / `whisper-1` warnings.
 
 #### Fixed
+- A response no longer stalls forever when WebRTC loses its `response.done` lifecycle event.
+  Tool turns keep their executor-aware watchdog; completed text/audio turns use a short terminal
+  event grace period. Both paths release the response gate, flush one queued follow-up, and ignore
+  a genuinely late completion from the old response so it cannot unlock the response currently
+  speaking.
 - `VoiceLiveModel` (and the new `VoiceLiveProfile`) now actually accept arbitrary strings as documented. The `string & Record<string, never>` idiom used for "extensible union" rejects every non-literal string under strict mode; it is `string & {}` now.
 
 ### `@iloveagents/foundry-voice-live-proxy-node`

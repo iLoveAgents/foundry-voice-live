@@ -160,6 +160,56 @@ describe('useVoiceLive (websocket)', () => {
     hook.unmount();
   });
 
+  it('releases a completed audio turn when response.done is lost without unlocking the next turn', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const onTranscript = vi.fn();
+      const { hook, ws } = await connectAndOpen({ ...baseConfig, onTranscript });
+      await deliver(ws, { type: 'session.created', session: {} });
+      await deliver(ws, { type: 'session.updated', session: {} });
+
+      await act(async () => {
+        hook.result.current.sendText('first turn');
+      });
+      await deliver(ws, { type: 'response.created', response: { id: 'resp-1' } });
+      await deliver(ws, {
+        type: 'response.audio_transcript.delta',
+        response_id: 'resp-1',
+        delta: 'Finished answer',
+      });
+      await deliver(ws, {
+        type: 'response.audio_transcript.done',
+        response_id: 'resp-1',
+        transcript: 'Finished answer',
+      });
+      await act(async () => {
+        hook.result.current.sendText('queued second turn');
+      });
+      expect(ws.sent.filter((event) => event.type === 'response.create')).toHaveLength(1);
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(750);
+      });
+      expect(onTranscript).toHaveBeenLastCalledWith('assistant', 'Finished answer', true);
+      expect(ws.sent.filter((event) => event.type === 'response.create')).toHaveLength(2);
+
+      await deliver(ws, { type: 'response.created', response: { id: 'resp-2' } });
+      // The lifecycle event for resp-1 may surface after resp-2 starts. It must not release the
+      // new response's reservation.
+      await deliver(ws, { type: 'response.done', response: { id: 'resp-1', output: [] } });
+      await act(async () => {
+        hook.result.current.sendText('queued third turn');
+      });
+      expect(ws.sent.filter((event) => event.type === 'response.create')).toHaveLength(2);
+
+      await deliver(ws, { type: 'response.done', response: { id: 'resp-2', output: [] } });
+      expect(ws.sent.filter((event) => event.type === 'response.create')).toHaveLength(3);
+      hook.unmount();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('auto-sends tool results returned by toolExecutor and stays quiet for void executors', async () => {
     const toolExecutor = vi.fn(async (name: string) =>
       name === 'get_time' ? { time: '12:00' } : undefined
@@ -898,6 +948,45 @@ describe('useVoiceLive (websocket)', () => {
         await vi.advanceTimersByTimeAsync(5000);
       });
       expect(ws.sent.filter((e) => e.type === 'response.create')).toHaveLength(1);
+      hook.unmount();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('continues after a tool response whose response.done lifecycle event is lost', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const toolExecutor = vi.fn(async () => ({ ok: true }));
+      const { hook, ws } = await connectAndOpen({ ...baseConfig, toolExecutor });
+      await deliver(ws, { type: 'session.created', session: {} });
+      await deliver(ws, { type: 'session.updated', session: {} });
+      await deliver(ws, { type: 'response.created', response: { id: 'resp-1' } });
+      await deliver(ws, {
+        type: 'response.function_call_arguments.done',
+        response_id: 'resp-1',
+        call_id: 'call-a',
+        name: 'a',
+        arguments: '{}',
+      });
+
+      expect(ws.sent.filter((event) => event.type === 'response.create')).toHaveLength(0);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(5000);
+      });
+      expect(ws.sent.filter((event) => event.type === 'response.create')).toHaveLength(1);
+
+      await deliver(ws, { type: 'response.created', response: { id: 'resp-2' } });
+      // The missing lifecycle event can still arrive after the follow-up has started. It belongs
+      // to resp-1 and must not make the active resp-2 gate look idle.
+      await deliver(ws, { type: 'response.done', response: { id: 'resp-1', output: [] } });
+      await act(async () => {
+        hook.result.current.sendText('queue behind the active follow-up');
+      });
+      expect(ws.sent.filter((event) => event.type === 'response.create')).toHaveLength(1);
+
+      await deliver(ws, { type: 'response.done', response: { id: 'resp-2', output: [] } });
+      expect(ws.sent.filter((event) => event.type === 'response.create')).toHaveLength(2);
       hook.unmount();
     } finally {
       vi.useRealTimers();

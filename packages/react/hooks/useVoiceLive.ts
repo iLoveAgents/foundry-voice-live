@@ -127,6 +127,14 @@ const CONNECT_TIMEOUT_CLOSE_CODE = 4002;
 const LATE_TOOL_CALL_TIMEOUT_MS = 5000;
 
 /**
+ * Grace period after a terminal text/audio-content event when the service has not delivered the
+ * enclosing `response.done`. Content completion normally precedes the lifecycle event by only a
+ * few milliseconds; waiting briefly preserves ordinary ordering while preventing a permanently
+ * locked response gate when that final event is lost by a preview transport.
+ */
+const TERMINAL_RESPONSE_GRACE_MS = 750;
+
+/**
  * How long a speculative response reservation (server VAD is about to create a response) may wait
  * for `response.created` before it is released, so a service that decides not to answer cannot
  * block later turns.
@@ -310,6 +318,18 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
    */
   const completedResponsesRef = useRef<BoundedMap<string, ResponseCompletion> | null>(null);
   if (!completedResponsesRef.current) completedResponsesRef.current = new BoundedMap(64);
+  /**
+   * Responses the tool watchdog completed because their lifecycle event was lost. A genuinely
+   * late `response.done` for one of these belongs to the old response and must not release the
+   * gate of the follow-up that is now speaking.
+   */
+  const synthesizedDoneResponsesRef = useRef<BoundedMap<string, true> | null>(null);
+  if (!synthesizedDoneResponsesRef.current) {
+    synthesizedDoneResponsesRef.current = new BoundedMap(64);
+  }
+  const responseDoneFallbackTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(
+    new Map()
+  );
 
   // ===== Lifetimes (see `core/lifecycle.ts`) =====
   /**
@@ -556,9 +576,12 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
       batch.lateCallTimer = setTimeout(() => {
         batch.lateCallTimer = undefined;
         if (toolBatchesRef.current.get(key) !== batch) return;
+        let synthesizedResponseDone = false;
         if (!batch.responseDone) {
           log.warn(`No response.done for response ${key} — completing its tool batch anyway`);
           batch.responseDone = true;
+          synthesizedResponseDone = true;
+          synthesizedDoneResponsesRef.current?.set(key, true);
         }
         if (batch.seenCalls < batch.expectedCalls) {
           log.warn(
@@ -567,9 +590,59 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
           batch.expectedCalls = batch.seenCalls;
         }
         finishToolBatchIfReadyRef.current?.(key, batch, session);
+        if (synthesizedResponseDone) {
+          setSessionState('listening');
+          // Match the ordinary `response.done` ordering: finishing the batch queues its one
+          // follow-up while the old response is still active, then releasing the gate flushes it.
+          if ((responseGateRef.current as ResponseGate).onResponseDone()) {
+            log.debug('Sending queued response.create after synthesized response.done');
+            sendGatedResponseCreateRef.current?.();
+          }
+        }
       }, LATE_TOOL_CALL_TIMEOUT_MS);
     },
     [log]
+  );
+
+  /**
+   * Recover a text/audio response whose terminal content event arrived but whose enclosing
+   * `response.done` did not. Tool responses retain their stricter batch watchdog because their
+   * executors and cross-channel call events must settle before the gate can be released.
+   */
+  const armTerminalResponseFallback = useCallback(
+    (key: string, terminalTranscript?: string): void => {
+      if (!key) return;
+      const timers = responseDoneFallbackTimersRef.current;
+      const existing = timers.get(key);
+      if (existing) clearTimeout(existing);
+      const session = sessionRef.current;
+      timers.set(
+        key,
+        setTimeout(() => {
+          timers.delete(key);
+          if (!session || sessionRef.current !== session || !session.scope.isActive) return;
+          // Tool turns need the stronger executor/call-order guarantees above.
+          if (toolBatchesRef.current.has(key)) return;
+          log.warn(`No response.done for completed response ${key} — releasing its response gate`);
+          synthesizedDoneResponsesRef.current?.set(key, true);
+          const transcriptCallback = configRef.current.onTranscript;
+          if (transcriptCallback && (assistantTranscriptRef.current || terminalTranscript)) {
+            const transcript = assistantTranscriptRef.current || terminalTranscript || '';
+            assistantTranscriptRef.current = '';
+            if (!safeCall('onTranscript', transcriptCallback, 'assistant', transcript, true))
+              return;
+          }
+          setSessionState('listening');
+          if ((responseGateRef.current as ResponseGate).onResponseDone()) {
+            log.debug('Sending queued response.create after terminal response fallback');
+            sendGatedResponseCreateRef.current?.();
+          } else {
+            armSpeculativeReleaseRef.current?.();
+          }
+        }, TERMINAL_RESPONSE_GRACE_MS)
+      );
+    },
+    [log, safeCall]
   );
 
   /** The tool batch of this session that still owes a follow-up, if any */
@@ -1005,6 +1078,16 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
           break;
 
         case 'response.done': {
+          const doneKey = `${data.response?.id ?? currentResponseIdRef.current ?? ''}`;
+          const fallbackTimer = responseDoneFallbackTimersRef.current.get(doneKey);
+          if (fallbackTimer) {
+            clearTimeout(fallbackTimer);
+            responseDoneFallbackTimersRef.current.delete(doneKey);
+          }
+          if (synthesizedDoneResponsesRef.current?.delete(doneKey)) {
+            log.debug(`Ignoring late response.done for synthesized response ${doneKey}`);
+            break;
+          }
           // Emit final assistant transcript if accumulated
           if (onTranscript && assistantTranscriptRef.current) {
             const transcript = assistantTranscriptRef.current;
@@ -1018,7 +1101,6 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
           // all settled may ask for the answer now — while the gate still counts this response as
           // running, so the request is queued into the single flush below instead of racing it.
           const doneSession = sessionRef.current;
-          const doneKey = `${data.response?.id ?? currentResponseIdRef.current ?? ''}`;
           // The completed response lists its own tool calls: that is the only reliable way to know
           // whether more are still on their way over the (independent) control channel
           const toolCallCount = (data.response?.output ?? []).filter(
@@ -1082,12 +1164,20 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
           if (data.transcript) {
             log.debug(`Assistant: "${data.transcript}"`);
           }
+          armTerminalResponseFallback(
+            `${data.response_id ?? currentResponseIdRef.current ?? ''}`,
+            data.transcript
+          );
           break;
 
         case 'response.text.done':
           if (data.text) {
             log.debug(`Assistant (text): "${data.text}"`);
           }
+          armTerminalResponseFallback(
+            `${data.response_id ?? currentResponseIdRef.current ?? ''}`,
+            data.text
+          );
           break;
 
         case 'conversation.item.truncated':
@@ -1242,6 +1332,7 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
       connectAvatar,
       announceReady,
       armToolBatchTimeout,
+      armTerminalResponseFallback,
       armSpeculativeRelease,
       clearSpeculativeTimer,
     ]
@@ -1341,6 +1432,9 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
       }
       toolBatchesRef.current.clear();
       completedResponsesRef.current?.clear();
+      synthesizedDoneResponsesRef.current?.clear();
+      for (const timer of responseDoneFallbackTimersRef.current.values()) clearTimeout(timer);
+      responseDoneFallbackTimersRef.current.clear();
       assistantTranscriptRef.current = '';
       userTranscriptRef.current = '';
       // The expiry belonged to the session that just ended; the next session.created brings a new one
