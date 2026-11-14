@@ -10,9 +10,7 @@ export function AvatarContainer({
   variant = 'default',
 }: AvatarContainerProps): JSX.Element {
   const className =
-    variant === 'default'
-      ? 'avatar-container'
-      : `avatar-container avatar-container--${variant}`;
+    variant === 'default' ? 'avatar-container' : `avatar-container avatar-container--${variant}`;
 
   return <div className={className}>{children}</div>;
 }

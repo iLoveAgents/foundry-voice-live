@@ -3,14 +3,17 @@ name: Publish to npm
 on:
   push:
     tags:
-      - 'v*'  # Trigger on version tags like v0.2.0, v1.2.0
+      - 'v*' # Trigger on version tags like v0.2.0, v1.2.0
 
 jobs:
   publish:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      id-token: write  # Required for npm provenance
+      # OIDC identity for npm Trusted Publishing: the runner proves which repo and
+      # workflow it is, and npm exchanges that for short-lived publish credentials.
+      # No NPM_TOKEN is involved — see "Releasing" in AGENTS.md for the one-time npmjs.com setup.
+      id-token: write
 
     steps:
       - name: Checkout
@@ -23,9 +26,12 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '26'
+          node-version: '22'
           cache: 'pnpm'
-          registry-url: 'https://registry.npmjs.org'
+          # No `registry-url`: it makes setup-node write an .npmrc pointing at
+          # ${NODE_AUTH_TOKEN} and export that variable with a placeholder value, so npm
+          # authenticates with a bogus token (registry answers 404) instead of exchanging the
+          # OIDC identity. npm defaults to registry.npmjs.org anyway.
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -36,12 +42,37 @@ jobs:
       - name: Test
         run: pnpm -r run test
 
-      - name: Publish React package
-        run: pnpm --filter @iloveagents/foundry-voice-live-react publish --access public --no-git-checks
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-
-      - name: Publish Proxy package
-        run: pnpm --filter @iloveagents/foundry-voice-live-proxy-node publish --access public --no-git-checks
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      # `npm publish`, not `pnpm publish`: the OIDC token exchange is implemented in the
+      # npm CLI. Provenance is generated from the same OIDC identity.
+      # The upgrade and the publish share one shell on purpose: Node 22 ships npm 10.x, which
+      # has no OIDC support, and a global npm installed in an *earlier* step was still not the
+      # npm that ran here (the publish reported 10.9.8 and asked for a login).
+      - name: Publish to npm
+        run: |
+          npm install --global "npm@^11.5.1"
+          hash -r
+          echo "node $(node --version), npm $(npm --version) at $(which npm)"
+          echo "registry: $(npm config get registry)"
+          # If either of these is empty the job never got an OIDC identity, and the problem is
+          # GitHub-side (permissions/context) rather than the npm trusted-publisher config
+          echo "OIDC request url set: ${ACTIONS_ID_TOKEN_REQUEST_URL:+yes}"
+          echo "OIDC request token set: ${ACTIONS_ID_TOKEN_REQUEST_TOKEN:+yes}"
+          # Idempotent: publish a package only if its exact version is not already on npm. This lets
+          # a tag re-run safely, tolerates a partially-published release, and means a package whose
+          # version has not changed since the last release (e.g. a package bootstrapped out of band)
+          # is skipped instead of failing the whole job. Each package still needs its own Trusted
+          # Publisher on npmjs.com (see CLAUDE.md).
+          publish() {
+            local dir="$1" name version
+            name=$(node -p "require('./$dir/package.json').name")
+            version=$(node -p "require('./$dir/package.json').version")
+            if npm view "$name@$version" version >/dev/null 2>&1; then
+              echo "skip: $name@$version is already published"
+            else
+              echo "publish: $name@$version"
+              (cd "$dir" && npm publish --provenance --access public)
+            fi
+          }
+          publish packages/react
+          publish packages/proxy-node
+          publish packages/agui

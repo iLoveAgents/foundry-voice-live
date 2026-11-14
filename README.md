@@ -14,26 +14,22 @@ SDK and tools for **Microsoft Foundry Voice Live API** - enabling real-time voic
 
 📖 **[Getting Started Guide](https://iloveagents.ai/foundry-voice-live-react-sdk)** — Step-by-step tutorial with examples
 
-> **Renamed**: This project was previously "azure-voice-live" and has been renamed to align with [Microsoft's rebranding](https://learn.microsoft.com/en-us/azure/ai-services/speech-service/voice-live) of the service.
-
 ## What is Voice Live?
 
 Microsoft Foundry Voice Live API provides a unified solution for low-latency, high-quality speech-to-speech interactions:
 
 - **Unified API**: Integrates speech recognition, generative AI, and text-to-speech in one interface
-- **Multiple Models**: Azure Realtime, GPT Realtime, GPT text models, and Phi — see the [current managed model list](https://learn.microsoft.com/azure/ai-services/speech-service/voice-live#supported-models-and-regions) for supported choices
+- **Multiple Models**: `gpt-realtime`, `azure-realtime` (native voices), GPT-4.1, GPT-5, Phi, and more - fully managed, no deployment needed
 - **Global Coverage**: 140+ locales for speech-to-text, 600+ voices across 150+ locales
-- **Advanced Features**: Noise suppression, echo cancellation, semantic turn detection
+- **Advanced Features**: Noise suppression, echo cancellation, semantic turn detection, interim responses, proactive greetings
+- **Transports**: WebSocket audio, or WebRTC (preview) for lowest browser latency
+- **Foundry Agents & MCP**: Connect to Foundry Agent Service, add remote MCP servers as tools
+- **AG-UI protocol**: bridge a session to [AG-UI](https://github.com/ag-ui-protocol/ag-ui) for CopilotKit or any AG-UI UI — plus a `doctor` CLI (separate [`-agui`](./packages/agui/README.md) package)
 - **Avatar Support**: Text-to-speech avatars synchronized with audio output
 - **Function Calling**: External actions and VoiceRAG patterns
+- **Production hardening**: opt-in auto-reconnect with backoff, token providers, typed events, quiet logging, secure proxy
 
-## API compatibility
-
-Checked against Microsoft's [Voice Live `2026-07-15` API reference](https://learn.microsoft.com/azure/ai-services/speech-service/voice-live-api-reference-2026-07-15) on **2026-11-14**. This is the default stable API version for the SDK and proxy.
-
-The typed configuration and event helpers cover native Azure Realtime voices, MAI transcription, MCP tools, parallel tool-call control, streaming text input, and server-reported session expiration. Feature support still depends on the model and region. The [Azure Realtime and Streaming Text example](./examples/src/pages/CurrentCapabilities.tsx) demonstrates a current configuration using the backend proxy.
-
-Choose WebSocket audio (the default) or native WebRTC voice with `connection.transport: 'webrtc'`. WebRTC sends microphone and assistant audio over media tracks, receives transcripts and response events on the `voice-live-events` data channel, and keeps a WebSocket open for signaling, session control, and tools. The bundled proxy authenticates the control connection while audio flows directly between the browser and Voice Live. WebRTC voice and smart turn detection remain preview capabilities in Microsoft's documentation. [Voice Live WebRTC](https://learn.microsoft.com/azure/ai-services/speech-service/voice-live-webrtc) currently uses global standard deployments and automatic regional routing; avatar configuration is unsupported with its sideband control.
+This SDK targets Voice Live API **`2026-07-15` (GA)** and contract-tests its wire format against Microsoft's official `@azure/ai-voicelive` SDK. The React hook is a thin binding over framework-agnostic core classes (transports, audio output, avatar connection) that are exported for custom integrations.
 
 ## Packages
 
@@ -41,10 +37,11 @@ Choose WebSocket audio (the default) or native WebRTC voice with `connection.tra
 |---------|-------------|---------|
 | [@iloveagents/foundry-voice-live-react](./packages/react/README.md) | React hooks and components | [![npm](https://img.shields.io/npm/v/@iloveagents/foundry-voice-live-react)](https://www.npmjs.com/package/@iloveagents/foundry-voice-live-react) |
 | [@iloveagents/foundry-voice-live-proxy-node](./packages/proxy-node/README.md) | Secure WebSocket proxy server | [![npm](https://img.shields.io/npm/v/@iloveagents/foundry-voice-live-proxy-node)](https://www.npmjs.com/package/@iloveagents/foundry-voice-live-proxy-node) |
+| [@iloveagents/foundry-voice-live-agui](./packages/agui/README.md) | AG-UI protocol bridge (+ doctor CLI) | [![npm](https://img.shields.io/npm/v/@iloveagents/foundry-voice-live-agui)](https://www.npmjs.com/package/@iloveagents/foundry-voice-live-agui) |
 
 ## Quick Start
 
-> **Model and region availability:** Availability depends on the selected model, resource region, and processing scope. Check the [Voice Live region matrix](https://learn.microsoft.com/azure/ai-services/speech-service/regions?tabs=voice-live#regions) for your deployment. The SDK keeps `gpt-realtime` as its default; you can select newer supported models explicitly.
+> **Region Availability:** The default model (`gpt-realtime`) is only available in **East US 2** and **Sweden Central** regions. Make sure your Azure AI Foundry resource is deployed in one of these regions. See [Microsoft docs](https://learn.microsoft.com/azure/ai-foundry/openai/concepts/models#global-standard-model-availability) for current availability.
 
 ### Installation
 
@@ -54,15 +51,14 @@ npm install @iloveagents/foundry-voice-live-react
 
 ### Voice Only
 
-Start the [proxy](#production-proxy) with your server-side credentials before connecting.
-
 ```tsx
 import { useVoiceLive } from '@iloveagents/foundry-voice-live-react';
 
 function App() {
   const { connect, disconnect, connectionState, audioStream } = useVoiceLive({
     connection: {
-      proxyUrl: 'ws://localhost:8080/ws?model=gpt-realtime', // Server-side credentials
+      resourceName: 'your-foundry-resource',  // Azure AI Foundry resource name
+      apiKey: 'your-foundry-api-key',         // For dev only - use proxy in production!
     },
     session: {
       instructions: 'You are a helpful assistant.',
@@ -80,28 +76,6 @@ function App() {
 }
 ```
 
-### Voice over WebRTC
-
-Select the voice transport through the same hook:
-
-```tsx
-const voice = useVoiceLive({
-  connection: {
-    proxyUrl: 'ws://localhost:8080/ws?model=azure-realtime',
-    transport: 'webrtc',
-  },
-  autoStartMic: false,
-  session: {
-    voice: { type: 'azure-realtime-native', name: 'ava' },
-    inputAudioTranscription: { model: 'mai-transcribe-2' },
-  },
-});
-```
-
-Play `voice.audioStream` through an audio element, as in the voice-only example. Call `voice.startMic()` after connecting when the user chooses to enable the microphone. `stopMic()`, `toggleMute()`, `sendEvent()`, `createResponse()`, and transcript callbacks work through the same hook API. The SDK negotiates SDP through the proxy using `transport=webrtc`; the proxy connects to `/voice-live/realtime/calls`. Use `wss://` for a remotely hosted proxy.
-
-The [WebRTC example](./examples/src/pages/WebRTCVoice.tsx) includes audio playback, text input, a time-lookup tool, microphone controls, and error handling. See the [React SDK transport guide](./packages/react/README.md#voice-over-webrtc-preview) for connection options and service limitations.
-
 ### With Avatar
 
 ```tsx
@@ -110,7 +84,8 @@ import { useVoiceLive, VoiceLiveAvatar, sessionConfig } from '@iloveagents/found
 function App() {
   const { videoStream, audioStream, connect, disconnect } = useVoiceLive({
     connection: {
-      proxyUrl: 'ws://localhost:8080/ws?model=gpt-realtime',
+      resourceName: 'your-foundry-resource',
+      apiKey: 'your-foundry-api-key',
     },
     session: sessionConfig()
       .instructions('You are a helpful assistant.')
@@ -150,7 +125,8 @@ function App() {
     },
     session: sessionConfig()
       .voice('en-US-AvaMultilingualNeural')
-      .semanticVAD({ interruptResponse: true })
+      .semanticVAD({ interruptResponse: true, autoTruncate: true })
+      .interimResponse({ type: 'llm_interim_response', triggers: ['tool', 'latency'] })
       .echoCancellation()
       .noiseReduction()
       .build(),
@@ -166,7 +142,7 @@ function App() {
 }
 ```
 
-Configure the proxy `.env` with `FOUNDRY_RESOURCE_NAME`; the default API version is `2026-07-15`. Existing deployments can set `API_VERSION` explicitly. For new agent integrations, use these named Foundry Agent Service examples; the classic `agentId` examples remain for existing integrations.
+Configure the proxy `.env` with `FOUNDRY_RESOURCE_NAME` (the GA API version `2026-07-15` is the default — no `API_VERSION` needed).
 
 To resume a previous conversation, add `conversationId` to the URL:
 
@@ -174,7 +150,11 @@ To resume a previous conversation, add `conversationId` to the URL:
 ws://localhost:8080/ws?agentName=MyAgent&projectName=myProject&conversationId=conv_abc123
 ```
 
-For per-user MSAL auth, pass `token` as a URL param. Use `wss://` for a remotely hosted proxy. The proxy moves the token to an `Authorization` header before connecting to Azure (the browser WebSocket API cannot set headers directly). See the [examples](./examples/) for both auth patterns.
+For per-user MSAL auth, pass `token` as a URL param. The token only travels to your own proxy over localhost/internal network — the proxy moves it to an `Authorization` header before connecting to Azure. For direct connections without a proxy, pass `token` on the connection config (sent as the documented `Authorization=Bearer …` query parameter). See the [examples](./examples/) for both auth patterns.
+
+### WebRTC Transport (Preview)
+
+Set `connection.transport = 'webrtc'` to stream audio over RTP instead of the WebSocket (voice-only, lower latency; see the [React SDK README](./packages/react/README.md#webrtc-transport-preview) for limitations). Works directly and through the proxy (`transport=webrtc` is appended automatically).
 
 ### Production (Proxy)
 
@@ -234,7 +214,7 @@ Open <http://localhost:3001> to explore the examples.
 
 ### Prerequisites
 
-- Node.js 22.22.2+, 24.15+, or 26+
+- Node.js >= 22.0.0 (development; the protocol contract test's `@azure/ai-voicelive` dev dependency requires it. The published proxy runs on Node >= 20 — its `@azure/identity` dependency's floor.)
 - pnpm >= 9.0.0
 - [just](https://github.com/casey/just) command runner
 
@@ -290,33 +270,11 @@ just publish-dry  # Preview npm publish
 │  (Dev only)   │      │  (Production)     │
 └───────────────┘      └───────────────────┘
                     │
+        WebSocket audio  OR  WebRTC (RTP) + control channel
                     ▼
 ┌─────────────────────────────────────────┐
 │     Microsoft Foundry Voice Live API    │
 └─────────────────────────────────────────┘
-```
-
-## Migration from Azure Voice Live
-
-If upgrading from the previous `@iloveagents/azure-voice-live-*` packages:
-
-```bash
-# Remove old packages
-npm uninstall @iloveagents/azure-voice-live-react @iloveagents/azure-voice-live-proxy
-
-# Install new packages
-npm install @iloveagents/foundry-voice-live-react
-npm install @iloveagents/foundry-voice-live-proxy-node  # if using proxy
-```
-
-Update imports:
-
-```typescript
-// Before
-import { useVoiceLive } from '@iloveagents/azure-voice-live-react';
-
-// After
-import { useVoiceLive } from '@iloveagents/foundry-voice-live-react';
 ```
 
 ## API Reference
@@ -325,45 +283,65 @@ import { useVoiceLive } from '@iloveagents/foundry-voice-live-react';
 
 ```typescript
 const {
-  connectionState,  // 'disconnected' | 'connecting' | 'connected' | 'error'
+  connectionState,  // 'disconnected' | 'connecting' | 'reconnecting' | 'connected' | 'error'
+  reconnectAttempt, // number - 1-based while reconnecting, else 0
+  isReady,          // boolean - the session is configured and can be spoken to
   sessionState,     // 'idle' | 'listening' | 'thinking' | 'speaking'
+  transport,        // 'websocket' | 'webrtc'
   videoStream,      // MediaStream | null (avatar video)
-  audioStream,      // MediaStream | null (audio playback)
+  audioStream,      // MediaStream | null (assistant audio — attach to <audio autoPlay>)
   audioAnalyser,    // AnalyserNode | null (for visualization)
+  sessionExpiresAt, // number | null (epoch ms)
   isMicActive,      // boolean - whether microphone is capturing
   isMuted,          // boolean - microphone mute state
+  audioContext,     // AudioContext | null (shared with your own audio graph)
   connect,          // () => Promise<void>
   disconnect,       // () => void
+  startMic,         // () => Promise<void>
+  stopMic,          // () => void
   toggleMute,       // () => void - instant mute/unmute
-  sendEvent,        // (event: any) => void
-  updateSession,    // (config) => void — updates only supplied fields
-  appendText,       // (itemId, delta, contentIndex?) => void
-  finishText,       // (itemId, contentIndex?) => void
-  createResponse,   // (options?) => void
-  sessionExpiresAt, // number | null — server Unix timestamp in seconds
+  sendText,         // (text) => void - user text message
+  sendToolResult,   // (callId, output) => void
+  cancelResponse,   // () => void
+  approveMcpCall,   // (approvalRequestId, approve) => void
+  createResponse,   // () => void - ask for a response (serialized by the response gate)
+  commitInputAudio, // () => void - manual turn mode
+  clearInputAudio,  // () => void
+  getAudioPlaybackTime, // () => number | null (websocket transport only)
+  sendEvent,        // (event: VoiceLiveClientEvent | VoiceLiveEvent) => void
+  updateSession,    // (config) => void
   error,            // string | null
 } = useVoiceLive({
   connection: {
-    resourceName?: string,      // Azure AI Foundry resource
+    resourceName?: string,      // Microsoft Foundry resource
     apiKey?: string,            // For dev only
+    token?: string,             // Entra ID token (direct connections)
     proxyUrl?: string,          // Secure proxy URL (production)
+    transport?: 'websocket' | 'webrtc',
+    agentName?, projectName?,   // Foundry Agents
   },
+  reconnect: true,              // auto-reconnect after unexpected closes (default false)
+  connectTimeoutMs: 15000,      // give up on a connect that never opens
   session: sessionConfig()
     .instructions('You are a helpful assistant.')
     .hdVoice('en-US-Ava:DragonHDLatestNeural')
-    .semanticVAD({ interruptResponse: true, removeFillerWords: true })
+    .semanticVAD({ interruptResponse: true, removeFillerWords: true, autoTruncate: true })
     .echoCancellation()
     .noiseReduction()
     .greeting({ type: 'llm', text: 'Greet the user warmly in English.' })
     .interimResponse({
       type: 'llm_interim_response',
       triggers: ['tool', 'latency'],
-      latencyThresholdInMs: 3000,
+      latencyThresholdInMs: 1500,
     })
+    .mcpServer({ serverLabel: 'mslearn', serverUrl: 'https://learn.microsoft.com/api/mcp' })
     .build(),
-  onEvent?: (event: VoiceLiveEvent) => void,
+  logLevel?: 'debug' | 'info' | 'warn' | 'error' | 'none',   // default 'warn'
+  onEvent?: (event: VoiceLiveServerEvent) => void,          // typed wire events
   onTranscript?: (role: 'user' | 'assistant', text: string, isFinal: boolean) => void,
-  toolExecutor?: (name: string, args: string, callId: string) => void,
+  toolExecutor?: (name, args, callId) => ToolResult | Promise<ToolResult> | void, // returned value is auto-sent
+  onMcpApprovalRequest?: (request) => void,
+  onWarning?: (warning) => void,
 });
 ```
 
@@ -371,11 +349,11 @@ const {
 
 ```tsx
 <VoiceLiveAvatar
-  videoStream={videoStream}    // From useVoiceLive
-  audioStream={audioStream}    // From useVoiceLive
-  transparentBackground={true} // Remove green background
+  videoStream={videoStream}          // From useVoiceLive
+  audioStream={audioStream}          // From useVoiceLive
+  transparentBackground={true}       // Remove green background (WebGL chroma key)
   chromaKeyConfig={{ keyColor: [0, 1, 0], similarity: 0.4, smoothness: 0.1 }}
-  loadingMessage="Loading..."  // Shown before video starts
+  loadingMessage="Loading..."        // Shown before video starts
 />
 ```
 
@@ -388,8 +366,7 @@ const {
 ### Microsoft Resources
 
 - [Voice Live Documentation](https://learn.microsoft.com/en-us/azure/ai-services/speech-service/voice-live)
-- [Voice Live API Reference](https://learn.microsoft.com/azure/ai-services/speech-service/voice-live-api-reference-2026-07-15)
-- [Voice Live WebRTC](https://learn.microsoft.com/azure/ai-services/speech-service/voice-live-webrtc)
+- [Voice Live API Reference](https://learn.microsoft.com/en-us/azure/ai-services/speech-service/voice-live-api-reference)
 - [Azure AI Foundry](https://azure.microsoft.com/products/ai-foundry/)
 
 ## Contributing

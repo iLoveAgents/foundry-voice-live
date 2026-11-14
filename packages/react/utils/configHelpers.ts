@@ -18,14 +18,20 @@ import type {
   VoiceConfig,
   StandardVoice,
   TurnDetectionConfig,
+  EndOfUtteranceModel,
   Tool,
-  ToolChoice,
-  AzureRealtimeVoice,
-  InputAudioTranscription,
-  InputAudioSamplingRate,
+  MCPTool,
+  FoundryAgentTool,
   GreetingConfig,
   InterimResponseConfig,
+  InputAudioTranscription,
+  AzureRealtimeNativeVoiceName,
+  PersonalVoiceModel,
+  ReasoningEffort,
 } from '../types/voiceLive';
+
+/** Extra voice options accepted by the voice helpers (everything except name/type) */
+export type VoiceOptions = Omit<VoiceConfig, 'name' | 'type'>;
 
 // ============================================================================
 // VOICE CONFIGURATION HELPERS
@@ -73,19 +79,15 @@ export function withVoice(
  */
 export function withHDVoice(
   voiceName: string,
-  options: {
-    temperature?: number;
-    rate?: string;
-  } = {},
+  options: VoiceOptions = {},
   config: Partial<VoiceLiveSessionConfig> = {}
 ): Partial<VoiceLiveSessionConfig> {
   return {
     ...config,
     voice: {
+      ...options,
       name: voiceName,
       type: 'azure-standard', // HD voices use azure-standard type
-      temperature: options.temperature,
-      rate: options.rate,
     },
   };
 }
@@ -100,19 +102,75 @@ export function withHDVoice(
  * @example
  * ```tsx
  * const config = withCustomVoice('my-custom-voice-id', baseConfig);
+ * // For endpointId, prosody, etc. use withVoice({ name, type: 'azure-custom', endpointId })
  * ```
  */
 export function withCustomVoice(
   voiceName: string,
-  config: Partial<VoiceLiveSessionConfig> = {},
-  endpointId?: string
+  config: Partial<VoiceLiveSessionConfig> = {}
 ): Partial<VoiceLiveSessionConfig> {
   return {
     ...config,
     voice: {
       name: voiceName,
       type: 'azure-custom',
-      ...(endpointId !== undefined ? { endpointId } : {}),
+    },
+  };
+}
+
+/**
+ * Configure an Azure personal voice
+ *
+ * @param voiceName - Personal voice name
+ * @param model - Underlying neural model (e.g. 'DragonHDOmniLatestNeural')
+ * @param options - Additional voice options (temperature, rate, locale, ...)
+ * @param config - Session configuration to update
+ * @returns Updated configuration
+ *
+ * @example
+ * ```tsx
+ * const config = withPersonalVoice('my-personal-voice', 'DragonHDOmniLatestNeural');
+ * ```
+ */
+export function withPersonalVoice(
+  voiceName: string,
+  model: PersonalVoiceModel,
+  options: VoiceOptions = {},
+  config: Partial<VoiceLiveSessionConfig> = {}
+): Partial<VoiceLiveSessionConfig> {
+  return {
+    ...config,
+    voice: {
+      ...options,
+      name: voiceName,
+      type: 'azure-personal',
+      model,
+    },
+  };
+}
+
+/**
+ * Configure an Azure Realtime native voice (model 'azure-realtime' only)
+ *
+ * @param voiceName - Native voice name ('ava', 'andrew', 'diya', ...)
+ * @param config - Session configuration to update
+ * @returns Updated configuration
+ *
+ * @example
+ * ```tsx
+ * // connection: { model: 'azure-realtime' }
+ * const config = withAzureRealtimeVoice('ava');
+ * ```
+ */
+export function withAzureRealtimeVoice(
+  voiceName: AzureRealtimeNativeVoiceName,
+  config: Partial<VoiceLiveSessionConfig> = {}
+): Partial<VoiceLiveSessionConfig> {
+  return {
+    ...config,
+    voice: {
+      name: voiceName,
+      type: 'azure-realtime-native',
     },
   };
 }
@@ -156,7 +214,7 @@ export function withAvatar(
       style,
       customized: options.customized,
       video: {
-        codec: options.codec || 'h264',
+        codec: options.codec || 'vp9',
         resolution: options.resolution || { width: 1920, height: 1080 },
         bitrate: options.bitrate || 1000000,
       },
@@ -199,7 +257,7 @@ export function withTransparentBackground(
       style: config.avatar?.style || '',
       video: {
         ...config.avatar?.video,
-        codec: config.avatar?.video?.codec || 'h264',
+        codec: config.avatar?.video?.codec || 'vp9',
         resolution: config.avatar?.video?.resolution || { width: 1920, height: 1080 },
         bitrate: config.avatar?.video?.bitrate || 1000000,
         background: {
@@ -234,7 +292,7 @@ export function withBackgroundImage(
       style: config.avatar?.style || '',
       video: {
         ...config.avatar?.video,
-        codec: config.avatar?.video?.codec || 'h264',
+        codec: config.avatar?.video?.codec || 'vp9',
         resolution: config.avatar?.video?.resolution || { width: 1920, height: 1080 },
         bitrate: config.avatar?.video?.bitrate || 1000000,
         background: {
@@ -275,7 +333,7 @@ export function withAvatarCrop(
       style: config.avatar?.style || '',
       video: {
         ...config.avatar?.video,
-        codec: config.avatar?.video?.codec || 'h264',
+        codec: config.avatar?.video?.codec || 'vp9',
         resolution: config.avatar?.video?.resolution || { width: 1920, height: 1080 },
         bitrate: config.avatar?.video?.bitrate || 1000000,
         crop: {
@@ -359,12 +417,15 @@ export function withSemanticVAD(
      * @default false
      */
     autoTruncate?: boolean;
+    /**
+     * Text appended to the truncated assistant turn (requires autoTruncate),
+     * e.g. ' [The user interrupted me.]'
+     */
+    appendedTextAfterTruncation?: string;
   } = {},
   config: Partial<VoiceLiveSessionConfig> = {}
 ): Partial<VoiceLiveSessionConfig> {
-  const type = options.multilingual
-    ? 'azure_semantic_vad_multilingual'
-    : 'azure_semantic_vad';
+  const type = options.multilingual ? 'azure_semantic_vad_multilingual' : 'azure_semantic_vad';
 
   return {
     ...config,
@@ -379,6 +440,7 @@ export function withSemanticVAD(
       interruptResponse: options.interruptResponse,
       createResponse: true,
       autoTruncate: options.autoTruncate,
+      appendedTextAfterTruncation: options.appendedTextAfterTruncation,
     },
   };
 }
@@ -400,14 +462,14 @@ export function withSemanticVAD(
  */
 export function withEndOfUtterance(
   options: {
-    model?: string;
+    /** Detection model; defaults to the text-based semantic model matching the VAD language mode */
+    model?: EndOfUtteranceModel;
     thresholdLevel?: 'default' | 'low' | 'medium' | 'high';
     timeoutMs?: number;
   } = {},
   config: Partial<VoiceLiveSessionConfig> = {}
 ): Partial<VoiceLiveSessionConfig> {
-  const isMultilingual =
-    config.turnDetection?.type === 'azure_semantic_vad_multilingual';
+  const isMultilingual = config.turnDetection?.type === 'azure_semantic_vad_multilingual';
 
   return {
     ...config,
@@ -415,7 +477,9 @@ export function withEndOfUtterance(
       ...config.turnDetection,
       type: config.turnDetection?.type || 'azure_semantic_vad',
       endOfUtteranceDetection: {
-        model: options.model || (isMultilingual ? 'semantic_detection_v1_multilingual' : 'semantic_detection_v1'),
+        model:
+          options.model ||
+          (isMultilingual ? 'semantic_detection_v1_multilingual' : 'semantic_detection_v1'),
         thresholdLevel: options.thresholdLevel || 'default',
         timeoutMs: options.timeoutMs || 1000,
       },
@@ -448,9 +512,11 @@ export function withoutTurnDetection(
 // ============================================================================
 
 /**
- * Enable echo cancellation
+ * Enable server-side echo cancellation
  *
  * @param config - Session configuration to update
+ * @param options - Optional Live-Reference AEC settings (`referenceSource: 'client'`,
+ *   `channels: 2`) — types/wire only; stereo capture is not implemented by useAudioCapture yet
  * @returns Updated configuration
  *
  * @example
@@ -459,12 +525,15 @@ export function withoutTurnDetection(
  * ```
  */
 export function withEchoCancellation(
-  config: Partial<VoiceLiveSessionConfig> = {}
+  config: Partial<VoiceLiveSessionConfig> = {},
+  options: { referenceSource?: 'server' | 'client'; channels?: 1 | 2 } = {}
 ): Partial<VoiceLiveSessionConfig> {
   return {
     ...config,
     inputAudioEchoCancellation: {
       type: 'server_echo_cancellation',
+      ...(options.referenceSource !== undefined && { referenceSource: options.referenceSource }),
+      ...(options.channels !== undefined && { channels: options.channels }),
     },
   };
 }
@@ -556,7 +625,7 @@ export function withoutNoiseReduction(
 /**
  * Set input audio sampling rate
  *
- * @param sampleRate - Sample rate (8000, 16000, or 24000)
+ * @param sampleRate - Sample rate (16000 or 24000)
  * @param config - Session configuration to update
  * @returns Updated configuration
  *
@@ -566,7 +635,7 @@ export function withoutNoiseReduction(
  * ```
  */
 export function withSampleRate(
-  sampleRate: InputAudioSamplingRate,
+  sampleRate: 16000 | 24000,
   config: Partial<VoiceLiveSessionConfig> = {}
 ): Partial<VoiceLiveSessionConfig> {
   return {
@@ -660,12 +729,20 @@ export function withWordTimestamps(
  * const config = withTranscription({
  *   model: 'azure-speech',
  *   language: 'en',
- *   customSpeech: { 'zh-CN': 'your-custom-endpoint-id' }
+ *   customSpeech: { 'zh-CN': 'your-custom-model-id' }
  * }, baseConfig);
  * ```
  */
 export function withTranscription(
-  options: InputAudioTranscription = {},
+  options: {
+    model?: InputAudioTranscription['model'];
+    language?: string;
+    prompt?: string;
+    /** Phrase list for recognition improvement (Voice Live, azure-speech only) */
+    phraseList?: string[];
+    /** Custom speech models per locale (Voice Live, azure-speech only) */
+    customSpeech?: Record<string, string>;
+  } = {},
   config: Partial<VoiceLiveSessionConfig> = {}
 ): Partial<VoiceLiveSessionConfig> {
   return {
@@ -742,12 +819,177 @@ export function withTools(
  * ```
  */
 export function withToolChoice(
-  toolChoice: ToolChoice,
+  toolChoice: 'auto' | 'none' | 'required',
   config: Partial<VoiceLiveSessionConfig> = {}
 ): Partial<VoiceLiveSessionConfig> {
   return {
     ...config,
     toolChoice,
+  };
+}
+
+/**
+ * Add a remote MCP server (server-side tool execution with optional approval flow).
+ * Appends to existing tools (unlike `withTools`, which replaces them).
+ *
+ * @param server - MCP server definition (label, URL, allowed tools, approval policy)
+ * @param config - Session configuration to update
+ * @returns Updated configuration
+ *
+ * @example
+ * ```tsx
+ * const config = withMcpServer({
+ *   serverLabel: 'mslearn',
+ *   serverUrl: 'https://learn.microsoft.com/api/mcp',
+ *   requireApproval: 'never',
+ * }, baseConfig);
+ * ```
+ */
+export function withMcpServer(
+  server: Omit<MCPTool, 'type'>,
+  config: Partial<VoiceLiveSessionConfig> = {}
+): Partial<VoiceLiveSessionConfig> {
+  return {
+    ...config,
+    tools: [...(config.tools ?? []), { type: 'mcp', ...server }],
+    toolChoice: config.toolChoice ?? 'auto',
+  };
+}
+
+/**
+ * Add a Foundry agent as a tool (chat-supervisor pattern).
+ * Appends to existing tools.
+ *
+ * @param agent - Foundry agent tool definition
+ * @param config - Session configuration to update
+ * @returns Updated configuration
+ *
+ * @example
+ * ```tsx
+ * const config = withFoundryAgentTool({
+ *   agentName: 'customer-service-agent',
+ *   projectName: 'my-foundry-project',
+ *   description: 'Handles complex customer requests',
+ * }, baseConfig);
+ * ```
+ */
+export function withFoundryAgentTool(
+  agent: Omit<FoundryAgentTool, 'type'>,
+  config: Partial<VoiceLiveSessionConfig> = {}
+): Partial<VoiceLiveSessionConfig> {
+  return {
+    ...config,
+    tools: [...(config.tools ?? []), { type: 'foundry_agent', ...agent }],
+    toolChoice: config.toolChoice ?? 'auto',
+  };
+}
+
+/**
+ * Allow or forbid parallel tool calls (default: allowed)
+ *
+ * @param enabled - false forces sequential tool calls
+ * @param config - Session configuration to update
+ * @returns Updated configuration
+ */
+export function withParallelToolCalls(
+  enabled: boolean = true,
+  config: Partial<VoiceLiveSessionConfig> = {}
+): Partial<VoiceLiveSessionConfig> {
+  return {
+    ...config,
+    parallelToolCalls: enabled,
+  };
+}
+
+// ============================================================================
+// MODEL BEHAVIOUR HELPERS
+// ============================================================================
+
+/**
+ * Set reasoning effort for reasoning-capable models
+ *
+ * @param effort - 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh'
+ * @param config - Session configuration to update
+ * @returns Updated configuration
+ */
+export function withReasoningEffort(
+  effort: ReasoningEffort,
+  config: Partial<VoiceLiveSessionConfig> = {}
+): Partial<VoiceLiveSessionConfig> {
+  return {
+    ...config,
+    reasoningEffort: effort,
+  };
+}
+
+/**
+ * Attach session metadata (up to 16 key/value pairs; surfaced in Foundry logs).
+ * Merges with existing metadata.
+ *
+ * @param metadata - Key/value pairs
+ * @param config - Session configuration to update
+ * @returns Updated configuration
+ */
+export function withMetadata(
+  metadata: Record<string, string>,
+  config: Partial<VoiceLiveSessionConfig> = {}
+): Partial<VoiceLiveSessionConfig> {
+  return {
+    ...config,
+    metadata: { ...config.metadata, ...metadata },
+  };
+}
+
+// ============================================================================
+// CONVERSATION HELPERS
+// ============================================================================
+
+/**
+ * Configure interim responses (filler messages during tool execution or latency).
+ * Supported in agent mode and with cascaded text models + Azure voices.
+ *
+ * @param interim - Interim response configuration
+ * @param config - Session configuration to update
+ * @returns Updated configuration
+ *
+ * @example
+ * ```tsx
+ * const config = withInterimResponse({
+ *   type: 'llm_interim_response',
+ *   triggers: ['tool', 'latency'],
+ *   latencyThresholdInMs: 1500,
+ * }, baseConfig);
+ * ```
+ */
+export function withInterimResponse(
+  interim: InterimResponseConfig,
+  config: Partial<VoiceLiveSessionConfig> = {}
+): Partial<VoiceLiveSessionConfig> {
+  return {
+    ...config,
+    interimResponse: interim,
+  };
+}
+
+/**
+ * Configure a proactive greeting (assistant speaks first)
+ *
+ * @param greeting - Greeting configuration
+ * @param config - Session configuration to update
+ * @returns Updated configuration
+ *
+ * @example
+ * ```tsx
+ * const config = withGreeting({ type: 'pregenerated', text: 'Hello! How can I help?' }, baseConfig);
+ * ```
+ */
+export function withGreeting(
+  greeting: GreetingConfig,
+  config: Partial<VoiceLiveSessionConfig> = {}
+): Partial<VoiceLiveSessionConfig> {
+  return {
+    ...config,
+    greeting,
   };
 }
 
@@ -771,9 +1013,7 @@ export function withToolChoice(
  * const config = enhance(baseConfig);
  * ```
  */
-export function compose<T>(
-  ...fns: Array<(config: T) => T>
-): (config: T) => T {
+export function compose<T>(...fns: Array<(config: T) => T>): (config: T) => T {
   return (config: T) => fns.reduce((acc, fn) => fn(acc), config);
 }
 
@@ -798,7 +1038,7 @@ export function compose<T>(
  *   .noiseReduction();
  *
  * useVoiceLive({
- *   connection: { proxyUrl: 'ws://localhost:8080/ws?model=gpt-realtime' },
+ *   connection: { resourceName: 'my-resource', apiKey: 'key' },
  *   session: config,  // works directly, no .build() needed
  * });
  * ```
@@ -818,30 +1058,27 @@ export class SessionConfigBuilder {
     return this;
   }
 
-  /** Azure native voice; connect using model azure-realtime. */
-  realtimeVoice(name: AzureRealtimeVoice = 'ava'): this {
-    this.config.voice = { type: 'azure-realtime-native', name };
-    return this;
-  }
-
-  /** Control parallel tool execution. */
-  parallelToolCalls(enabled: boolean): this {
-    this.config.parallelToolCalls = enabled;
-    return this;
-  }
-
-  /** Set HD voice with options */
-  hdVoice(
-    name: string,
-    options: { temperature?: number; rate?: string } = {}
-  ): this {
+  /** Set HD voice with options (temperature, rate, pitch, locale, ...) */
+  hdVoice(name: string, options: VoiceOptions = {}): this {
     this.config = withHDVoice(name, options, this.config);
     return this;
   }
 
   /** Set custom voice */
-  customVoice(name: string, endpointId?: string): this {
-    this.config = withCustomVoice(name, this.config, endpointId);
+  customVoice(name: string): this {
+    this.config = withCustomVoice(name, this.config);
+    return this;
+  }
+
+  /** Set Azure personal voice */
+  personalVoice(name: string, model: PersonalVoiceModel, options: VoiceOptions = {}): this {
+    this.config = withPersonalVoice(name, model, options, this.config);
+    return this;
+  }
+
+  /** Set Azure Realtime native voice (model 'azure-realtime' only) */
+  azureRealtimeVoice(name: AzureRealtimeNativeVoiceName): this {
+    this.config = withAzureRealtimeVoice(name, this.config);
     return this;
   }
 
@@ -873,10 +1110,7 @@ export class SessionConfigBuilder {
   }
 
   /** Set avatar crop */
-  avatarCrop(crop: {
-    topLeft: [number, number];
-    bottomRight: [number, number];
-  }): this {
+  avatarCrop(crop: { topLeft: [number, number]; bottomRight: [number, number] }): this {
     this.config = withAvatarCrop(crop, this.config);
     return this;
   }
@@ -896,6 +1130,7 @@ export class SessionConfigBuilder {
       fillerWordLanguages?: string[];
       interruptResponse?: boolean;
       autoTruncate?: boolean;
+      appendedTextAfterTruncation?: string;
     } = {}
   ): this {
     this.config = withSemanticVAD(options, this.config);
@@ -905,7 +1140,7 @@ export class SessionConfigBuilder {
   /** Add end-of-utterance detection */
   endOfUtterance(
     options: {
-      model?: string;
+      model?: EndOfUtteranceModel;
       thresholdLevel?: 'default' | 'low' | 'medium' | 'high';
       timeoutMs?: number;
     } = {}
@@ -920,9 +1155,11 @@ export class SessionConfigBuilder {
     return this;
   }
 
-  /** Enable server echo cancellation */
-  echoCancellation(): this {
-    this.config = withEchoCancellation(this.config);
+  /** Enable server echo cancellation (optionally with Live-Reference AEC settings) */
+  echoCancellation(
+    options: { referenceSource?: 'server' | 'client'; channels?: 1 | 2 } = {}
+  ): this {
+    this.config = withEchoCancellation(this.config, options);
     return this;
   }
 
@@ -936,7 +1173,7 @@ export class SessionConfigBuilder {
   }
 
   /** Set input audio sample rate */
-  sampleRate(rate: InputAudioSamplingRate): this {
+  sampleRate(rate: 16000 | 24000): this {
     this.config = withSampleRate(rate, this.config);
     return this;
   }
@@ -955,21 +1192,68 @@ export class SessionConfigBuilder {
 
   /** Configure input transcription */
   transcription(
-    options: InputAudioTranscription = {}
+    options: {
+      model?: InputAudioTranscription['model'];
+      language?: string;
+      prompt?: string;
+      phraseList?: string[];
+      customSpeech?: Record<string, string>;
+    } = {}
   ): this {
     this.config = withTranscription(options, this.config);
     return this;
   }
 
-  /** Add function tools */
+  /** Set tools (replaces existing tools) */
   tools(tools: Tool[]): this {
     this.config = withTools(tools, this.config);
     return this;
   }
 
   /** Set tool choice mode */
-  toolChoice(choice: ToolChoice): this {
+  toolChoice(choice: 'auto' | 'none' | 'required'): this {
     this.config = withToolChoice(choice, this.config);
+    return this;
+  }
+
+  /**
+   * Add a remote MCP server (appends to existing tools)
+   *
+   * @example
+   * ```tsx
+   * sessionConfig().mcpServer({
+   *   serverLabel: 'mslearn',
+   *   serverUrl: 'https://learn.microsoft.com/api/mcp',
+   *   requireApproval: 'always',
+   * })
+   * ```
+   */
+  mcpServer(server: Omit<MCPTool, 'type'>): this {
+    this.config = withMcpServer(server, this.config);
+    return this;
+  }
+
+  /** Add a Foundry agent as a tool (appends to existing tools) */
+  foundryAgentTool(agent: Omit<FoundryAgentTool, 'type'>): this {
+    this.config = withFoundryAgentTool(agent, this.config);
+    return this;
+  }
+
+  /** Allow (default) or forbid parallel tool calls */
+  parallelToolCalls(enabled: boolean = true): this {
+    this.config = withParallelToolCalls(enabled, this.config);
+    return this;
+  }
+
+  /** Set reasoning effort for reasoning-capable models */
+  reasoningEffort(effort: ReasoningEffort): this {
+    this.config = withReasoningEffort(effort, this.config);
+    return this;
+  }
+
+  /** Attach session metadata (merges) */
+  metadata(metadata: Record<string, string>): this {
+    this.config = withMetadata(metadata, this.config);
     return this;
   }
 
@@ -986,12 +1270,15 @@ export class SessionConfigBuilder {
    * ```
    */
   greeting(config: GreetingConfig): this {
-    this.config.greeting = config;
+    this.config = withGreeting(config, this.config);
     return this;
   }
 
   /**
-   * Configure interim responses (filler messages during tool execution or latency)
+   * Configure interim responses (filler messages during tool execution or latency).
+   * Supported in agent mode and with cascaded text models + Azure voices
+   * (not by native audio models such as gpt-realtime).
+   * Defaults: latencyThresholdInMs 2000, model 'gpt-4.1-mini', maxCompletionTokens 50.
    *
    * @example
    * ```tsx
@@ -999,7 +1286,7 @@ export class SessionConfigBuilder {
    * sessionConfig().interimResponse({
    *   type: 'llm_interim_response',
    *   triggers: ['tool', 'latency'],
-   *   latencyThresholdInMs: 3000,
+   *   latencyThresholdInMs: 1500,
    * })
    *
    * // Static filler texts
@@ -1011,7 +1298,7 @@ export class SessionConfigBuilder {
    * ```
    */
   interimResponse(config: InterimResponseConfig): this {
-    this.config.interimResponse = config;
+    this.config = withInterimResponse(config, this.config);
     return this;
   }
 
@@ -1036,14 +1323,12 @@ export class SessionConfigBuilder {
  *   .build();
  *
  * const { connect } = useVoiceLive({
- *   connection: { proxyUrl: 'ws://localhost:8080/ws?model=gpt-realtime' },
+ *   connection: { resourceName: 'my-resource', apiKey: 'key' },
  *   session: config,
  * });
  * ```
  */
-export function sessionConfig(
-  initial: Partial<VoiceLiveSessionConfig> = {}
-): SessionConfigBuilder {
+export function sessionConfig(initial: Partial<VoiceLiveSessionConfig> = {}): SessionConfigBuilder {
   const builder = new SessionConfigBuilder();
   // Apply initial config
   Object.assign(builder['config'], initial);

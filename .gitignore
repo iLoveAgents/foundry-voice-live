@@ -38,6 +38,8 @@ tmp/
 temp/
 
 # Playwright
+.playwright-cli/
+output/playwright/
 .playwright-mcp/
 playwright-report/
 test-results/

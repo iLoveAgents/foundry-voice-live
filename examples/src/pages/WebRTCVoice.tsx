@@ -3,7 +3,16 @@ import { useEffect, useRef, useState } from 'react';
 import { useVoiceLive } from '@iloveagents/foundry-voice-live-react';
 import type { MicrophoneStatus } from '@iloveagents/foundry-voice-live-react';
 
-import { AlertBox, ConfigItem, ConfigPanel, ControlGroup, ErrorPanel, SampleLayout, Section, StatusBadge } from '../components';
+import {
+  AlertBox,
+  ConfigItem,
+  ConfigPanel,
+  ControlGroup,
+  ErrorPanel,
+  SampleLayout,
+  Section,
+  StatusBadge,
+} from '../components';
 import { modelProxyUrl } from '../utils/proxyUrl';
 import './WebRTCVoice.css';
 
@@ -22,9 +31,21 @@ export function WebRTCVoice(): JSX.Element {
   const [speechStatus, setSpeechStatus] = useState('Waiting for speech');
 
   const {
-    connect, disconnect, connectionState, sessionState, isReady, error,
-    audioStream, startMic, stopMic, isMicActive, isMuted, toggleMute,
-    sendEvent, createResponse, getMicrophoneStatus,
+    connect,
+    disconnect,
+    connectionState,
+    sessionState,
+    isReady,
+    error,
+    audioStream,
+    startMic,
+    stopMic,
+    isMicActive,
+    isMuted,
+    toggleMute,
+    sendEvent,
+    createResponse,
+    getMicrophoneStatus,
   } = useVoiceLive({
     connection: {
       proxyUrl: modelProxyUrl('azure-realtime'),
@@ -43,55 +64,66 @@ export function WebRTCVoice(): JSX.Element {
       instructions: 'Respond concisely. Always use get_time when asked for the current time.',
       inputAudioTranscription: { model: 'mai-transcribe-2' },
       parallelToolCalls: false,
-      tools: [{
-        type: 'function',
-        name: 'get_time',
-        description: 'Read the current time and timezone from the browser.',
-        parameters: { type: 'object', properties: {}, additionalProperties: false },
-      }],
+      tools: [
+        {
+          type: 'function',
+          name: 'get_time',
+          description: 'Read the current time and timezone from the browser.',
+          parameters: { type: 'object', properties: {}, additionalProperties: false },
+        },
+      ],
     },
     onEvent: (event) => {
-      if (event.type === 'input_audio_buffer.speech_started') setSpeechStatus('Azure is detecting speech');
-      if (event.type === 'input_audio_buffer.speech_stopped') setSpeechStatus('Speech ended — awaiting response');
-      if (event.type === 'conversation.item.input_audio_transcription.completed') setSpeechStatus('Speech transcribed');
-      if (event.type === 'conversation.item.input_audio_transcription.failed') setSpeechStatus('Speech transcription failed');
+      if (event.type === 'input_audio_buffer.speech_started')
+        setSpeechStatus('Azure is detecting speech');
+      if (event.type === 'input_audio_buffer.speech_stopped')
+        setSpeechStatus('Speech ended — awaiting response');
+      if (event.type === 'conversation.item.input_audio_transcription.completed')
+        setSpeechStatus('Speech transcribed');
+      if (event.type === 'conversation.item.input_audio_transcription.failed')
+        setSpeechStatus('Speech transcription failed');
     },
     onTranscript: (role, transcript) => {
       if (role === 'user') setUserTranscript(transcript);
       else setAssistantTranscript(transcript);
     },
-    toolExecutor: (name, _arguments, callId) => {
+    toolExecutor: (name) => {
       if (name !== 'get_time') return;
-      setToolCalls(previous => previous + 1);
-      sendEvent({
-        type: 'conversation.item.create',
-        item: {
-          type: 'function_call_output',
-          call_id: callId,
-          output: JSON.stringify({
-            time: new Date().toISOString(),
-            timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-          }),
-        },
-      });
-      createResponse();
+      setToolCalls((previous) => previous + 1);
+      return {
+        time: new Date().toISOString(),
+        timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      };
     },
   });
 
   useEffect(() => {
     let disposed = false;
     const refresh = (): void => {
-      void navigator.mediaDevices?.enumerateDevices().then(items => {
-        if (!disposed) setDevices(items.filter(item => item.kind === 'audioinput' && item.deviceId));
-      }).catch(() => { /* Capture reports permission errors when the user starts the microphone. */ });
+      void navigator.mediaDevices
+        ?.enumerateDevices()
+        .then((items) => {
+          if (!disposed)
+            setDevices(items.filter((item) => item.kind === 'audioinput' && item.deviceId));
+        })
+        .catch(() => {
+          /* Capture reports permission errors when the user starts the microphone. */
+        });
     };
     refresh();
     navigator.mediaDevices?.addEventListener('devicechange', refresh);
-    return (): void => { disposed = true; navigator.mediaDevices?.removeEventListener('devicechange', refresh); };
+    return (): void => {
+      disposed = true;
+      navigator.mediaDevices?.removeEventListener('devicechange', refresh);
+    };
   }, [isMicActive]);
 
   useEffect(() => {
-    if (!isMicActive) { setMicStatus(null); setSilentSeconds(0); return; }
+    if (!isMicActive) {
+      setMicStatus(null);
+      setSilentSeconds(0);
+      return;
+    }
     let disposed = false;
     let timer: ReturnType<typeof setTimeout>;
     let lastEnergy: number | null = null;
@@ -100,17 +132,30 @@ export function WebRTCVoice(): JSX.Element {
         const status = await getMicrophoneStatus();
         if (disposed) return;
         setMicStatus(status);
-        const hasSignal = (status?.audioLevel ?? 0) > 0.001
-          || (status?.totalAudioEnergy !== null && status?.totalAudioEnergy !== undefined
-            && lastEnergy !== null && status.totalAudioEnergy > lastEnergy);
+        const hasSignal =
+          (status?.audioLevel ?? 0) > 0.001 ||
+          (status?.totalAudioEnergy !== null &&
+            status?.totalAudioEnergy !== undefined &&
+            lastEnergy !== null &&
+            status.totalAudioEnergy > lastEnergy);
         const measurable = status?.audioLevel !== null && status?.audioLevel !== undefined;
-        setSilentSeconds(previous => !isMuted && measurable && !hasSignal ? previous + 0.25 : 0);
+        setSilentSeconds((previous) =>
+          !isMuted && measurable && !hasSignal ? previous + 0.25 : 0
+        );
         lastEnergy = status?.totalAudioEnergy ?? null;
-      } catch { /* Some browsers do not expose sender statistics. */ }
-      if (!disposed) timer = setTimeout(() => { void poll(); }, 250);
+      } catch {
+        /* Some browsers do not expose sender statistics. */
+      }
+      if (!disposed)
+        timer = setTimeout(() => {
+          void poll();
+        }, 250);
     };
     void poll();
-    return (): void => { disposed = true; clearTimeout(timer); };
+    return (): void => {
+      disposed = true;
+      clearTimeout(timer);
+    };
   }, [isMicActive, isMuted, getMicrophoneStatus]);
 
   useEffect(() => {
@@ -119,10 +164,16 @@ export function WebRTCVoice(): JSX.Element {
     audio.srcObject = audioStream;
     if (audioStream) {
       void audio.play().catch((playbackError: unknown) => {
-        setLocalError(playbackError instanceof Error ? playbackError.message : 'Unable to play audio. Use the audio controls to start playback.');
+        setLocalError(
+          playbackError instanceof Error
+            ? playbackError.message
+            : 'Unable to play audio. Use the audio controls to start playback.'
+        );
       });
     }
-    return (): void => { audio.srcObject = null; };
+    return (): void => {
+      audio.srcObject = null;
+    };
   }, [audioStream]);
 
   const handleConnect = async (): Promise<void> => {
@@ -134,7 +185,9 @@ export function WebRTCVoice(): JSX.Element {
     try {
       await connect();
     } catch (connectionError) {
-      setLocalError(connectionError instanceof Error ? connectionError.message : 'Unable to connect.');
+      setLocalError(
+        connectionError instanceof Error ? connectionError.message : 'Unable to connect.'
+      );
     }
   };
 
@@ -143,7 +196,9 @@ export function WebRTCVoice(): JSX.Element {
     try {
       await startMic();
     } catch (captureError) {
-      setLocalError(captureError instanceof Error ? captureError.message : 'Unable to start the microphone.');
+      setLocalError(
+        captureError instanceof Error ? captureError.message : 'Unable to start the microphone.'
+      );
     }
   };
 
@@ -171,39 +226,99 @@ export function WebRTCVoice(): JSX.Element {
       description="Speak or type to an Azure Realtime voice. Audio streams over WebRTC while the backend proxy keeps resource credentials secure."
     >
       <AlertBox variant="info">
-        Connect first, then send a text message or enable the microphone.
-        Microsoft currently offers Voice Live WebRTC in preview with global routing.
-        See the <a href="https://learn.microsoft.com/azure/ai-services/speech-service/voice-live-webrtc" target="_blank" rel="noreferrer">WebRTC documentation</a> for current availability.
+        Connect first, then send a text message or enable the microphone. Microsoft currently offers
+        Voice Live WebRTC in preview with global routing. See the{' '}
+        <a
+          href="https://learn.microsoft.com/azure/ai-services/speech-service/voice-live-webrtc"
+          target="_blank"
+          rel="noreferrer"
+        >
+          WebRTC documentation
+        </a>{' '}
+        for current availability.
       </AlertBox>
 
       <ErrorPanel error={error || localError} />
       <StatusBadge status={connectionState} />
 
       <ControlGroup>
-        <button onClick={handleConnect} disabled={connectionState === 'connecting' || connectionState === 'connected'}>Connect</button>
-        <button onClick={disconnect} disabled={connectionState === 'disconnected'}>Disconnect</button>
-        <button onClick={handleStartMic} disabled={!isReady || isMicActive}>Enable microphone</button>
-        <button onClick={stopMic} disabled={!isMicActive}>Stop microphone</button>
-        <button onClick={toggleMute} disabled={!isMicActive}>{isMuted ? 'Unmute' : 'Mute'}</button>
+        <button
+          onClick={handleConnect}
+          disabled={connectionState === 'connecting' || connectionState === 'connected'}
+        >
+          Connect
+        </button>
+        <button onClick={disconnect} disabled={connectionState === 'disconnected'}>
+          Disconnect
+        </button>
+        <button onClick={handleStartMic} disabled={!isReady || isMicActive}>
+          Enable microphone
+        </button>
+        <button onClick={stopMic} disabled={!isMicActive}>
+          Stop microphone
+        </button>
+        <button onClick={toggleMute} disabled={!isMicActive}>
+          {isMuted ? 'Unmute' : 'Mute'}
+        </button>
       </ControlGroup>
 
       <Section title="Microphone">
         <div className="webrtc-field">
           <label htmlFor="webrtc-microphone">Input device</label>
-          <select id="webrtc-microphone" value={deviceId} onChange={event => setDeviceId(event.target.value)} disabled={isMicActive}>
+          <select
+            id="webrtc-microphone"
+            value={deviceId}
+            onChange={(event) => setDeviceId(event.target.value)}
+            disabled={isMicActive}
+          >
             <option value="">System default microphone</option>
-            {devices.map(device => <option key={device.deviceId} value={device.deviceId}>{device.label || `Microphone ${devices.indexOf(device) + 1}`}</option>)}
+            {devices.map((device) => (
+              <option key={device.deviceId} value={device.deviceId}>
+                {device.label || `Microphone ${devices.indexOf(device) + 1}`}
+              </option>
+            ))}
           </select>
-          <p className="webrtc-help">Stop the microphone to change devices. Device names appear after microphone access is allowed.</p>
+          <p className="webrtc-help">
+            Stop the microphone to change devices. Device names appear after microphone access is
+            allowed.
+          </p>
         </div>
         <label htmlFor="webrtc-level">Microphone input level</label>
-        <meter id="webrtc-level" className="webrtc-level" min={0} max={1} value={Math.min(1, Math.sqrt(micStatus?.audioLevel ?? 0))} />
+        <meter
+          id="webrtc-level"
+          className="webrtc-level"
+          min={0}
+          max={1}
+          value={Math.min(1, Math.sqrt(micStatus?.audioLevel ?? 0))}
+        />
         <p className="webrtc-help">
-          {!isMicActive ? 'Microphone off' : isMuted ? 'Microphone muted' : micStatus?.sourceMuted ? 'Browser or operating system is blocking microphone audio' : micStatus?.deviceLabel || 'Microphone active'}
-          {' · '}{speechStatus}
+          {!isMicActive
+            ? 'Microphone off'
+            : isMuted
+              ? 'Microphone muted'
+              : micStatus?.sourceMuted
+                ? 'Browser or operating system is blocking microphone audio'
+                : micStatus?.deviceLabel || 'Microphone active'}
+          {' · '}
+          {speechStatus}
         </p>
-        {silentSeconds >= 6 && <AlertBox variant="warning">No microphone signal detected. Speak and watch the input meter. If it stays empty, stop the microphone and select your physical microphone, or check the browser and system microphone settings.</AlertBox>}
-        {micStatus && <details><summary>Microphone diagnostics</summary><p>Track: {micStatus.readyState} · Source muted: {String(micStatus.sourceMuted)} · Audio packets sent: {micStatus.packetsSent ?? 'unavailable'} · Audio level: {micStatus.audioLevel?.toFixed(4) ?? 'unavailable'}</p></details>}
+        {silentSeconds >= 6 && (
+          <AlertBox variant="warning">
+            No microphone signal detected. Speak and watch the input meter. If it stays empty, stop
+            the microphone and select your physical microphone, or check the browser and system
+            microphone settings.
+          </AlertBox>
+        )}
+        {micStatus && (
+          <details>
+            <summary>Microphone diagnostics</summary>
+            <p>
+              Track: {micStatus.readyState} · Source muted: {String(micStatus.sourceMuted)} · Audio
+              packets sent: {micStatus.packetsSent ?? 'unavailable'} · Audio level:{' '}
+              {micStatus.audioLevel?.toFixed(4) ?? 'unavailable'}
+            </p>
+          </details>
+        )}
       </Section>
 
       <ConfigPanel title="Connection">
@@ -214,19 +329,34 @@ export function WebRTCVoice(): JSX.Element {
       </ConfigPanel>
 
       <Section title="Send a text message">
-        <p>Ask for the time to exercise function calling while receiving a spoken WebRTC response.</p>
+        <p>
+          Ask for the time to exercise function calling while receiving a spoken WebRTC response.
+        </p>
         <div className="webrtc-field">
           <label htmlFor="webrtc-message">Message</label>
-          <textarea id="webrtc-message" rows={3} placeholder="Type a message…" value={text} onChange={event => setText(event.target.value)} disabled={!isReady} />
+          <textarea
+            id="webrtc-message"
+            rows={3}
+            placeholder="Type a message…"
+            value={text}
+            onChange={(event) => setText(event.target.value)}
+            disabled={!isReady}
+          />
         </div>
         <ControlGroup>
-          <button onClick={handleSendText} disabled={!isReady || !text.trim() || responseActive}>Send message</button>
+          <button onClick={handleSendText} disabled={!isReady || !text.trim() || responseActive}>
+            Send message
+          </button>
         </ControlGroup>
       </Section>
 
       <Section title="Transcript and playback">
-        <p><strong>You:</strong> {userTranscript || 'Waiting for your message.'}</p>
-        <p><strong>Assistant:</strong> {assistantTranscript || 'Waiting for a response.'}</p>
+        <p>
+          <strong>You:</strong> {userTranscript || 'Waiting for your message.'}
+        </p>
+        <p>
+          <strong>Assistant:</strong> {assistantTranscript || 'Waiting for a response.'}
+        </p>
         <audio ref={audioRef} autoPlay controls aria-label="Assistant voice playback" />
       </Section>
     </SampleLayout>

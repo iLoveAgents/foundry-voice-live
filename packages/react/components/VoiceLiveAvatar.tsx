@@ -32,7 +32,7 @@
  *   videoStream={videoStream}
  *   audioStream={audioStream}
  *   transparentBackground
- *   chromaKeyConfig={{ color: [0, 255, 0], threshold: 0.4 }}
+ *   chromaKeyConfig={{ keyColor: [0, 1, 0], similarity: 0.4, smoothness: 0.1 }}
  * />
  * ```
  */
@@ -136,11 +136,7 @@ export const VoiceLiveAvatar: React.FC<VoiceLiveAvatarProps> = ({
       const handleLoadedMetadata = (): void => {
         // Start chroma key processing for transparent background
         if (transparentBackground && canvas) {
-          chromaKeyProcessorRef.current = createChromaKeyProcessor(
-            video,
-            canvas,
-            chromaKeyConfig
-          );
+          chromaKeyProcessorRef.current = createChromaKeyProcessor(video, canvas, chromaKeyConfig);
           chromaKeyProcessorRef.current?.start();
         }
 

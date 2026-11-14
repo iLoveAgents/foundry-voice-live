@@ -1,17 +1,7 @@
 import { useRef, useEffect, useState } from 'react';
-import {
-  useVoiceLive,
-  createVoiceLiveConfig,
-} from '@iloveagents/foundry-voice-live-react';
-import {
-  SampleLayout,
-  StatusBadge,
-  Section,
-  ControlGroup,
-  ErrorPanel,
-} from '../components';
-
-import { modelProxyUrl } from '../utils/proxyUrl';
+import { useVoiceLive, createVoiceLiveConfig } from '@iloveagents/foundry-voice-live-react';
+import { SampleLayout, StatusBadge, Section, ControlGroup, ErrorPanel } from '../components';
+import { directOrProxyConnection } from '../lib/connection';
 
 export function AudioVisualizer(): JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -20,16 +10,15 @@ export function AudioVisualizer(): JSX.Element {
   const [error, setError] = useState<string | null>(null);
 
   const config = createVoiceLiveConfig({
-    connection: {
-      proxyUrl: modelProxyUrl(),
-    },
+    // Direct with the dev API key when configured, otherwise through the proxy (keyless)
+    connection: directOrProxyConnection(),
     session: {
       instructions: 'You are a helpful assistant. Keep responses brief.',
     },
+    logLevel: 'debug',
   });
 
-  const { connect, disconnect, connectionState, audioStream, audioAnalyser } =
-    useVoiceLive(config);
+  const { connect, disconnect, connectionState, audioStream, audioAnalyser } = useVoiceLive(config);
 
   // Connect audio stream to audio element for playback
   useEffect(() => {
@@ -132,12 +121,7 @@ export function AudioVisualizer(): JSX.Element {
       </ControlGroup>
 
       <Section title="Audio Waveform">
-        <canvas
-          ref={canvasRef}
-          width={800}
-          height={300}
-          className="canvas-display"
-        />
+        <canvas ref={canvasRef} width={800} height={300} className="canvas-display" />
       </Section>
 
       <audio ref={audioRef} autoPlay hidden />

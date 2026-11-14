@@ -12,12 +12,35 @@ export default defineConfig({
     port: 3001,
   },
   resolve: {
+    // Subpath aliases must come before the bare package alias so `/react` etc. match first.
     alias: isDist
       ? {
-          '@iloveagents/foundry-voice-live-react': path.resolve(import.meta.dirname, '../packages/react/dist/index.mjs'),
+          '@iloveagents/foundry-voice-live-react': path.resolve(
+            __dirname,
+            '../packages/react/dist/index.mjs'
+          ),
         }
       : {
-          '@iloveagents/foundry-voice-live-react': path.resolve(import.meta.dirname, '../packages/react/index.ts'),
+          '@iloveagents/foundry-voice-live-agui/react': path.resolve(
+            __dirname,
+            '../packages/agui/react/index.ts'
+          ),
+          '@iloveagents/foundry-voice-live-agui/core': path.resolve(
+            __dirname,
+            '../packages/agui/core/index.ts'
+          ),
+          '@iloveagents/foundry-voice-live-agui/doctor': path.resolve(
+            __dirname,
+            '../packages/agui/doctor/index.ts'
+          ),
+          '@iloveagents/foundry-voice-live-agui': path.resolve(
+            __dirname,
+            '../packages/agui/index.ts'
+          ),
+          '@iloveagents/foundry-voice-live-react': path.resolve(
+            __dirname,
+            '../packages/react/index.ts'
+          ),
         },
   },
 });

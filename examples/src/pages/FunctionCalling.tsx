@@ -1,65 +1,55 @@
 import { useRef, useEffect, useState, useCallback } from 'react';
-import {
-  useVoiceLive,
-  createVoiceLiveConfig,
-} from '@iloveagents/foundry-voice-live-react';
-import {
-  SampleLayout,
-  StatusBadge,
-  Section,
-  ControlGroup,
-  ErrorPanel,
-} from '../components';
+import { useVoiceLive, createVoiceLiveConfig } from '@iloveagents/foundry-voice-live-react';
+import type { FunctionTool } from '@iloveagents/foundry-voice-live-react';
+import { SampleLayout, StatusBadge, Section, ControlGroup, ErrorPanel } from '../components';
+import { directOrProxyConnection } from '../lib/connection';
 
-import { modelProxyUrl } from '../utils/proxyUrl';
+// Tool definitions (JSON schema parameters)
+const TOOLS: FunctionTool[] = [
+  {
+    type: 'function',
+    name: 'get_weather',
+    description: 'Get the current weather for a location',
+    parameters: {
+      type: 'object',
+      properties: {
+        location: {
+          type: 'string',
+          description: 'City name or location',
+        },
+        unit: {
+          type: 'string',
+          enum: ['celsius', 'fahrenheit'],
+          description: 'Temperature unit',
+        },
+      },
+      required: ['location'],
+    },
+  },
+  {
+    type: 'function',
+    name: 'get_time',
+    description: 'Get the current time',
+    parameters: {
+      type: 'object',
+      properties: {},
+    },
+  },
+];
 
 export function FunctionCalling(): JSX.Element {
   const [logs, setLogs] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
 
-  const addLog = (message: string): void => {
-    setLogs((prev) => [
-      ...prev,
-      `[${new Date().toLocaleTimeString()}] ${message}`,
-    ]);
-  };
+  const addLog = useCallback((message: string): void => {
+    setLogs((prev) => [...prev, `[${new Date().toLocaleTimeString()}] ${message}`]);
+  }, []);
 
-  // Define tools
-  const tools = [
-    {
-      type: 'function' as const,
-      name: 'get_weather',
-      description: 'Get the current weather for a location',
-      parameters: {
-        type: 'object',
-        properties: {
-          location: {
-            type: 'string',
-            description: 'City name or location',
-          },
-          unit: {
-            type: 'string',
-            enum: ['celsius', 'fahrenheit'],
-            description: 'Temperature unit',
-          },
-        },
-        required: ['location'],
-      },
-    },
-    {
-      type: 'function' as const,
-      name: 'get_time',
-      description: 'Get the current time',
-      parameters: {
-        type: 'object',
-        properties: {},
-      },
-    },
-  ];
-
-  // Tool executor
+  // Tool executor: RETURN the result and the hook sends it as
+  // function_call_output and triggers the next response automatically.
+  // (Return undefined to send it yourself later via sendToolResult().)
   const toolExecutor = useCallback(
-    (toolName: string, args: string, callId: string) => {
+    async (toolName: string, args: string): Promise<Record<string, unknown>> => {
       addLog(`🔧 Tool called: ${toolName}`);
       addLog(`📥 Args: ${args}`);
 
@@ -74,9 +64,7 @@ export function FunctionCalling(): JSX.Element {
             location: parsedArgs.location,
             temperature: Math.floor(Math.random() * 30) + 10,
             unit: parsedArgs.unit || 'celsius',
-            condition: ['Sunny', 'Cloudy', 'Rainy', 'Windy'][
-              Math.floor(Math.random() * 4)
-            ],
+            condition: ['Sunny', 'Cloudy', 'Rainy', 'Windy'][Math.floor(Math.random() * 4)],
           };
         } else if (toolName === 'get_time') {
           result = {
@@ -86,37 +74,20 @@ export function FunctionCalling(): JSX.Element {
         } else {
           result = { error: 'Unknown tool' };
         }
-
-        addLog(`✅ Result: ${JSON.stringify(result)}`);
-
-        // Send result back to API
-        sendEventRef.current({
-          type: 'conversation.item.create',
-          item: {
-            type: 'function_call_output',
-            call_id: callId,
-            output: JSON.stringify(result),
-          },
-        });
-
-        // Trigger response generation
-        sendEventRef.current({
-          type: 'response.create',
-        });
       } catch (err) {
         addLog(`❌ Error: ${err}`);
+        result = { error: err instanceof Error ? err.message : String(err) };
       }
+
+      addLog(`✅ Result: ${JSON.stringify(result)}`);
+      return result;
     },
-    []
+    [addLog]
   );
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const sendEventRef = useRef<(event: any) => void>(() => {});
-
   const config = createVoiceLiveConfig({
-    connection: {
-      proxyUrl: modelProxyUrl(),
-    },
+    // Direct with the dev API key when configured, otherwise through the proxy (keyless)
+    connection: directOrProxyConnection(),
     session: {
       instructions:
         'You are a helpful assistant. When the user asks about weather or time, use the available tools. Keep responses brief.',
@@ -124,18 +95,14 @@ export function FunctionCalling(): JSX.Element {
         name: 'en-US-AvaMultilingualNeural',
         type: 'azure-standard',
       },
-      tools,
+      tools: TOOLS,
       toolChoice: 'auto',
     },
+    toolExecutor,
+    logLevel: 'debug',
   });
 
-  const { connect, disconnect, connectionState, sendEvent, audioStream } =
-    useVoiceLive({
-      ...config,
-      toolExecutor,
-    });
-
-  sendEventRef.current = sendEvent;
+  const { connect, disconnect, connectionState, audioStream } = useVoiceLive(config);
 
   const audioRef = useRef<HTMLAudioElement>(null);
 
@@ -176,16 +143,10 @@ export function FunctionCalling(): JSX.Element {
 
       <Section>
         <ControlGroup>
-          <button
-            onClick={handleStart}
-            disabled={connectionState === 'connected'}
-          >
+          <button onClick={handleStart} disabled={connectionState === 'connected'}>
             Start Conversation
           </button>
-          <button
-            onClick={handleStop}
-            disabled={connectionState !== 'connected'}
-          >
+          <button onClick={handleStop} disabled={connectionState !== 'connected'}>
             Stop
           </button>
         </ControlGroup>
@@ -195,8 +156,8 @@ export function FunctionCalling(): JSX.Element {
         <div className="tool-info">
           <span className="tool-info__name">get_weather</span>
           <span className="tool-info__description">
-            Get weather for a location. Parameters: location (required), unit
-            (optional: celsius/fahrenheit)
+            Get weather for a location. Parameters: location (required), unit (optional:
+            celsius/fahrenheit)
           </span>
         </div>
         <div className="tool-info">
@@ -222,8 +183,7 @@ export function FunctionCalling(): JSX.Element {
         <div className="code-block">
           {logs.length === 0 ? (
             <div className="code-block__placeholder">
-              No tool calls yet. Start the conversation and ask about weather or
-              time!
+              No tool calls yet. Start the conversation and ask about weather or time!
             </div>
           ) : (
             logs.map((log, i) => <div key={i}>{log}</div>)

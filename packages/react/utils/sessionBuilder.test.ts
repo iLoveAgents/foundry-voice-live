@@ -4,117 +4,15 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { buildSessionConfig, buildAgentSessionConfig, buildSessionUpdate, buildResponseConfig } from './sessionBuilder';
+import {
+  buildSessionConfig,
+  buildAgentSessionConfig,
+  AGENT_OWNED_FIELDS,
+  convertToSessionUpdate,
+  validateConfig,
+} from './sessionBuilder';
 
 describe('Session Builder Wire Format', () => {
-  it('serializes native voices, sequential tools, reasoning and metadata', () => {
-    const result = buildSessionConfig({
-      voice: { type: 'azure-realtime-native', name: 'ava' },
-      parallelToolCalls: false,
-      reasoningEffort: 'low',
-      metadata: { trace: 'example' },
-    });
-    expect(result.voice).toEqual({ type: 'azure-realtime-native', name: 'ava' });
-    expect(result.parallel_tool_calls).toBe(false);
-    expect(result.reasoning_effort).toBe('low');
-    expect(result.metadata).toEqual({ trace: 'example' });
-  });
-
-  it('preserves custom voice endpoint and prosody options', () => {
-    expect(buildSessionUpdate({ voice: {
-      name: 'my-voice', type: 'azure-custom', endpointId: 'deployment-id',
-      customLexiconUrl: 'https://example.com/lexicon.xml',
-      customTextNormalizationUrl: 'https://example.com/rules.txt',
-      preferLocales: ['de-DE'], locale: 'de-DE', style: 'cheerful',
-      pitch: '+10%', volume: 'soft', rate: '1.1',
-    } }).voice).toEqual({
-      name: 'my-voice', type: 'azure-custom', endpoint_id: 'deployment-id',
-      custom_lexicon_url: 'https://example.com/lexicon.xml',
-      custom_text_normalization_url: 'https://example.com/rules.txt',
-      prefer_locales: ['de-DE'], locale: 'de-DE', style: 'cheerful',
-      pitch: '+10%', volume: 'soft', rate: '1.1',
-    });
-  });
-
-  it('infers explicit wire discriminators for existing string voices', () => {
-    expect(buildSessionConfig({ voice: 'marin' }).voice).toEqual({ type: 'openai', name: 'marin' });
-    expect(buildSessionConfig({ voice: 'de-DE-KatjaNeural' }).voice.type).toBe('azure-standard');
-  });
-
-  it('does not reset settings on a partial session update', () => {
-    expect(buildSessionUpdate({ temperature: 0.9 })).toEqual({ temperature: 0.9 });
-    expect(buildSessionUpdate({ interimResponse: null })).toEqual({ interim_response: null });
-  });
-
-  it('does not merge Azure VAD fields into a different discriminator', () => {
-    expect(buildSessionConfig({ turnDetection: { type: 'semantic_vad', eagerness: 'low' } }).turn_detection)
-      .toEqual({ type: 'semantic_vad', eagerness: 'low' });
-  });
-
-  it('passes MCP and Foundry tools through and normalizes legacy tool choice', () => {
-    const tools = [
-      { type: 'mcp' as const, server_label: 'docs', server_url: 'https://example.com/mcp', require_approval: 'always' as const },
-      { type: 'foundry_agent' as const, agent_name: 'helper', project_name: 'project', return_agent_response_directly: false },
-    ];
-    expect(buildSessionUpdate({ tools }).tools).toEqual(tools);
-    expect(buildSessionUpdate({ toolChoice: { type: 'function', function: { name: 'lookup' } } }).tool_choice)
-      .toEqual({ type: 'function', name: 'lookup' });
-    expect(buildSessionUpdate({ toolChoice: 'lookup' }).tool_choice).toBe('lookup');
-  });
-
-  it('retains supported agent audio extensions while stripping model policy', () => {
-    const config = {
-      instructions: 'ignored', temperature: 0.9, parallelToolCalls: false,
-      animation: { modelName: 'default', outputs: ['blendshapes' as const] },
-      outputAudioTimestampTypes: ['word' as const], metadata: { trace: 'agent' },
-    };
-    const result = buildAgentSessionConfig(config);
-    expect(result).not.toHaveProperty('instructions');
-    expect(result).not.toHaveProperty('temperature');
-    expect(result).not.toHaveProperty('parallel_tool_calls');
-    expect(result.animation).toEqual({ model_name: 'default', outputs: ['blendshapes'] });
-    expect(result.output_audio_timestamp_types).toEqual(['word']);
-    expect(buildSessionUpdate({ instructions: 'ignored', metadata: { trace: 'agent' } }, true))
-      .toEqual({ metadata: { trace: 'agent' } });
-  });
-
-  it('serializes echo reference, MAI and preview smart turn settings', () => {
-    const result = buildSessionConfig({
-      inputAudioEchoCancellation: { type: 'server_echo_cancellation', referenceSource: 'client', channels: 2 },
-      inputAudioTranscription: { model: 'mai-transcribe-2', phraseList: ['Foundry'] },
-      turnDetection: { endOfUtteranceDetection: { model: 'smart_end_of_turn_detection', thresholdLevel: 'high' } },
-    });
-    expect(result.input_audio_echo_cancellation).toEqual({ type: 'server_echo_cancellation', reference_source: 'client', channels: 2 });
-    expect(result.input_audio_transcription.model).toBe('mai-transcribe-2');
-    expect(result.turn_detection.end_of_utterance_detection.model).toBe('smart_end_of_turn_detection');
-  });
-
-  it('serializes photo avatar scenes and websocket output', () => {
-    const result = buildSessionConfig({ avatar: {
-      character: 'photo-url', type: 'photo-avatar', model: 'vasa-1',
-      outputProtocol: 'websocket', outputAuditAudio: false,
-      scene: { positionX: 0.2, rotationZ: 0.1, amplitude: 1 }, video: { gopSize: 10 },
-    } });
-    expect(result.avatar.output_protocol).toBe('websocket');
-    expect(result.avatar.output_audit_audio).toBe(false);
-    expect(result.avatar.scene.position_x).toBe(0.2);
-    expect(result.avatar.video.gop_size).toBe(10);
-  });
-
-  it('serializes response content and hosted invocation without session defaults', () => {
-    expect(buildResponseConfig({
-      input: [{ type: 'message', role: 'user', content: [{ type: 'input_image', imageUrl: 'https://example.com/image.png' }] }],
-      preGeneratedAssistantMessage: { type: 'message', role: 'assistant', content: [{ type: 'text', text: 'Hello' }] },
-      invokeInput: { event: 'test' },
-    })).toEqual({
-      input: [{ type: 'message', role: 'user', content: [{ type: 'input_image', image_url: 'https://example.com/image.png' }] }],
-      pre_generated_assistant_message: { type: 'message', role: 'assistant', content: [{ type: 'text', text: 'Hello' }] },
-      invoke_input: { event: 'test' },
-    });
-    expect(buildResponseConfig({ input: [{ type: 'function_call_output', callId: 'call-1', output: 'ok' }] }).input)
-      .toEqual([{ type: 'function_call_output', call_id: 'call-1', output: 'ok' }]);
-  });
-
   it('converts transcription phraseList to phrase_list', () => {
     const result = buildSessionConfig({
       inputAudioTranscription: {
@@ -124,10 +22,7 @@ describe('Session Builder Wire Format', () => {
       },
     });
 
-    expect(result.input_audio_transcription.phrase_list).toEqual([
-      'Neo QLED TV',
-      'TUF Gaming',
-    ]);
+    expect(result.input_audio_transcription.phrase_list).toEqual(['Neo QLED TV', 'TUF Gaming']);
   });
 
   it('converts transcription customSpeech to custom_speech', () => {
@@ -149,7 +44,9 @@ describe('Session Builder Wire Format', () => {
         type: 'llm_interim_response',
         triggers: ['tool', 'latency'],
         latencyThresholdInMs: 3000,
+        model: 'gpt-4.1-mini',
         instructions: 'Say something brief.',
+        maxCompletionTokens: 30,
       },
     });
 
@@ -157,8 +54,12 @@ describe('Session Builder Wire Format', () => {
       type: 'llm_interim_response',
       triggers: ['tool', 'latency'],
       latency_threshold_ms: 3000,
+      model: 'gpt-4.1-mini',
       instructions: 'Say something brief.',
+      max_completion_tokens: 30,
     });
+    // Regression: the wire key is latency_threshold_ms (not latency_threshold_in_ms)
+    expect(result.interim_response).not.toHaveProperty('latency_threshold_in_ms');
   });
 
   it('converts static interimResponse with texts', () => {
@@ -268,5 +169,523 @@ describe('Session Builder Wire Format', () => {
     expect(result.input_audio_noise_reduction).toBeNull();
     expect(result.input_audio_transcription).toBeNull();
     expect(result.turn_detection).toBeNull();
+  });
+
+  it('converts parallelToolCalls, reasoningEffort and metadata', () => {
+    const result = buildSessionConfig({
+      parallelToolCalls: false,
+      reasoningEffort: 'low',
+      metadata: { tenant: 'contoso', flow: 'support' },
+    });
+
+    expect(result.parallel_tool_calls).toBe(false);
+    expect(result.reasoning_effort).toBe('low');
+    expect(result.metadata).toEqual({ tenant: 'contoso', flow: 'support' });
+  });
+
+  it('omits parallel_tool_calls/reasoning_effort/metadata when not configured', () => {
+    const result = buildSessionConfig({});
+    expect(result).not.toHaveProperty('parallel_tool_calls');
+    expect(result).not.toHaveProperty('reasoning_effort');
+    expect(result).not.toHaveProperty('metadata');
+  });
+
+  it('converts echo cancellation reference source and channels', () => {
+    const result = buildSessionConfig({
+      inputAudioEchoCancellation: {
+        type: 'server_echo_cancellation',
+        referenceSource: 'client',
+        channels: 2,
+      },
+    });
+
+    expect(result.input_audio_echo_cancellation).toEqual({
+      type: 'server_echo_cancellation',
+      reference_source: 'client',
+      channels: 2,
+    });
+  });
+
+  it('keeps default echo cancellation minimal (no reference_source/channels)', () => {
+    const result = buildSessionConfig();
+    expect(result.input_audio_echo_cancellation).toEqual({ type: 'server_echo_cancellation' });
+  });
+
+  it('converts extended voice options to snake_case', () => {
+    const result = buildSessionConfig({
+      voice: {
+        name: 'en-US-Ava:DragonHDLatestNeural',
+        type: 'azure-standard',
+        temperature: 0.7,
+        rate: '1.1',
+        pitch: '+5%',
+        volume: 'loud',
+        style: 'cheerful',
+        preferLocales: ['en-GB', 'es-ES'],
+        locale: 'en-US',
+        customLexiconUrl: 'https://example.com/lexicon.xml',
+        customTextNormalizationUrl: 'https://example.com/tn.xml',
+      },
+    });
+
+    expect(result.voice).toEqual({
+      name: 'en-US-Ava:DragonHDLatestNeural',
+      type: 'azure-standard',
+      temperature: 0.7,
+      rate: '1.1',
+      pitch: '+5%',
+      volume: 'loud',
+      style: 'cheerful',
+      prefer_locales: ['en-GB', 'es-ES'],
+      locale: 'en-US',
+      custom_lexicon_url: 'https://example.com/lexicon.xml',
+      custom_text_normalization_url: 'https://example.com/tn.xml',
+    });
+  });
+
+  it('converts custom, personal and azure-realtime-native voices', () => {
+    expect(
+      buildSessionConfig({
+        voice: { name: 'my-voice', type: 'azure-custom', endpointId: 'ep-123' },
+      }).voice
+    ).toEqual({ name: 'my-voice', type: 'azure-custom', endpoint_id: 'ep-123' });
+
+    expect(
+      buildSessionConfig({
+        voice: { name: 'my-personal', type: 'azure-personal', model: 'DragonHDOmniLatestNeural' },
+      }).voice
+    ).toEqual({ name: 'my-personal', type: 'azure-personal', model: 'DragonHDOmniLatestNeural' });
+
+    expect(
+      buildSessionConfig({ voice: { name: 'ava', type: 'azure-realtime-native' } }).voice
+    ).toEqual({
+      name: 'ava',
+      type: 'azure-realtime-native',
+    });
+  });
+
+  it('converts appendedTextAfterTruncation and smart end-of-turn detection', () => {
+    const result = buildSessionConfig({
+      turnDetection: {
+        type: 'azure_semantic_vad',
+        autoTruncate: true,
+        appendedTextAfterTruncation: ' [The user interrupted me.]',
+        endOfUtteranceDetection: {
+          model: 'smart_end_of_turn_detection',
+          thresholdLevel: 'high',
+          timeoutMs: 800,
+        },
+      },
+    });
+
+    expect(result.turn_detection.appended_text_after_truncation).toBe(
+      ' [The user interrupted me.]'
+    );
+    expect(result.turn_detection.end_of_utterance_detection).toEqual({
+      model: 'smart_end_of_turn_detection',
+      threshold_level: 'high',
+      timeout_ms: 800,
+    });
+  });
+
+  it('converts MCP tools to snake_case', () => {
+    const result = buildSessionConfig({
+      tools: [
+        {
+          type: 'mcp',
+          serverLabel: 'mslearn',
+          serverUrl: 'https://learn.microsoft.com/api/mcp',
+          allowedTools: ['search'],
+          headers: { 'x-tenant': 'contoso' },
+          authorization: 'Bearer abc',
+          requireApproval: { never: ['search'], always: ['submit'] },
+        },
+      ],
+    });
+
+    expect(result.tools).toEqual([
+      {
+        type: 'mcp',
+        server_label: 'mslearn',
+        server_url: 'https://learn.microsoft.com/api/mcp',
+        allowed_tools: ['search'],
+        headers: { 'x-tenant': 'contoso' },
+        authorization: 'Bearer abc',
+        require_approval: { never: ['search'], always: ['submit'] },
+      },
+    ]);
+  });
+
+  it('converts foundry_agent tools to snake_case', () => {
+    const result = buildSessionConfig({
+      tools: [
+        {
+          type: 'foundry_agent',
+          agentName: 'customer-service-agent',
+          projectName: 'my-project',
+          agentVersion: '2',
+          clientId: 'client-1',
+          description: 'Handles complex requests',
+          foundryResourceOverride: 'other-resource',
+          agentContextType: 'no_context',
+          returnAgentResponseDirectly: false,
+        },
+      ],
+    });
+
+    expect(result.tools).toEqual([
+      {
+        type: 'foundry_agent',
+        agent_name: 'customer-service-agent',
+        project_name: 'my-project',
+        agent_version: '2',
+        client_id: 'client-1',
+        description: 'Handles complex requests',
+        foundry_resource_override: 'other-resource',
+        agent_context_type: 'no_context',
+        return_agent_response_directly: false,
+      },
+    ]);
+  });
+
+  it('passes hand-built wire-format mcp / foundry_agent tools through unchanged', () => {
+    const rawMcp = { type: 'mcp', server_label: 'docs', server_url: 'https://docs' };
+    const rawAgent = { type: 'foundry_agent', agent_name: 'a', project_name: 'p' };
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const result = buildSessionConfig({ tools: [rawMcp as any, rawAgent as any] });
+    expect(result.tools).toEqual([rawMcp, rawAgent]);
+  });
+
+  it('passes function tools through unchanged', () => {
+    const fn = {
+      type: 'function' as const,
+      name: 'get_weather',
+      description: 'Get weather',
+      parameters: { type: 'object', properties: {} },
+    };
+    const result = buildSessionConfig({ tools: [fn] });
+    expect(result.tools).toEqual([fn]);
+  });
+
+  it('convertToSessionUpdate applies no defaults', () => {
+    expect(convertToSessionUpdate({})).toEqual({});
+    expect(convertToSessionUpdate({ instructions: 'Hi' })).toEqual({ instructions: 'Hi' });
+  });
+});
+
+describe('buildAgentSessionConfig', () => {
+  it('strips model-owned fields but keeps audio, voice, animation and metadata', () => {
+    const result = buildAgentSessionConfig({
+      instructions: 'ignored',
+      temperature: 0.5,
+      maxResponseOutputTokens: 100,
+      tools: [{ type: 'function', name: 'x', description: 'y', parameters: {} }],
+      voice: { name: 'en-US-AvaNeural', type: 'azure-standard' },
+      animation: { outputs: ['viseme_id'] },
+      outputAudioTimestampTypes: ['word'],
+      metadata: { tenant: 'contoso' },
+      interimResponse: { type: 'static_interim_response', triggers: ['tool'], texts: ['One sec'] },
+    });
+
+    expect(result).not.toHaveProperty('instructions');
+    expect(result).not.toHaveProperty('temperature');
+    expect(result).not.toHaveProperty('max_response_output_tokens');
+    expect(result).not.toHaveProperty('tools');
+    expect(result.voice).toEqual({ name: 'en-US-AvaNeural', type: 'azure-standard' });
+    expect(result.animation).toEqual({ outputs: ['viseme_id'] });
+    expect(result.output_audio_timestamp_types).toEqual(['word']);
+    expect(result.metadata).toEqual({ tenant: 'contoso' });
+    expect(result.interim_response.type).toBe('static_interim_response');
+    expect(result.turn_detection.type).toBe('azure_semantic_vad');
+  });
+
+  it('does not send a default voice or model-owned defaults so the agent portal settings win', () => {
+    const result = buildAgentSessionConfig();
+    expect(result).not.toHaveProperty('voice');
+    expect(result).not.toHaveProperty('temperature');
+    expect(result).not.toHaveProperty('tool_choice');
+    expect(result).not.toHaveProperty('max_response_output_tokens');
+    expect(result.input_audio_echo_cancellation).toEqual({ type: 'server_echo_cancellation' });
+  });
+
+  it('deep-merges partial turn detection overrides like buildSessionConfig', () => {
+    const result = buildAgentSessionConfig({
+      turnDetection: { type: 'azure_semantic_vad', silenceDurationMs: 900 },
+    });
+    expect(result.turn_detection).toMatchObject({
+      type: 'azure_semantic_vad',
+      silence_duration_ms: 900,
+      threshold: 0.5,
+    });
+  });
+
+  it('strips every AGENT_OWNED_FIELDS entry', () => {
+    const result = buildAgentSessionConfig({
+      reasoningEffort: 'low',
+      parallelToolCalls: false,
+      toolChoice: 'none',
+    });
+    expect(result).not.toHaveProperty('reasoning_effort');
+    expect(result).not.toHaveProperty('parallel_tool_calls');
+    expect(result).not.toHaveProperty('tool_choice');
+    expect(AGENT_OWNED_FIELDS).toContain('reasoningEffort');
+  });
+});
+
+describe('validateConfig', () => {
+  it('returns no warnings for a plain configuration', () => {
+    expect(validateConfig({}, false, 'gpt-realtime')).toEqual([]);
+    expect(validateConfig({ instructions: 'Hi' }, false, 'gpt-4.1')).toEqual([]);
+  });
+
+  it('warns about model-owned fields in agent mode', () => {
+    const warnings = validateConfig({ instructions: 'Hi', temperature: 0.7 }, true);
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toMatch(/Agent mode ignores instructions, temperature/);
+  });
+
+  it('warns about interim responses with native audio models', () => {
+    const warnings = validateConfig(
+      { interimResponse: { type: 'llm_interim_response', triggers: ['tool'] } },
+      false,
+      'gpt-realtime'
+    );
+    expect(warnings.some((w) => w.includes('interimResponse'))).toBe(true);
+    // Fine in agent mode and with cascaded models
+    expect(
+      validateConfig(
+        { interimResponse: { type: 'llm_interim_response', triggers: ['tool'] } },
+        true
+      )
+    ).toEqual([]);
+    expect(
+      validateConfig(
+        { interimResponse: { type: 'llm_interim_response', triggers: ['tool'] } },
+        false,
+        'gpt-4.1'
+      )
+    ).toEqual([]);
+  });
+
+  it('warns about semantic_vad and azure-realtime-native voice with incompatible models', () => {
+    expect(
+      validateConfig({ turnDetection: { type: 'semantic_vad' } }, false, 'gpt-4.1')[0]
+    ).toMatch(/semantic_vad/);
+    expect(
+      validateConfig({ turnDetection: { type: 'semantic_vad' } }, false, 'gpt-realtime')
+    ).toEqual([]);
+    expect(
+      validateConfig(
+        { voice: { name: 'ava', type: 'azure-realtime-native' } },
+        false,
+        'gpt-realtime'
+      )[0]
+    ).toMatch(/azure-realtime/);
+    expect(
+      validateConfig(
+        { voice: { name: 'ava', type: 'azure-realtime-native' } },
+        false,
+        'azure-realtime'
+      )
+    ).toEqual([]);
+  });
+
+  it('warns about truncation option combinations and client-reference AEC', () => {
+    const warnings = validateConfig(
+      {
+        turnDetection: {
+          type: 'server_vad',
+          appendedTextAfterTruncation: ' [cut]',
+          interruptResponse: false,
+          autoTruncate: true,
+        },
+        inputAudioEchoCancellation: {
+          type: 'server_echo_cancellation',
+          referenceSource: 'client',
+          channels: 2,
+        },
+      },
+      false,
+      'gpt-4.1'
+    );
+    expect(warnings.some((w) => w.includes("only supported by 'azure_semantic_vad'"))).toBe(true);
+    expect(warnings.some((w) => w.includes('interruptResponse is false'))).toBe(true);
+    expect(warnings.some((w) => w.includes("referenceSource 'client'"))).toBe(true);
+    expect(
+      validateConfig({ turnDetection: { appendedTextAfterTruncation: ' [cut]' } }, false)[0]
+    ).toMatch(/requires autoTruncate/);
+  });
+
+  it('does not warn about the greeting voice in agent mode when no voice is set', () => {
+    expect(validateConfig({ greeting: { type: 'pregenerated', text: 'Hi' } }, true)).toEqual([]);
+  });
+
+  it('warns about incompatible transcription models', () => {
+    expect(validateConfig({ inputAudioTranscription: { model: 'whisper-1' } }, true)[0]).toMatch(
+      /only supported by/
+    );
+    expect(
+      validateConfig({ inputAudioTranscription: { model: 'whisper-1' } }, false, 'gpt-4.1')[0]
+    ).toMatch(/only supported by/);
+    expect(
+      validateConfig(
+        { inputAudioTranscription: { model: 'azure-speech' } },
+        false,
+        'gpt-realtime'
+      )[0]
+    ).toMatch(/not supported by the gpt-realtime family/);
+    expect(validateConfig({ inputAudioTranscription: { model: 'azure-speech' } }, true)).toEqual(
+      []
+    );
+    expect(
+      validateConfig({ inputAudioTranscription: { model: 'whisper-1' } }, false, 'gpt-realtime')
+    ).toEqual([]);
+    expect(validateConfig({ inputAudioTranscription: { model: 'mai-transcribe' } }, true)).toEqual(
+      []
+    );
+  });
+
+  it('warns when a pre-generated greeting is combined with an OpenAI voice', () => {
+    expect(
+      validateConfig({ greeting: { type: 'pregenerated', text: 'Hi' } }, false, 'gpt-realtime')[0]
+    ).toMatch(/Azure voice/);
+    expect(
+      validateConfig({ greeting: { type: 'pregenerated', text: 'Hi' }, voice: 'alloy' }, false)[0]
+    ).toMatch(/Azure voice/);
+    expect(
+      validateConfig(
+        {
+          greeting: { type: 'pregenerated', text: 'Hi' },
+          voice: { name: 'en-US-AvaNeural', type: 'azure-standard' },
+        },
+        false
+      )
+    ).toEqual([]);
+    expect(
+      validateConfig({ greeting: { type: 'llm', text: 'Greet' }, voice: 'alloy' }, false)
+    ).toEqual([]);
+  });
+
+  it('never throws', () => {
+    expect(() => validateConfig({ instructions: 'x' }, true)).not.toThrow();
+  });
+});
+
+describe('validateConfig — BYOM profiles', () => {
+  const REALTIME = { profile: 'byom-azure-openai-realtime' };
+  const CHAT = { profile: 'byom-azure-openai-chat-completion' };
+
+  it('does not misjudge a realtime deployment by its deployment name (semantic_vad)', () => {
+    // `my-rt-deploy` is not in the model list — without the profile this warned falsely
+    const warnings = validateConfig(
+      { turnDetection: { type: 'semantic_vad' } },
+      false,
+      'my-rt-deploy',
+      REALTIME
+    );
+    expect(warnings.filter((w) => w.includes('semantic_vad'))).toEqual([]);
+    // ...and a chat-completion deployment genuinely does not support it
+    expect(
+      validateConfig({ turnDetection: { type: 'semantic_vad' } }, false, 'my-gpt5', CHAT).some(
+        (w) => w.includes('semantic_vad')
+      )
+    ).toBe(true);
+  });
+
+  it('does not misjudge a realtime deployment by its deployment name (transcription)', () => {
+    const whisper = { inputAudioTranscription: { model: 'whisper-1' as const } };
+    expect(
+      validateConfig(whisper, false, 'my-rt-deploy', REALTIME).filter((w) =>
+        w.includes('whisper-1')
+      )
+    ).toEqual([]);
+    expect(
+      validateConfig(whisper, false, 'my-gpt5', CHAT).some((w) => w.includes('whisper-1'))
+    ).toBe(true);
+    // azure-speech is the right choice for a cascaded deployment, wrong for a realtime one
+    const azure = { inputAudioTranscription: { model: 'azure-speech' as const } };
+    expect(validateConfig(azure, false, 'my-gpt5', CHAT)).toEqual([]);
+    expect(
+      validateConfig(azure, false, 'my-rt-deploy', REALTIME).some((w) => w.includes('azure-speech'))
+    ).toBe(true);
+  });
+
+  it('skips model-family checks for an unknown/future profile instead of guessing', () => {
+    // `VoiceLiveProfile` is intentionally extensible. A profile we do not recognize gives us no way
+    // to infer the model family from a deployment name, so we must not emit family-specific warnings
+    // that could be wrong.
+    const FUTURE = { profile: 'byom-some-future-backend' };
+    expect(
+      validateConfig(
+        { turnDetection: { type: 'semantic_vad' } },
+        false,
+        'my-deploy',
+        FUTURE
+      ).filter((w) => w.includes('semantic_vad'))
+    ).toEqual([]);
+    expect(
+      validateConfig(
+        { inputAudioTranscription: { model: 'whisper-1' as const } },
+        false,
+        'my-deploy',
+        FUTURE
+      ).filter((w) => w.includes('whisper-1'))
+    ).toEqual([]);
+  });
+
+  it('knows a realtime profile is native audio (no interim responses), a chat profile is not', () => {
+    const interim = {
+      interimResponse: {
+        type: 'static_interim_response' as const,
+        triggers: ['tool' as const],
+        texts: ['…'],
+      },
+    };
+    expect(
+      validateConfig(interim, false, 'my-rt-deploy', REALTIME).some((w) =>
+        w.includes('interimResponse')
+      )
+    ).toBe(true);
+    expect(validateConfig(interim, false, 'my-gpt5', CHAT)).toEqual([]);
+  });
+
+  it('warns when a profile is combined with agent mode (reachable through a proxy)', () => {
+    expect(
+      validateConfig({}, true, undefined, CHAT).some((w) =>
+        w.includes('ignored for Foundry agents')
+      )
+    ).toBe(true);
+  });
+
+  it('warns when a profile is used over the WebRTC transport', () => {
+    expect(
+      validateConfig({}, false, 'd', { ...CHAT, transport: 'webrtc' }).some((w) =>
+        w.includes('WebSocket transport only')
+      )
+    ).toBe(true);
+    expect(validateConfig({}, false, 'd', { ...CHAT, transport: 'websocket' })).toEqual([]);
+  });
+
+  it('warns when foundryResourceOverride is set without a profile or an agent', () => {
+    expect(
+      validateConfig({}, false, 'gpt-realtime', { foundryResourceOverride: 'other' }).some((w) =>
+        w.includes('foundryResourceOverride')
+      )
+    ).toBe(true);
+    expect(validateConfig({}, false, 'd', { ...CHAT, foundryResourceOverride: 'other' })).toEqual(
+      []
+    );
+    expect(validateConfig({}, true, undefined, { foundryResourceOverride: 'other' })).toEqual([]);
+  });
+
+  it('changes nothing for connections without a profile', () => {
+    expect(
+      validateConfig({ turnDetection: { type: 'semantic_vad' } }, false, 'gpt-realtime')
+    ).toEqual([]);
+    expect(
+      validateConfig({ turnDetection: { type: 'semantic_vad' } }, false, 'gpt-4.1').some((w) =>
+        w.includes('semantic_vad')
+      )
+    ).toBe(true);
   });
 });

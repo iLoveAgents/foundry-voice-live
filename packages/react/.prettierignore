@@ -1,0 +1,6 @@
+# Build output — generated, never hand-formatted.
+# Checking it is what made `format:check` unpassable: every build reintroduced failures.
+dist
+coverage
+node_modules
+*.tsbuildinfo

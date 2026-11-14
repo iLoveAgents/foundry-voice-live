@@ -40,8 +40,9 @@ import type { UseVoiceLiveConfig } from '../types/voiceLive';
  * });
  * ```
  */
-export function createVoiceLiveConfig(config: Partial<UseVoiceLiveConfig> & { connection: UseVoiceLiveConfig['connection'] }): UseVoiceLiveConfig {
-  return {
-    ...config,
-  };
+export function createVoiceLiveConfig(
+  config: Partial<UseVoiceLiveConfig> & { connection: UseVoiceLiveConfig['connection'] }
+): UseVoiceLiveConfig {
+  // Pass every field through (callbacks, audio options, logLevel, ...)
+  return { ...config, connection: config.connection };
 }

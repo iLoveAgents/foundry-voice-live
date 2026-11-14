@@ -9,14 +9,14 @@ interface SampleInfo {
 const samples: Record<string, SampleInfo[]> = {
   'Voice Examples': [
     {
-      path: '/voice-webrtc',
-      title: 'Voice over WebRTC',
-      description: 'Direct audio media tracks with secure signaling, text input, tools, and optional microphone',
+      path: '/current-capabilities',
+      title: 'Streaming Text',
+      description: 'Incremental text input, native Azure voices, MAI transcription, and tools',
     },
     {
-      path: '/current-capabilities',
-      title: 'Azure Realtime and Streaming Text',
-      description: 'Native Azure voice, MAI transcription, sequential tools, and session expiration',
+      path: '/voice-webrtc-waveform',
+      title: 'WebRTC Waveform',
+      description: 'WebRTC audio with realtime visualisation',
     },
     {
       path: '/voice-basic',
@@ -26,8 +26,23 @@ const samples: Record<string, SampleInfo[]> = {
     {
       path: '/voice-advanced',
       title: 'Advanced Voice Chat',
+      description: 'Semantic VAD, echo cancellation, noise suppression, and barge-in',
+    },
+    {
+      path: '/voice-webrtc',
+      title: 'Voice over WebRTC (Preview)',
+      description: 'Low-latency RTP audio with a WebSocket control channel and data-channel events',
+    },
+    {
+      path: '/azure-realtime',
+      title: 'Azure Realtime Voices',
+      description: 'azure-realtime model with native voices — ~100 ms lower latency',
+    },
+    {
+      path: '/byom',
+      title: 'Bring Your Own Model',
       description:
-        'Semantic VAD, echo cancellation, noise suppression, and barge-in',
+        'Voice Live around a model deployed in your Foundry resource — Claude, Grok, gpt-5.x, fine-tunes',
     },
     {
       path: '/voice-proxy',
@@ -66,8 +81,7 @@ const samples: Record<string, SampleInfo[]> = {
     {
       path: '/foundry-agent',
       title: 'Voice',
-      description:
-        'Server-side auth via DefaultAzureCredential. No MSAL needed.',
+      description: 'Server-side auth via DefaultAzureCredential. No MSAL needed.',
     },
     {
       path: '/foundry-agent-msal',
@@ -77,8 +91,7 @@ const samples: Record<string, SampleInfo[]> = {
     {
       path: '/foundry-agent-avatar',
       title: 'Avatar',
-      description:
-        'Avatar with server-side auth via DefaultAzureCredential.',
+      description: 'Avatar with server-side auth via DefaultAzureCredential.',
     },
     {
       path: '/foundry-agent-avatar-msal',
@@ -86,23 +99,26 @@ const samples: Record<string, SampleInfo[]> = {
       description: 'Avatar with per-user Entra ID authentication.',
     },
   ],
-  'Legacy Agent Service (classic)': [
-    {
-      path: '/agent-service',
-      title: 'Voice',
-      description: 'Legacy agent IDs with MSAL and Azure Speech transcription',
-    },
-    {
-      path: '/agent-service-avatar',
-      title: 'Avatar',
-      description: 'Agent integration with avatar video',
-    },
-  ],
   'Advanced Features': [
     {
       path: '/function-calling',
       title: 'Function Calling',
       description: 'Tool definitions with get_weather and get_time examples',
+    },
+    {
+      path: '/interim-response',
+      title: 'Interim Responses',
+      description: 'Filler messages while a slow tool runs or latency is high',
+    },
+    {
+      path: '/mcp-tools',
+      title: 'MCP Server Tools',
+      description: 'Server-side MCP tools with an approval flow',
+    },
+    {
+      path: '/agui-voice',
+      title: 'AG-UI Voice',
+      description: 'Bridge a voice session to the AG-UI protocol, rendered with plain React',
     },
     {
       path: '/audio-visualizer',
@@ -141,9 +157,7 @@ export function HomePage(): JSX.Element {
     <div className="sample-layout">
       <header className="home-header">
         <h1 className="home-title">Foundry Voice Live React</h1>
-        <p className="home-subtitle">
-          React SDK for Microsoft Azure AI Voice Live API
-        </p>
+        <p className="home-subtitle">React SDK for Microsoft Azure AI Voice Live API</p>
       </header>
 
       {Object.entries(samples).map(([category, categoryItems]) => (

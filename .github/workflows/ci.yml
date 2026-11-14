@@ -10,7 +10,6 @@ jobs:
   build-and-test:
     runs-on: ubuntu-latest
     strategy:
-      fail-fast: false
       matrix:
         node: [22, 24, 26]
 
@@ -41,3 +40,6 @@ jobs:
 
       - name: Lint
         run: pnpm -r run lint
+
+      - name: Format check
+        run: pnpm -r run format:check

@@ -12,13 +12,18 @@ pnpm install
 
 ### 2. Configure environment
 
-Copy the example environment file. Configure the proxy with your Foundry resource and server-side credentials; MSAL examples additionally need a public client ID and tenant ID:
+Copy the example environment file and add your Azure credentials:
 
 ```bash
-# From the repository root
-cp examples/.env.example examples/.env
-cp packages/proxy-node/.env.example packages/proxy-node/.env
+cp .env.example .env
 ```
+
+| Variable                                               | Used by                                                                                                                                            |
+| ------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `VITE_BACKEND_PROXY_URL`                               | Proxy, MSAL and Foundry Agent examples, and the keyless fallback of all other pages (defaults to `ws://localhost:8080`, see `packages/proxy-node`) |
+| `VITE_FOUNDRY_AGENT_NAME`, `VITE_FOUNDRY_PROJECT_NAME` | Foundry Agent examples                                                                                                                             |
+| `VITE_AZURE_CLIENT_ID`, `VITE_AZURE_TENANT_ID`         | MSAL (Entra ID) examples                                                                                                                           |
+| `VITE_AVATAR_CHARACTER`, `VITE_AVATAR_STYLE`           | Avatar examples (optional)                                                                                                                         |
 
 ### 3. Download Live2D Model (Optional)
 
@@ -34,6 +39,7 @@ The Live2D avatar feature requires the Kei model from Live2D's sample collection
    ```
 
 The directory structure should look like:
+
 ```
 public/models/kei_vowels_pro/
 ├── kei_vowels_pro.2048/
@@ -49,28 +55,32 @@ public/models/kei_vowels_pro/
 
 ### 4. Run examples
 
-Start the proxy and examples in separate terminals from the repository root:
-
 ```bash
-just dev-proxy
 just dev-examples
 ```
 
-Open [the examples](http://localhost:3001) in your browser. Start with [Azure Realtime and Streaming Text](http://localhost:3001/current-capabilities): it uses `azure-realtime`, the native `ava` voice, `mai-transcribe-2`, sequential function calls, streamed text chunks, and the server-reported session expiration. The microphone is optional and starts only on request.
+Open http://localhost:3001 in your browser.
 
-Try [Voice over WebRTC](http://localhost:3001/voice-webrtc) for native audio media tracks with text input, a time-lookup tool, transcripts, mute controls, and an optional microphone. It uses `connection.transport: 'webrtc'`; the proxy authenticates signaling while audio flows directly over WebRTC. Microsoft currently offers this transport in preview with global routing, and does not support avatar configuration with its sideband control. See [Voice Live WebRTC](https://learn.microsoft.com/azure/ai-services/speech-service/voice-live-webrtc).
+## Examples
 
-The SDK and proxy default to stable API version `2026-07-15`. Check [Voice Live model and region availability](https://learn.microsoft.com/azure/ai-services/speech-service/regions?tabs=voice-live#regions) before selecting a model. Foundry Agent Service examples use current named agents; Agent Service (classic) examples are retained for legacy agent IDs.
+| Route                                                                                          | What it shows                                                                                                                                                       |
+| ---------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/voice-basic`                                                                                 | Minimal voice chat with auto-start microphone                                                                                                                       |
+| `/voice-advanced`                                                                              | Semantic VAD, echo cancellation, noise suppression, barge-in, greeting, transcripts                                                                                 |
+| `/voice-webrtc`                                                                                | WebRTC transport (preview): RTP audio + WebSocket control channel, greeting, text input; direct with an API key or through the proxy (keyless) when no key is set   |
+| `/azure-realtime`                                                                              | `azure-realtime` model with native voices (voice picker)                                                                                                            |
+| `/byom`                                                                                        | Bring Your Own Model: Voice Live around a Claude / Grok / gpt-5.x / fine-tuned deployment in your Foundry resource (`VITE_BYOM_PROFILE` + `VITE_BYOM_MODEL`)        |
+| `/agui-voice`                                                                                  | AG-UI bridge: a voice session rendered with plain React — transcript, live AG-UI event stream, WebSocket/WebRTC toggle, and an offline "simulate a turn" (no Azure) |
+| `/voice-proxy`, `/voice-proxy-msal`                                                            | Backend proxy with API key / Entra ID (MSAL); `/voice-proxy` enables `reconnect: true` — restart the proxy while connected to see it recover                        |
+| `/avatar-basic`, `/avatar-advanced`, `/avatar-proxy`, `/avatar-proxy-msal`                     | Avatar video, chroma key, proxy variants                                                                                                                            |
+| `/foundry-agent`, `/foundry-agent-msal`, `/foundry-agent-avatar`, `/foundry-agent-avatar-msal` | Foundry Agents via the proxy (server-side auth or MSAL)                                                                                                             |
+| `/function-calling`                                                                            | Client-side tools; the `toolExecutor` return value is sent automatically                                                                                            |
+| `/interim-response`                                                                            | Filler messages while a slow tool runs (`gpt-4.1` + Azure voice)                                                                                                    |
+| `/mcp-tools`                                                                                   | Server-side MCP tools with an approval flow                                                                                                                         |
+| `/audio-visualizer`                                                                            | Waveform from `audioAnalyser`                                                                                                                                       |
+| `/viseme`, `/live2d-avatar`, `/avatar-3d`                                                      | Viseme events driving custom lip-sync                                                                                                                               |
 
-All model examples keep resource credentials on the proxy. Any `VITE_*` variable is included in browser code; never put API keys there. Set `VITE_BACKEND_PROXY_URL` to your `wss://` proxy URL when hosting these examples remotely.
-
-## Features
-
-- Voice-only mode testing over WebSocket and WebRTC
-- Avatar mode with Microsoft avatars
-- Live2D avatar integration (requires model download)
-- Real-time audio visualization
-- Session configuration testing
+All pages pass `logLevel: 'debug'` to `useVoiceLive` so every event shows up in the browser console.
 
 ## License
 

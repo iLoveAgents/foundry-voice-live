@@ -3,7 +3,16 @@ import { useEffect, useRef, useState } from 'react';
 import { useVoiceLive } from '@iloveagents/foundry-voice-live-react';
 
 import { modelProxyUrl } from '../utils/proxyUrl';
-import { AlertBox, ConfigItem, ConfigPanel, ControlGroup, ErrorPanel, SampleLayout, Section, StatusBadge } from '../components';
+import {
+  AlertBox,
+  ConfigItem,
+  ConfigPanel,
+  ControlGroup,
+  ErrorPanel,
+  SampleLayout,
+  Section,
+  StatusBadge,
+} from '../components';
 
 /** GA API capabilities using server-side credentials and the Azure Realtime model. */
 export function CurrentCapabilities(): JSX.Element {
@@ -16,9 +25,20 @@ export function CurrentCapabilities(): JSX.Element {
   const audioRef = useRef<HTMLAudioElement>(null);
 
   const {
-    connect, disconnect, connectionState, isReady, error,
-    startMic, stopMic, isMicActive, appendText, finishText, createResponse,
-    sendEvent, sessionExpiresAt, audioStream,
+    connect,
+    disconnect,
+    connectionState,
+    isReady,
+    error,
+    startMic,
+    stopMic,
+    isMicActive,
+    appendText,
+    finishText,
+    createResponse,
+    sendEvent,
+    sessionExpiresAt,
+    audioStream,
   } = useVoiceLive({
     connection: {
       proxyUrl: modelProxyUrl('azure-realtime'),
@@ -30,31 +50,25 @@ export function CurrentCapabilities(): JSX.Element {
       instructions: 'Be concise. Use get_time when asked for the current time.',
       inputAudioTranscription: { model: 'mai-transcribe-2' },
       parallelToolCalls: false,
-      tools: [{
-        type: 'function',
-        name: 'get_time',
-        description: 'Get the current time and timezone from the browser.',
-        parameters: { type: 'object', properties: {}, additionalProperties: false },
-      }],
+      tools: [
+        {
+          type: 'function',
+          name: 'get_time',
+          description: 'Get the current time and timezone from the browser.',
+          parameters: { type: 'object', properties: {}, additionalProperties: false },
+        },
+      ],
     },
     onTranscript: (role, text) => {
       if (role === 'assistant') setAssistantText(text);
       else setUserTranscript(text);
     },
-    toolExecutor: (name, _args, callId) => {
+    toolExecutor: (name) => {
       if (name !== 'get_time') return;
-      sendEvent({
-        type: 'conversation.item.create',
-        item: {
-          type: 'function_call_output',
-          call_id: callId,
-          output: JSON.stringify({
-            time: new Date().toISOString(),
-            timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-          }),
-        },
-      });
-      createResponse();
+      return {
+        time: new Date().toISOString(),
+        timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      };
     },
   });
 
@@ -64,10 +78,14 @@ export function CurrentCapabilities(): JSX.Element {
     audio.srcObject = audioStream;
     if (audioStream) {
       void audio.play().catch((playbackError: unknown) => {
-        setLocalError(playbackError instanceof Error ? playbackError.message : 'Unable to play audio.');
+        setLocalError(
+          playbackError instanceof Error ? playbackError.message : 'Unable to play audio.'
+        );
       });
     }
-    return (): void => { audio.srcObject = null; };
+    return (): void => {
+      audio.srcObject = null;
+    };
   }, [audioStream]);
 
   useEffect(() => {
@@ -82,7 +100,9 @@ export function CurrentCapabilities(): JSX.Element {
     try {
       await startMic();
     } catch (captureError) {
-      setLocalError(captureError instanceof Error ? captureError.message : 'Unable to start the microphone.');
+      setLocalError(
+        captureError instanceof Error ? captureError.message : 'Unable to start the microphone.'
+      );
     }
   };
 
@@ -101,7 +121,7 @@ export function CurrentCapabilities(): JSX.Element {
       });
     }
     appendText(streamedItemId.current, chunk);
-    setStreamedText(previous => previous + chunk);
+    setStreamedText((previous) => previous + chunk);
     setChunk('');
   };
 
@@ -126,42 +146,91 @@ export function CurrentCapabilities(): JSX.Element {
       description="Try a native Azure voice, MAI transcription, tool calling, and incremental text input through the secure proxy."
     >
       <AlertBox variant="info">
-        Start the proxy with your Foundry resource and server-side credentials.
-        Check <a href="https://learn.microsoft.com/azure/ai-services/speech-service/regions?tabs=voice-live#regions" target="_blank" rel="noreferrer">model availability in your region</a> before connecting.
-        Microphone capture starts only when you choose Enable microphone.
+        Start the proxy with your Foundry resource and server-side credentials. Check{' '}
+        <a
+          href="https://learn.microsoft.com/azure/ai-services/speech-service/regions?tabs=voice-live#regions"
+          target="_blank"
+          rel="noreferrer"
+        >
+          model availability in your region
+        </a>{' '}
+        before connecting. Microphone capture starts only when you choose Enable microphone.
       </AlertBox>
 
       <ErrorPanel error={error || localError} />
       <StatusBadge status={connectionState} />
 
       <ControlGroup>
-        <button onClick={connect} disabled={connectionState === 'connected' || connectionState === 'connecting'}>Connect</button>
-        <button onClick={handleDisconnect} disabled={connectionState === 'disconnected'}>Disconnect</button>
-        <button onClick={handleStartMic} disabled={!isReady || isMicActive || streamedText.length > 0}>Enable microphone</button>
-        <button onClick={stopMic} disabled={!isMicActive}>Stop microphone</button>
+        <button
+          onClick={connect}
+          disabled={connectionState === 'connected' || connectionState === 'connecting'}
+        >
+          Connect
+        </button>
+        <button onClick={handleDisconnect} disabled={connectionState === 'disconnected'}>
+          Disconnect
+        </button>
+        <button
+          onClick={handleStartMic}
+          disabled={!isReady || isMicActive || streamedText.length > 0}
+        >
+          Enable microphone
+        </button>
+        <button onClick={stopMic} disabled={!isMicActive}>
+          Stop microphone
+        </button>
       </ControlGroup>
 
       <ConfigPanel title="Session">
         <ConfigItem label="Model / voice" value="azure-realtime / ava" />
         <ConfigItem label="Transcription" value="mai-transcribe-2" />
         <ConfigItem label="Tool calls" value="Sequential (parallelToolCalls: false)" />
-        <ConfigItem label="Session expires" value={sessionExpiresAt ? new Date(sessionExpiresAt * 1000).toLocaleString() : 'Not reported by the service yet'} />
+        <ConfigItem
+          label="Session expires"
+          value={
+            sessionExpiresAt
+              ? new Date(sessionExpiresAt).toLocaleString()
+              : 'Not reported by the service yet'
+          }
+        />
       </ConfigPanel>
 
       <Section title="Stream a text message">
-        <p>Append one or more chunks, then finish the message to request a spoken reply. Include spaces between chunks where needed.</p>
+        <p>
+          Append one or more chunks, then finish the message to request a spoken reply. Include
+          spaces between chunks where needed.
+        </p>
         <label htmlFor="text-chunk">Next text chunk</label>
-        <textarea id="text-chunk" rows={3} value={chunk} onChange={event => setChunk(event.target.value)} disabled={!isReady || isMicActive} />
+        <textarea
+          id="text-chunk"
+          rows={3}
+          value={chunk}
+          onChange={(event) => setChunk(event.target.value)}
+          disabled={!isReady || isMicActive}
+        />
         <ControlGroup>
-          <button onClick={handleAppend} disabled={!isReady || isMicActive || !chunk}>Append chunk</button>
-          <button onClick={handleFinish} disabled={!isReady || !streamedText}>Finish and respond</button>
+          <button onClick={handleAppend} disabled={!isReady || isMicActive || !chunk}>
+            Append chunk
+          </button>
+          <button onClick={handleFinish} disabled={!isReady || !streamedText}>
+            Finish and respond
+          </button>
         </ControlGroup>
-        {streamedText && <p><strong>Pending message:</strong> {streamedText}</p>}
+        {streamedText && (
+          <p>
+            <strong>Pending message:</strong> {streamedText}
+          </p>
+        )}
       </Section>
 
       <Section title="Transcript">
-        <p><strong>You:</strong> {userTranscript || 'Enable the microphone to try MAI transcription.'}</p>
-        <p><strong>Assistant:</strong> {assistantText || 'Waiting for a response.'}</p>
+        <p>
+          <strong>You:</strong>{' '}
+          {userTranscript || 'Enable the microphone to try MAI transcription.'}
+        </p>
+        <p>
+          <strong>Assistant:</strong> {assistantText || 'Waiting for a response.'}
+        </p>
       </Section>
       <audio ref={audioRef} autoPlay hidden />
     </SampleLayout>

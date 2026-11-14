@@ -116,13 +116,15 @@
   background: var(--status-neutral-text);
 }
 
-.status-badge--connecting {
+.status-badge--connecting,
+.status-badge--reconnecting {
   background: var(--status-warning-bg);
   color: var(--status-warning-text);
   border-color: var(--status-warning-border);
 }
 
-.status-badge--connecting .status-badge__dot {
+.status-badge--connecting .status-badge__dot,
+.status-badge--reconnecting .status-badge__dot {
   background: var(--status-warning-text);
   animation: pulse 1.5s infinite;
 }
@@ -587,4 +589,14 @@
 
 .home-footer__link:hover {
   text-decoration: underline;
+}
+
+/* AG-UI Voice: the status badge's standalone bottom margin would offset it from the
+   inline chip/text in a centered flex row — neutralize it on the badge and move the
+   same spacing onto the row, so alignment is clean and the rhythm matches other pages. */
+.agui-status-row {
+  margin-bottom: var(--space-6);
+}
+.agui-status-row .status-badge {
+  margin-bottom: 0;
 }

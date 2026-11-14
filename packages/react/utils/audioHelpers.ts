@@ -60,3 +60,28 @@ export function createAudioDataCallback(sendEvent: (event: VoiceLiveEvent) => vo
     });
   };
 }
+
+/**
+ * Build getUserMedia constraints for microphone capture with the SDK's defaults
+ * (echo cancellation, noise suppression, auto gain control, mono). Used by both the
+ * WebSocket capture pipeline (`useAudioCapture`) and the WebRTC transport.
+ *
+ * @param overrides - Caller constraints merged over the defaults (`true`/`undefined` = defaults)
+ * @param sampleRate - Optional capture sample rate (WebSocket transport)
+ */
+export function buildMicConstraints(
+  overrides?: MediaTrackConstraints | boolean,
+  sampleRate?: number
+): MediaStreamConstraints {
+  const base: MediaTrackConstraints = {
+    echoCancellation: true,
+    noiseSuppression: true,
+    autoGainControl: true,
+    channelCount: 1,
+    ...(sampleRate !== undefined && { sampleRate }),
+  };
+  if (overrides === undefined || typeof overrides === 'boolean') {
+    return { audio: base };
+  }
+  return { audio: { ...base, ...overrides } };
+}

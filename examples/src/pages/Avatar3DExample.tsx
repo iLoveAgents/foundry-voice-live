@@ -7,13 +7,17 @@
  */
 
 import { useState, useRef, useEffect, useCallback, Suspense } from 'react';
+import {
+  useVoiceLive,
+  createVoiceLiveConfig,
+  withViseme,
+} from '@iloveagents/foundry-voice-live-react';
+import type { VoiceLiveServerEvent } from '@iloveagents/foundry-voice-live-react';
+import { SampleLayout, StatusBadge, Section, ControlGroup, ErrorPanel } from '../components';
 import { Canvas, useFrame } from '@react-three/fiber';
 import { useGLTF, OrbitControls, Environment } from '@react-three/drei';
 import * as THREE from 'three';
-
-import { useVoiceLive, createVoiceLiveConfig, withViseme } from '@iloveagents/foundry-voice-live-react';
-import { modelProxyUrl } from '../utils/proxyUrl';
-import { SampleLayout, StatusBadge, Section, ControlGroup, ErrorPanel } from '../components';
+import { directOrProxyConnection } from '../lib/connection';
 
 // ============================================================================
 // Configuration
@@ -43,28 +47,28 @@ interface AvatarProps {
  * Maps Azure viseme IDs (0-21) to Oculus Viseme morph target names.
  */
 const VISEME_MORPH_TARGETS: Record<number, string> = {
-  0:  'viseme_sil',  // Silence
-  1:  'viseme_aa',   // æ, ə, ʌ
-  2:  'viseme_aa',   // ɑ (widest)
-  3:  'viseme_O',    // ɔ
-  4:  'viseme_E',    // eɪ, ɛ
-  5:  'viseme_E',    // ɝ
-  6:  'viseme_I',    // j, i, ɪ
-  7:  'viseme_U',    // w, ʊ
-  8:  'viseme_O',    // oʊ
-  9:  'viseme_aa',   // aʊ
-  10: 'viseme_O',    // ɔɪ
-  11: 'viseme_aa',   // aɪ
-  12: 'viseme_CH',   // h
-  13: 'viseme_RR',   // ɹ
-  14: 'viseme_nn',   // l
-  15: 'viseme_SS',   // s, z
-  16: 'viseme_CH',   // ʃ, tʃ, dʒ, ʒ
-  17: 'viseme_TH',   // θ, ð
-  18: 'viseme_FF',   // f, v
-  19: 'viseme_DD',   // d, t, n
-  20: 'viseme_kk',   // k, g, ŋ
-  21: 'viseme_PP',   // p, b, m
+  0: 'viseme_sil', // Silence
+  1: 'viseme_aa', // æ, ə, ʌ
+  2: 'viseme_aa', // ɑ (widest)
+  3: 'viseme_O', // ɔ
+  4: 'viseme_E', // eɪ, ɛ
+  5: 'viseme_E', // ɝ
+  6: 'viseme_I', // j, i, ɪ
+  7: 'viseme_U', // w, ʊ
+  8: 'viseme_O', // oʊ
+  9: 'viseme_aa', // aʊ
+  10: 'viseme_O', // ɔɪ
+  11: 'viseme_aa', // aɪ
+  12: 'viseme_CH', // h
+  13: 'viseme_RR', // ɹ
+  14: 'viseme_nn', // l
+  15: 'viseme_SS', // s, z
+  16: 'viseme_CH', // ʃ, tʃ, dʒ, ʒ
+  17: 'viseme_TH', // θ, ð
+  18: 'viseme_FF', // f, v
+  19: 'viseme_DD', // d, t, n
+  20: 'viseme_kk', // k, g, ŋ
+  21: 'viseme_PP', // p, b, m
 };
 
 // ============================================================================
@@ -95,7 +99,7 @@ function Avatar({ visemeRef }: AvatarProps): JSX.Element {
           console.log('Mesh:', child.name, 'has morph targets:', morphNames);
         }
 
-        const hasVisemes = morphNames.some(key => key.startsWith('viseme_'));
+        const hasVisemes = morphNames.some((key) => key.startsWith('viseme_'));
 
         if (hasVisemes) {
           const indexMap = new Map<string, number>();
@@ -156,13 +160,7 @@ function Avatar({ visemeRef }: AvatarProps): JSX.Element {
     }
   });
 
-  return (
-    <primitive
-      object={scene}
-      position={[0, -0.9, 0]}
-      scale={1}
-    />
-  );
+  return <primitive object={scene} position={[0, -0.9, 0]} scale={1} />;
 }
 
 // ============================================================================
@@ -197,9 +195,8 @@ export function Avatar3DExample(): JSX.Element {
   // Microsoft Foundry Voice Live Configuration
   // ---------------------------------------------------------------------------
   const config = createVoiceLiveConfig({
-    connection: {
-      proxyUrl: modelProxyUrl(),
-    },
+    // Direct with the dev API key when configured, otherwise through the proxy (keyless)
+    connection: directOrProxyConnection(),
     session: withViseme({
       instructions: 'You are a friendly 3D avatar assistant. Respond naturally and briefly!',
       voice: {
@@ -211,12 +208,10 @@ export function Avatar3DExample(): JSX.Element {
 
   const { connect, disconnect, connectionState, getAudioPlaybackTime, audioStream } = useVoiceLive({
     ...config,
-    onEvent: useCallback((event: { type: string; viseme_id?: number; audio_offset_ms?: number }) => {
-      if (
-        event.type === 'response.animation_viseme.delta' &&
-        event.viseme_id !== undefined &&
-        event.audio_offset_ms !== undefined
-      ) {
+    logLevel: 'debug',
+    onEvent: useCallback((event: VoiceLiveServerEvent) => {
+      // `event.type` narrows the typed union to the viseme delta shape
+      if (event.type === 'response.animation_viseme.delta') {
         visemeBufferRef.current.push({
           viseme_id: event.viseme_id,
           audio_offset_ms: event.audio_offset_ms,

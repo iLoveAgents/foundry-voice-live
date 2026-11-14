@@ -10,11 +10,16 @@
     "preview": "vite preview",
     "lint": "eslint src --ext .ts,.tsx",
     "lint:fix": "eslint src --ext .ts,.tsx --fix",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
   },
   "dependencies": {
+    "@ag-ui/client": "0.0.58",
+    "@ag-ui/core": "0.0.58",
     "@azure/msal-browser": "^5.29.1",
     "@azure/msal-react": "^5.8.2",
+    "@iloveagents/foundry-voice-live-agui": "workspace:*",
     "@iloveagents/foundry-voice-live-react": "workspace:*",
     "@react-three/drei": "^9.122.0",
     "@react-three/fiber": "^8.18.0",
@@ -23,6 +28,7 @@
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-router-dom": "^7.18.5",
+    "rxjs": "^7.8.1",
     "three": "^0.160.1"
   },
   "devDependencies": {

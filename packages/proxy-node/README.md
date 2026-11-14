@@ -4,13 +4,13 @@
 [![CI](https://github.com/iLoveAgents/foundry-voice-live/actions/workflows/ci.yml/badge.svg)](https://github.com/iLoveAgents/foundry-voice-live/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-Secure WebSocket proxy for Azure AI Foundry Voice Live API. Supports Voice, Avatar, and Agent modes.
+Secure WebSocket proxy for Azure AI Foundry Voice Live API. Supports Voice, Avatar, and Foundry Agents over the WebSocket or WebRTC (preview) transport.
 
-**Why use this proxy?** Browser WebSockets cannot set Authorization headers. Voice Live also supports query-string authentication, but this proxy keeps resource API keys server-side, sends credentials in upgrade headers where supported, and forwards protocol messages transparently.
-
-The default service API is **`2026-07-15`** (GA), checked against the [Microsoft Voice Live reference](https://learn.microsoft.com/azure/ai-services/speech-service/voice-live-api-reference-2026-07-15). Streaming text, MCP events, hosted-agent invocation events, native Azure realtime voices, and session expiration metadata pass through without payload changes. The proxy supports WebSocket audio and the preview Voice Live WebRTC transport through a persistent WebSocket signaling/control channel. With WebRTC, audio flows directly between the browser and Voice Live over RTP media tracks.
+**Why use this proxy?** Browser WebSockets cannot send Authorization headers, and API keys must never ship to the browser. This proxy keeps credentials server-side (API key or `DefaultAzureCredential`), moves per-user tokens into the `Authorization` header, and forwards messages transparently.
 
 ## Installation
+
+Requires **Node.js 20 or newer** (`@azure/identity` needs 20+); the Docker image and CI run on Node 22.
 
 **npm:**
 
@@ -36,6 +36,8 @@ docker pull ghcr.io/iloveagents/foundry-voice-live-proxy:latest
    EOF
    ```
 
+   No API key? Skip `FOUNDRY_API_KEY` and run `az login` — the proxy falls back to `DefaultAzureCredential`.
+
 2. **Run the proxy**
 
    ```bash
@@ -58,9 +60,11 @@ docker pull ghcr.io/iloveagents/foundry-voice-live-proxy:latest
    const ws = new WebSocket("ws://localhost:8080/ws");
    ```
 
+   With the React SDK: `useVoiceLive({ connection: { proxyUrl: "ws://localhost:8080/ws" } })`.
+
 ## Configuration
 
-> **Region Availability:** Model, voice, and agent availability varies by region. Check the [Voice Live model and region documentation](https://learn.microsoft.com/azure/ai-services/speech-service/voice-live) for your resource before connecting.
+> **Region Availability:** The default model (`gpt-realtime`) is only available in **East US 2** and **Sweden Central** regions. Make sure your Azure AI Foundry resource is deployed in one of these regions. See [Microsoft docs](https://learn.microsoft.com/azure/ai-foundry/openai/concepts/models#global-standard-model-availability) for current availability.
 
 Copy `.env.example` to `.env` and configure:
 
@@ -68,14 +72,17 @@ Copy `.env.example` to `.env` and configure:
 # Required
 FOUNDRY_RESOURCE_NAME=your-resource-name
 
-# Authentication (one of these)
-FOUNDRY_API_KEY=your-api-key          # Option 1: API key (simpler)
-# Or let clients pass MSAL tokens     # Option 2: Per-user auth (enterprise)
-# Or omit both for DefaultAzureCredential (managed identity / Azure CLI)
+# Authentication (optional - see priority below)
+FOUNDRY_API_KEY=your-api-key          # Shared API key (standard mode)
+# Unset: clients pass ?token= (per-user) or the proxy uses DefaultAzureCredential (az login)
 
 # Server (optional)
 PORT=8080
-API_VERSION=2026-07-15
+# API_VERSION=2026-07-15              # Default when unset (GA); ?apiVersion= overrides per connection
+
+# Foundry Agents (optional .env fallback for agentName/projectName)
+# FOUNDRY_AGENT_NAME=MyAgent
+# FOUNDRY_PROJECT_NAME=my-project
 
 # Security (optional)
 ALLOWED_ORIGINS=http://localhost:3000,https://your-app.com
@@ -87,7 +94,25 @@ MAX_CONNECTIONS=1000
 # APPLICATIONINSIGHTS_CONNECTION_STRING=InstrumentationKey=...
 ```
 
-## Authentication Modes
+## Authentication
+
+For every connection the proxy resolves credentials in this order (both modes):
+
+| Priority | Source                                           | Standard mode | Foundry Agents |
+| -------- | ------------------------------------------------ | ------------- | -------------- |
+| 1        | `?token=` query param (per-user Entra ID / MSAL) | ✅            | ✅             |
+| 2        | `FOUNDRY_API_KEY` env (shared key)               | ✅            | –              |
+| 3        | `DefaultAzureCredential` (server-side, keyless)  | ✅            | ✅             |
+
+Credentials are always sent upstream as headers — `Authorization: Bearer` for tokens, `api-key` for a shared key — so they never appear in the upstream URL, where dependency tracing (Application Insights collects the full URL of every outbound request) would export them. `token` / `api-key` / `Authorization` values are also redacted from logs, matching parameter names the way a server reads them (percent-decoded, case-insensitive). Errors sent back to the browser are limited to problems with its own request; token-acquisition, DNS and upstream-handshake details stay in the server log.
+
+> **Behind a load balancer.** Without `TRUST_PROXY`, every request appears to come from the ingress, so the per-IP rate limit becomes one global bucket that a single client can exhaust for everyone. Set `TRUST_PROXY=1` (or the number of proxies in front of the service) only when something actually rewrites `X-Forwarded-For` — otherwise a client can spoof its own address.
+>
+> **Invalid limits fail closed.** A non-numeric `MAX_CONNECTIONS` / `MAX_FRAME_BYTES` / `RATE_LIMIT_*` value falls back to the default with a warning instead of silently removing the limit.
+
+> **Origin enforcement.** Browser connections are checked against `ALLOWED_ORIGINS` on the HTTP request _and_ on the WebSocket upgrade (matching is exact — a prefix check would let `http://localhost:3001.attacker.com` through). Requests **without** an `Origin` header (curl, native apps, server-to-server) are allowed by design, so the origin check alone does not authenticate anyone: pair it with network rules or your own auth.
+
+> **Trust boundary.** With a shared API key or `DefaultAzureCredential`, every client that can reach `/ws` acts with the proxy's credentials — for any model and any agent the key/identity can access, in either mode. Restrict who can reach the proxy (`ALLOWED_ORIGINS`, network rules, your own auth in front of it) or use per-user `?token=` auth so each user is authorized and audited individually.
 
 ### 1. API Key (Shared Access)
 
@@ -104,7 +129,7 @@ FOUNDRY_RESOURCE_NAME=your-resource
 FOUNDRY_API_KEY=your-api-key  # Secured server-side
 ```
 
-### 2. MSAL Token (Per-User Auth)
+### 2. Token (Per-User Auth)
 
 Best for: enterprise apps, per-user auditing, SSO.
 
@@ -113,22 +138,38 @@ Best for: enterprise apps, per-user auditing, SSO.
 const token = await msalInstance.acquireTokenSilent({
   scopes: ["https://ai.azure.com/.default"],
 });
-const ws = new WebSocket(`ws://localhost:8080/ws?token=${encodeURIComponent(token.accessToken)}`);
+const ws = new WebSocket(`ws://localhost:8080/ws?token=${token.accessToken}`);
 ```
 
 ```bash
 # Backend .env
 FOUNDRY_RESOURCE_NAME=your-resource
-# No API key - uses client's MSAL token
+# No API key - uses the client's token
 ```
 
 **Setup:**
 
 1. Create Azure App Registration with `https://ai.azure.com/.default` scope
-2. Assign the applicable `Cognitive Services User` and `Foundry User` roles on your Foundry resource/project, as described in the [authentication documentation](https://learn.microsoft.com/azure/ai-services/speech-service/voice-live-api-reference-2026-07-15#endpoint-and-authentication). `Foundry User` was previously named `Azure AI User`.
+2. Assign "Cognitive Services User" role on your AI Foundry resource
 3. Configure MSAL in your frontend app
 
-### 3. Foundry Agent Service (Recommended)
+### 3. Keyless (DefaultAzureCredential)
+
+Best for: local development without keys, managed identity in production.
+
+```typescript
+// Frontend - nothing to pass
+const ws = new WebSocket("ws://localhost:8080/ws");
+```
+
+```bash
+# Backend .env - no FOUNDRY_API_KEY
+FOUNDRY_RESOURCE_NAME=your-resource
+```
+
+For local dev, run `az login` (the identity needs the "Cognitive Services User" role on the Foundry resource). In production, use managed identity or a service principal — [`DefaultAzureCredential`](https://learn.microsoft.com/javascript/api/@azure/identity/defaultazurecredential) picks it up automatically.
+
+### 4. Foundry Agents
 
 Best for: agents built in [Azure AI Foundry](https://learn.microsoft.com/azure/ai-services/speech-service/voice-live-agents-quickstart).
 
@@ -136,98 +177,74 @@ Best for: agents built in [Azure AI Foundry](https://learn.microsoft.com/azure/a
 
 ```typescript
 // Frontend - pass agent config, proxy handles auth
-const ws = new WebSocket(
-  "ws://localhost:8080/ws?agentName=MyAgent&projectName=myProject"
-);
+const ws = new WebSocket("ws://localhost:8080/ws?agentName=MyAgent&projectName=myProject");
 ```
 
 ```bash
 # Backend .env
 FOUNDRY_RESOURCE_NAME=your-resource
-API_VERSION=2026-07-15
 ```
 
-For local dev, run `az login`. In production, use managed identity or a service principal.
-
-**MSAL auth** — per-user Entra ID tokens:
+**Per-user auth** — pass an Entra ID token alongside the agent params:
 
 ```typescript
-// Frontend - pass agent config + MSAL token
 const token = await msalInstance.acquireTokenSilent({
   scopes: ["https://ai.azure.com/.default"],
 });
 const ws = new WebSocket(
-  `ws://localhost:8080/ws?agentName=MyAgent&projectName=myProject&token=${encodeURIComponent(token.accessToken)}`
+  `ws://localhost:8080/ws?agentName=MyAgent&projectName=myProject&token=${token.accessToken}`
 );
 ```
 
-**Mode detection is automatic:** Foundry Agent mode activates when `agentName` is present in the URL, or through `FOUNDRY_AGENT_NAME` / `FOUNDRY_PROJECT_NAME` defaults. Explicit `model` or classic `agentId` requests do not inherit the default agent. Agent invocation uses Entra ID even when a resource API key is configured.
+**Mode detection is automatic:** Foundry Agent mode activates when `agentName` is present in the URL, or when `FOUNDRY_AGENT_NAME` / `FOUNDRY_PROJECT_NAME` are set in `.env` and the URL has no `model` param. Optional agent params (`conversationId`, `agentVersion`, `agentAuthenticationIdentityClientId`, `foundryResourceOverride`) are forwarded upstream as-is.
 
-Standard model connections also use `DefaultAzureCredential` when neither a caller token nor `FOUNDRY_API_KEY` is supplied. Use managed identity in production or `az login` locally. Server credentials grant access to clients of this proxy; protect the proxy with your application authentication when deploying it publicly.
+### Bring Your Own Model (BYOM)
 
-### 4. Agent Service (Classic v1)
+`?profile=<mode>&model=<deployment-name>` runs Voice Live around a model deployed in your Foundry
+resource (`byom-azure-openai-realtime`, `byom-azure-openai-chat-completion`,
+`byom-foundry-anthropic-messages`). The proxy forwards both upstream and rejects the two
+invalid combinations as client errors: a profile without a `model`, and a profile in agent mode.
 
-Legacy mode for agents using `agentId` (Microsoft recommends [migrating to Foundry Agent Service](https://learn.microsoft.com/azure/ai-services/speech-service/how-to-voice-agent-integration#migrate-from-agent-service-classic)):
+There is deliberately **no** `BYOM_PROFILE` environment default: the profile and the deployment
+must match, and a server-side profile combined with a client-supplied model is a confusing
+upstream failure waiting to happen.
 
-```typescript
-const ws = new WebSocket(
-  `ws://localhost:8080/ws?agentId=asst_abc123&projectName=my-project&token=${encodeURIComponent(token.accessToken)}`
-);
-```
+Auth for BYOM is resolved exactly as for standard mode. Note that with Entra ID on the
+chat-completion / Anthropic profiles, Azure requires the Foundry resource's managed identity to
+hold _Foundry User_; with `foundryResourceOverride` that applies on both resources, for API keys
+too — see the [BYOM guide](https://learn.microsoft.com/azure/ai-services/speech-service/how-to-bring-your-own-model).
 
-Classic invocation forwards `agentAccessToken` as `agent-access-token` separately from Voice Live authentication. For compatibility, it falls back to `token` when both services accept the same token. If the classic agent requires a different token audience, supply `agentAccessToken` separately and authenticate Voice Live with `token`, a server API key, or server-side Entra credentials. See the [classic quickstart](https://learn.microsoft.com/azure/ai-services/speech-service/voice-live-agents-quickstart-classic).
+## Transports
 
-### BYOM and preview features
+| Transport           | Client URL                                    | Upstream path                | Default API version           |
+| ------------------- | --------------------------------------------- | ---------------------------- | ----------------------------- |
+| WebSocket (default) | `ws://localhost:8080/ws?...`                  | `/voice-live/realtime`       | `API_VERSION` or `2026-07-15` |
+| WebRTC (preview)    | `ws://localhost:8080/ws?...&transport=webrtc` | `/voice-live/realtime/calls` | `API_VERSION` or `2026-07-15` |
 
-```typescript
-const params = new URLSearchParams({
-  model: "my-deployment",
-  profile: "byom-foundry-openai-responses",
-  foundryResourceOverride: "model-resource",
-});
-const ws = new WebSocket(`ws://localhost:8080/ws?${params}`);
-```
+With `transport=webrtc` the proxied WebSocket becomes the WebRTC control channel (`rtc.call.*` events for SDP offer/answer plus the usual session events); audio flows directly between the browser and Azure over the WebRTC peer connection, not through the proxy. The React SDK appends `transport=webrtc` (and `apiVersion` when configured) automatically when you set `connection.transport: 'webrtc'`.
 
-Supported service profiles include `byom-azure-openai-realtime`, `byom-foundry-openai-responses`, `byom-azure-openai-chat-completion`, and the preview `byom-foundry-anthropic-messages`. Cross-resource usage requires the permissions described in the [BYOM documentation](https://learn.microsoft.com/azure/ai-services/speech-service/how-to-bring-your-own-model). For cross-resource agents, pass `foundryResourceOverride` and optionally `authenticationIdentityClientId`.
-
-Pass `features=client_ec_reference:true` to opt into client echo-reference input. This feature remains preview: clients must also configure the matching session fields and produce interleaved stereo PCM16 with microphone and playback-reference channels. Forwarding a feature flag alone does not enable stereo capture.
-
-### Voice Live WebRTC (preview)
-
-Select the media transport when opening the proxy control connection:
-
-```typescript
-const signaling = new WebSocket(
-  "ws://localhost:8080/ws?transport=webrtc&model=azure-realtime"
-);
-```
-
-The proxy connects upstream to `/voice-live/realtime/calls` with the `realtime` WebSocket subprotocol and the same server-side authentication as other connections. The React SDK selects this path with `connection: { proxyUrl: "ws://localhost:8080/ws", transport: "webrtc" }`.
-
-The browser creates an `RTCPeerConnection`, adds its microphone track and the `voice-live-events` data channel, and sends `rtc.call.sdp.create` containing its `sdp_offer` and session settings over this control socket. Apply the returned `rtc.call.sdp.created.sdp_answer` as the remote description. Keep the control socket open for `session.update`, function/tool calls, errors, and other control messages; audio travels over WebRTC tracks and transcription/lifecycle events arrive over the data channel. See [Microsoft's WebRTC guide](https://learn.microsoft.com/azure/ai-services/speech-service/voice-live-webrtc).
-
-The proxy buffers up to 1 MiB of early control messages during token acquisition and the upstream handshake, so an SDP offer sent immediately after the browser socket opens is retained. Closing the browser socket closes its Azure control connection, including a pending handshake. The client remains responsible for closing its peer connection and stopping microphone tracks.
-
-`transport=websocket` (the default) keeps the original `/voice-live/realtime` endpoint. HTTP SDP signaling is not implemented by this proxy. Voice Live WebRTC remains preview, and Microsoft currently does not support avatar configuration with this side-band control flow.
+> **Live-verified (November 2026):** WebRTC works with `2026-07-15` and Entra ID on the `/voice-live/realtime/calls` control channel. WebRTC itself remains in preview.
 
 ## Deployment
 
 ### Docker Compose (Recommended)
 
-Run from `packages/proxy-node` in a repository checkout. Compose uses the repository root as its build context so it can apply the workspace lockfile and dependency overrides.
-
 ```bash
 cp .env.example .env
 # Edit .env with your values
-docker compose up -d
+docker-compose up -d
 ```
 
 ### Docker
 
-Build from the repository root. Both build and production dependencies use `pnpm install --frozen-lockfile`; the image runs Node.js 26 as a non-root user. The source Dockerfile requires the repository workspace and is not a standalone npm-package build.
+Build from the **repository root** (the image installs with the workspace lockfile, so the build
+context has to include it):
 
 ```bash
 docker build -f packages/proxy-node/Dockerfile -t foundry-voice-live-proxy .
+```
+
+```bash
 docker run -p 8080:8080 --env-file packages/proxy-node/.env foundry-voice-live-proxy
 ```
 
@@ -262,49 +279,53 @@ az containerapp create \
   --env-vars FOUNDRY_RESOURCE_NAME=your-resource FOUNDRY_API_KEY=your-key
 ```
 
+Prefer keyless: assign a managed identity to the container app with the "Cognitive Services User" role and drop `FOUNDRY_API_KEY`.
+
 ## API Reference
 
 ### Endpoints
 
-| Endpoint  | Method | Description                |
-| --------- | ------ | -------------------------- |
-| `/`       | GET    | API info and version       |
-| `/health` | GET    | Health check (for probes)  |
-| `/ws`     | WS     | WebSocket proxy connection |
+| Endpoint  | Method | Description                                       |
+| --------- | ------ | ------------------------------------------------- |
+| `/`       | GET    | API info: version, supported params, API versions |
+| `/health` | GET    | Health check (for probes)                         |
+| `/ws`     | WS     | WebSocket proxy connection                        |
 
 ### WebSocket Query Parameters
 
-| Parameter        | Required    | Description                                  | Example           |
-| ---------------- | ----------- | -------------------------------------------- | ------------------ |
-| `transport` | No | `websocket` audio (default) or `webrtc` media with persistent control | `webrtc` |
-| `agentName`      | Conditional | Foundry Agent name (enables v2 mode)         | `MyAgent`          |
-| `projectName`    | Conditional | Foundry project name (with agentName/agentId)| `my-project`       |
-| `token`          | Conditional | MSAL access token                            | `eyJ0eXAi...`      |
-| `conversationId` | No          | Resume a previous conversation               | `conv_abc123`      |
-| `agentVersion`   | No          | Pin a specific agent version                 | `1.0`              |
-| `apiVersion`     | No          | Override API version                         | `2026-07-15` |
-| `model`          | No          | Model override (standard mode)               | `gpt-realtime`     |
-| `agentId`        | Conditional | Agent ID (classic v1 mode)                   | `asst_123xyz`      |
-| `agentAccessToken` | No | Separate classic agent invocation token | `eyJ0eXAi...` |
-| `features` | No | Service feature flags (preview where documented) | `client_ec_reference:true` |
-| `profile` | No | BYOM routing profile | `byom-foundry-openai-responses` |
-| `foundryResourceOverride` | No | Resource hosting the model or agent | `other-resource` |
-| `authenticationIdentityClientId` | No | User-assigned identity for agent authentication | `<client-id>` |
+| Parameter                             | Required    | Description                                                            | Example                                |
+| ------------------------------------- | ----------- | ---------------------------------------------------------------------- | -------------------------------------- |
+| `model`                               | No          | Model for standard mode (default `gpt-realtime`)                       | `gpt-realtime`                         |
+| `token`                               | No          | Entra ID / MSAL access token (moved to the `Authorization` header)     | `eyJ0eXAi...`                          |
+| `agentName`                           | Conditional | Foundry Agent name (enables agent mode; `.env` fallback)               | `MyAgent`                              |
+| `projectName`                         | Conditional | Foundry project name (with `agentName`; `.env` fallback)               | `my-project`                           |
+| `conversationId`                      | No          | Resume a previous conversation (agent mode)                            | `conv_abc123`                          |
+| `agentVersion`                        | No          | Pin a specific agent version (agent mode)                              | `1.0`                                  |
+| `agentAuthenticationIdentityClientId` | No          | Client ID of the user-assigned managed identity the agent runs as      | `00000000-0000-0000-0000-000000000000` |
+| `profile`                             | No          | BYOM profile; requires `model` = deployment name, not with `agentName` | `byom-azure-openai-chat-completion`    |
+| `foundryResourceOverride`             | No          | Override the Foundry resource (agent mode, or BYOM cross-resource)     | `other-resource`                       |
+| `transport`                           | No          | `websocket` (default) or `webrtc` (preview)                            | `webrtc`                               |
+| `apiVersion`                          | No          | Override the API version for this connection                           | `2026-07-15`                           |
+
+Upstream parameter names: `agentName` → `agent-name`, `projectName` → `agent-project-name`, `conversationId` → `conversation-id`, `agentVersion` → `agent-version`, `agentAuthenticationIdentityClientId` → `agent-authentication-identity-client-id`, `foundryResourceOverride` → `foundry-resource-override`. `token` and `transport` are consumed by the proxy and not forwarded.
 
 ### Environment Variables
 
-| Variable | Required | Default | Description |
-| --- | --- | --- | --- |
-| `FOUNDRY_RESOURCE_NAME` | Yes | - | Azure AI Foundry resource |
-| `FOUNDRY_API_KEY` | Conditional | - | API key (otherwise caller token or DefaultAzureCredential) |
-| `FOUNDRY_AGENT_NAME` | No | - | Default agent name (fallback) |
-| `FOUNDRY_PROJECT_NAME` | No | - | Default project name (fallback) |
-| `PORT` | No | `8080` | Server port |
-| `API_VERSION` | No | `2026-07-15` | Azure API version (standard and Foundry Agent Service) |
-| `ALLOWED_ORIGINS` | No | `http://localhost:3000` | CORS origins (comma-sep) |
-| `RATE_LIMIT_MAX_REQUESTS` | No | `100` | Max requests per window |
-| `RATE_LIMIT_WINDOW_MS` | No | `60000` | Rate limit window (ms) |
-| `MAX_CONNECTIONS` | No | `1000` | Max concurrent connections |
+| Variable                                | Required | Default                 | Description                                                                                                                    |
+| --------------------------------------- | -------- | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| `FOUNDRY_RESOURCE_NAME`                 | Yes      | -                       | Azure AI Foundry resource                                                                                                      |
+| `FOUNDRY_API_KEY`                       | No       | -                       | Shared API key (standard mode); unset = token or `DefaultAzureCredential`                                                      |
+| `FOUNDRY_AGENT_NAME`                    | No       | -                       | Default agent name (fallback when the URL has no `agentName`/`model`)                                                          |
+| `FOUNDRY_PROJECT_NAME`                  | No       | -                       | Default project name (fallback)                                                                                                |
+| `PORT`                                  | No       | `8080`                  | Server port                                                                                                                    |
+| `API_VERSION`                           | No       | `2026-07-15`            | Voice Live API version (WebRTC defaults to `2026-07-15` when unset)                                                            |
+| `ALLOWED_ORIGINS`                       | No       | `http://localhost:3000` | CORS origins (comma-sep)                                                                                                       |
+| `RATE_LIMIT_MAX_REQUESTS`               | No       | `100`                   | Max requests per window                                                                                                        |
+| `RATE_LIMIT_WINDOW_MS`                  | No       | `60000`                 | Rate limit window (ms)                                                                                                         |
+| `MAX_FRAME_BYTES`                       | No       | `1048576`               | Largest accepted browser frame (1 MiB); offenders are closed with `1009`                                                       |
+| `MAX_CONNECTIONS`                       | No       | `1000`                  | Max concurrent connections                                                                                                     |
+| `TRUST_PROXY`                           | No       | _(off)_                 | Express `trust proxy` (hop count, `true`, or IP list) — set it behind an ingress so the per-IP rate limit sees real client IPs |
+| `APPLICATIONINSIGHTS_CONNECTION_STRING` | No       | -                       | Enable Application Insights telemetry                                                                                          |
 
 ### Health Check Response
 
@@ -313,20 +334,21 @@ az containerapp create \
   "status": "ok",
   "activeConnections": 5,
   "maxConnections": 1000,
-  "timestamp": "2025-01-15T10:30:00.000Z"
+  "timestamp": "2026-08-18T10:30:00.000Z"
 }
 ```
 
 ## Troubleshooting
 
-| Error | Solution |
-| ----- | -------- |
-| Connection fails | Check `.env` values, verify with `curl http://localhost:8080/health` |
-| "Blocked by CORS" | Add your origin to `ALLOWED_ORIGINS` |
-| "Too many requests" | Rate limit hit - wait or increase `RATE_LIMIT_MAX_REQUESTS` |
-| "Missing token" | Classic agent mode (v1) requires MSAL token. Foundry Agent Service can use DefaultAzureCredential instead |
-| Authentication fails | Provide a client MSAL token, configure `FOUNDRY_API_KEY` for standard mode, or configure DefaultAzureCredential |
-| "Failed to acquire Entra ID token" | Run `az login` for local dev, or configure managed identity/service principal |
+| Error                                     | Solution                                                                                                         |
+| ----------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| Connection fails                          | Check `.env` values, verify with `curl http://localhost:8080/health`                                             |
+| "Blocked by CORS"                         | Add your origin to `ALLOWED_ORIGINS`                                                                             |
+| "Too many requests"                       | Rate limit hit - wait or increase `RATE_LIMIT_MAX_REQUESTS`                                                      |
+| "Entra ID token acquisition failed"       | No `token`/`FOUNDRY_API_KEY` → proxy used `DefaultAzureCredential`: run `az login` or configure managed identity |
+| "requires both agentName and projectName" | Pass both URL params, or set `FOUNDRY_AGENT_NAME` + `FOUNDRY_PROJECT_NAME` in `.env`                             |
+| "Unsupported transport"                   | `transport` must be `websocket` or `webrtc`                                                                      |
+| WebRTC connection rejected upstream       | Ensure the API version supports WebRTC (`?apiVersion=2026-07-15`)                                                |
 
 ## Support
 

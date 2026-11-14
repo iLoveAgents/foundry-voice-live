@@ -1,0 +1,5 @@
+# Build output and vendored assets — generated, never hand-formatted
+dist
+node_modules
+public
+*.tsbuildinfo

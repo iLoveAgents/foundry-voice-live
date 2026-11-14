@@ -1,0 +1,25 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "examples",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": [
+        "--filter",
+        "examples",
+        "dev"
+      ],
+      "port": 3001
+    },
+    {
+      "name": "examples-dist",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": [
+        "--filter",
+        "examples",
+        "dev:dist"
+      ],
+      "port": 3001
+    }
+  ]
+}
