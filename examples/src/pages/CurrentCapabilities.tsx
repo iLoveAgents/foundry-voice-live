@@ -67,6 +67,7 @@ export function CurrentCapabilities(): JSX.Element {
       if (name !== 'get_time') return;
       return {
         time: new Date().toISOString(),
+        localTime: new Date().toLocaleString(),
         timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
       };
     },

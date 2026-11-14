@@ -58,6 +58,7 @@ export function AguiVoice(): JSX.Element {
           name === 'get_time'
             ? {
                 time: new Date().toISOString(),
+                localTime: new Date().toLocaleString(),
                 timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
               }
             : undefined,
@@ -83,7 +84,7 @@ export function AguiVoice(): JSX.Element {
   const vs = (view.state.voice ?? {}) as VoiceStateShape;
 
   const transcripts: TranscriptEntry[] = view.messages
-    .filter((m) => m.role === 'user' || m.role === 'assistant')
+    .filter((m) => (m.role === 'user' || m.role === 'assistant') && messageText(m).trim())
     .map((m) => ({
       role: m.role as 'user' | 'assistant',
       text: messageText(m),

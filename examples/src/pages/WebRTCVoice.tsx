@@ -92,6 +92,7 @@ export function WebRTCVoice(): JSX.Element {
       setToolCalls((previous) => previous + 1);
       return {
         time: new Date().toISOString(),
+        localTime: new Date().toLocaleString(),
         timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
       };
     },
