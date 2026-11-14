@@ -101,7 +101,7 @@
   },
   "peerDependencies": {
     "@ag-ui/client": ">=0.0.57",
-    "@iloveagents/foundry-voice-live-react": ">=0.5.0",
+    "@iloveagents/foundry-voice-live-react": ">=0.7.0",
     "react": ">=16.8.0",
     "rxjs": "^7.8.0"
   },

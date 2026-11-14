@@ -5,6 +5,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [0.7.0] - 2026-11-14
 
+- Harden AG-UI React binding readiness, reconnect callbacks, unmount cleanup, and stale tool-result handling. Add six binding integration tests and live tool calling/manual microphone controls to `/agui-voice`.
+
 - Default both voice transports to API `2026-07-15`, verified against Azure with Entra ID.
 - Add WebRTC microphone diagnostics (input level, source state, and RTP counters), device selection, and recovery after the input device ends.
 - Add streaming text helpers and typed per-response options through the existing response gate.
