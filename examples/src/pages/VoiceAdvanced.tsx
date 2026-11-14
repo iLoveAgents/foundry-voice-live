@@ -1,5 +1,6 @@
 import { useRef, useEffect, useState, useCallback } from 'react';
 import { useVoiceLive, sessionConfig } from '@iloveagents/foundry-voice-live-react';
+import { modelProxyUrl } from '../utils/proxyUrl';
 import { SampleLayout, StatusBadge, ControlGroup, ErrorPanel } from '../components';
 
 interface TranscriptEntry {
@@ -39,8 +40,7 @@ export function VoiceAdvanced(): JSX.Element {
     toggleMute,
   } = useVoiceLive({
     connection: {
-      resourceName: import.meta.env.VITE_FOUNDRY_RESOURCE_NAME,
-      apiKey: import.meta.env.VITE_FOUNDRY_API_KEY,
+      proxyUrl: modelProxyUrl(),
     },
     session: sessionConfig({ temperature: 0.8 })
       .instructions('You are a helpful assistant. Keep responses brief and friendly.')

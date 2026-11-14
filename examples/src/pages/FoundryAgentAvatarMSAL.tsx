@@ -28,7 +28,7 @@ import {
  * 2. Set VITE_AZURE_CLIENT_ID and VITE_AZURE_TENANT_ID in examples .env
  * 3. Set VITE_FOUNDRY_AGENT_NAME and VITE_FOUNDRY_PROJECT_NAME in examples .env
  * 4. Set FOUNDRY_RESOURCE_NAME in proxy .env
- * 5. Set API_VERSION=2026-01-01-preview in proxy .env
+ * 5. Set API_VERSION=2026-07-15 in proxy .env
  */
 export default function FoundryAgentAvatarMSAL(): JSX.Element {
   const audioRef = useRef<HTMLAudioElement>(null);
@@ -126,7 +126,7 @@ export default function FoundryAgentAvatarMSAL(): JSX.Element {
           .semanticVAD({ interruptResponse: true })
           .echoCancellation()
           .noiseReduction()
-          .transcription()
+          .transcription({ model: 'azure-speech' })
           .build(),
         onEvent: (event) => {
           if (

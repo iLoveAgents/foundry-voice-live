@@ -15,6 +15,8 @@ import {
 import { useMsal } from '@azure/msal-react';
 import { InteractionRequiredAuthError } from '@azure/msal-browser';
 
+import { modelProxyUrl } from '../utils/proxyUrl';
+
 export function AvatarProxyMSAL(): JSX.Element {
   const [wsUrl, setWsUrl] = useState<string | null>(null);
   const [authError, setAuthError] = useState<string | null>(null);
@@ -46,7 +48,7 @@ export function AvatarProxyMSAL(): JSX.Element {
       });
       setAccessToken(response.accessToken);
       setWsUrl(
-        `ws://localhost:8080/ws?model=gpt-realtime&token=${encodeURIComponent(response.accessToken)}`
+        `${modelProxyUrl()}&token=${encodeURIComponent(response.accessToken)}`
       );
       console.log('Access token acquired successfully');
     } catch (err) {
@@ -58,7 +60,7 @@ export function AvatarProxyMSAL(): JSX.Element {
           });
           setAccessToken(response.accessToken);
           setWsUrl(
-            `ws://localhost:8080/ws?model=gpt-realtime&token=${encodeURIComponent(response.accessToken)}`
+            `${modelProxyUrl()}&token=${encodeURIComponent(response.accessToken)}`
           );
           console.log('Access token acquired via popup');
         } catch (popupError) {

@@ -1,27 +1,31 @@
-version: "3.8"
-
 services:
   foundry-voice-live-proxy:
     build:
-      context: .
-      dockerfile: Dockerfile
+      context: ../..
+      dockerfile: packages/proxy-node/Dockerfile
     container_name: foundry-voice-live-proxy
     ports:
       - "${PORT:-8080}:8080"
     environment:
       # Server Configuration
       - PORT=8080
-      - API_VERSION=${API_VERSION:-2025-10-01}
+      - API_VERSION=${API_VERSION:-2026-07-15}
 
       # Foundry Configuration (Required)
       - FOUNDRY_RESOURCE_NAME=${FOUNDRY_RESOURCE_NAME}
 
       # Standard Mode: Voice & Avatar (Optional)
-      - FOUNDRY_API_KEY=${FOUNDRY_API_KEY}
+      - FOUNDRY_API_KEY=${FOUNDRY_API_KEY:-}
 
-      # Agent Service Mode (Optional)
-      - AGENT_ID=${AGENT_ID}
-      - PROJECT_NAME=${PROJECT_NAME}
+      # Foundry Agent defaults (Optional)
+      - FOUNDRY_AGENT_NAME=${FOUNDRY_AGENT_NAME:-}
+      - FOUNDRY_PROJECT_NAME=${FOUNDRY_PROJECT_NAME:-}
+
+      # Service principal / user-assigned managed identity (Optional)
+      - AZURE_CLIENT_ID=${AZURE_CLIENT_ID:-}
+      - AZURE_TENANT_ID=${AZURE_TENANT_ID:-}
+      - AZURE_CLIENT_SECRET=${AZURE_CLIENT_SECRET:-}
+      - APPLICATIONINSIGHTS_CONNECTION_STRING=${APPLICATIONINSIGHTS_CONNECTION_STRING:-}
 
       # Security Configuration
       - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-http://localhost:3000}

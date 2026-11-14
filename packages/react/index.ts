@@ -23,6 +23,9 @@ export {
 
 export {
   buildSessionConfig,
+  buildAgentSessionConfig,
+  buildSessionUpdate,
+  buildResponseConfig,
   validateConfig,
   DEFAULT_SESSION_CONFIG,
 } from './utils/sessionBuilder';
@@ -75,12 +78,15 @@ export {
   SessionConfigBuilder,
 } from './utils/configHelpers';
 
+export { DEFAULT_API_VERSION } from './utils/connectionHelpers';
+
 // ==================== Configuration ====================
 export {
   createVoiceLiveConfig,
 } from './presets';
 
 // ==================== Types ====================
+export type * from './types/voiceLive';
 export type {
   // Event types
   VoiceLiveEvent,

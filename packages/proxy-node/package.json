@@ -53,9 +53,9 @@
     "docker-compose.yml"
   ],
   "scripts": {
-    "build": "tsc",
+    "build": "pnpm run clean && tsc -p tsconfig.build.json",
     "start": "node dist/index.js",
-    "dev": "tsc && node --watch dist/index.js",
+    "dev": "pnpm run build && node --watch dist/index.js",
     "dev:ts": "tsx watch src/index.ts",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
@@ -66,39 +66,40 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "clean": "rm -rf dist",
-    "docker:build": "docker build -t foundry-voice-live-proxy .",
+    "docker:build": "docker build -f Dockerfile -t foundry-voice-live-proxy ../..",
     "docker:run": "docker run -p 8080:8080 --env-file .env foundry-voice-live-proxy"
   },
   "engines": {
-    "node": ">=18.0.0"
+    "node": "^22.22.2 || ^24.15.0 || >=26.0.0"
   },
   "dependencies": {
-    "@azure/identity": "^4.13.0",
-    "applicationinsights": "^3.12.0",
-    "cors": "^2.8.5",
-    "dotenv": "^16.4.0",
-    "express": "^4.18.2",
-    "express-rate-limit": "^7.1.5",
+    "@azure/identity": "^4.14.1",
+    "applicationinsights": "^3.17.1",
+    "cors": "^2.8.6",
+    "dotenv": "^16.6.1",
+    "express": "^4.22.3",
+    "express-rate-limit": "^7.5.1",
     "express-ws": "^5.0.2",
-    "helmet": "^7.1.0",
-    "ws": "^8.18.0"
+    "helmet": "^7.2.0",
+    "ws": "^8.23.0"
   },
   "devDependencies": {
-    "@types/cors": "^2.8.17",
-    "@types/express": "^4.17.21",
-    "@types/express-ws": "^3.0.4",
-    "@types/node": "^20.11.0",
-    "@types/ws": "^8.5.10",
-    "@typescript-eslint/eslint-plugin": "^8.11.0",
-    "@typescript-eslint/parser": "^8.11.0",
-    "@vitest/coverage-v8": "^2.1.9",
-    "eslint": "^9.14.0",
-    "eslint-config-prettier": "^9.1.0",
-    "prettier": "^3.3.3",
-    "tsx": "^4.7.0",
-    "typescript": "^5.3.3",
-    "typescript-eslint": "^8.11.0",
-    "vitest": "^2.1.9"
+    "@types/cors": "^2.8.19",
+    "@types/express": "^4.17.25",
+    "@types/express-ws": "^3.0.6",
+    "@types/node": "^22.19.0",
+    "@types/ws": "^8.18.2",
+    "@typescript-eslint/eslint-plugin": "^8.72.2",
+    "@typescript-eslint/parser": "^8.72.2",
+    "@vitest/coverage-v8": "^5.1.0",
+    "eslint": "^9.39.5",
+    "eslint-config-prettier": "^9.1.2",
+    "prettier": "^3.10.1",
+    "tsx": "^4.23.15",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.72.2",
+    "vitest": "^5.1.0",
+    "vite": "^8.3.8"
   },
   "publishConfig": {
     "access": "public"

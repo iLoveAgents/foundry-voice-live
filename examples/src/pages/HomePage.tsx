@@ -9,6 +9,16 @@ interface SampleInfo {
 const samples: Record<string, SampleInfo[]> = {
   'Voice Examples': [
     {
+      path: '/voice-webrtc',
+      title: 'Voice over WebRTC',
+      description: 'Direct audio media tracks with secure signaling, text input, tools, and optional microphone',
+    },
+    {
+      path: '/current-capabilities',
+      title: 'Azure Realtime and Streaming Text',
+      description: 'Native Azure voice, MAI transcription, sequential tools, and session expiration',
+    },
+    {
       path: '/voice-basic',
       title: 'Basic Voice Chat',
       description: 'Minimal setup with auto-start microphone',
@@ -76,11 +86,11 @@ const samples: Record<string, SampleInfo[]> = {
       description: 'Avatar with per-user Entra ID authentication.',
     },
   ],
-  'Agent Service (classic)': [
+  'Legacy Agent Service (classic)': [
     {
       path: '/agent-service',
       title: 'Voice',
-      description: 'Agent with MSAL and Whisper transcription',
+      description: 'Legacy agent IDs with MSAL and Azure Speech transcription',
     },
     {
       path: '/agent-service-avatar',

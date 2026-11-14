@@ -11,6 +11,8 @@ import {
   ErrorPanel,
 } from '../components';
 
+import { modelProxyUrl } from '../utils/proxyUrl';
+
 export function AudioVisualizer(): JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
@@ -19,8 +21,7 @@ export function AudioVisualizer(): JSX.Element {
 
   const config = createVoiceLiveConfig({
     connection: {
-      resourceName: import.meta.env.VITE_FOUNDRY_RESOURCE_NAME,
-      apiKey: import.meta.env.VITE_FOUNDRY_API_KEY,
+      proxyUrl: modelProxyUrl(),
     },
     session: {
       instructions: 'You are a helpful assistant. Keep responses brief.',

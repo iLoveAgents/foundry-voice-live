@@ -40,6 +40,16 @@ import {
 } from './configHelpers';
 
 describe('Voice Helpers', () => {
+  it('builds a current model session without restricting transcription to old models', () => {
+    expect(sessionConfig().realtimeVoice('ava').parallelToolCalls(false)
+      .transcription({ model: 'mai-transcribe-2' }).sampleRate(8000).build()).toMatchObject({
+        voice: { type: 'azure-realtime-native', name: 'ava' },
+        parallelToolCalls: false, inputAudioTranscription: { model: 'mai-transcribe-2' },
+        inputAudioSamplingRate: 8000,
+      });
+    expect(sessionConfig().customVoice('custom', 'endpoint').build().voice)
+      .toMatchObject({ type: 'azure-custom', endpointId: 'endpoint' });
+  });
   it('withVoice sets voice name', () => {
     const config = withVoice('en-US-AvaMultilingualNeural');
     expect(config.voice).toBe('en-US-AvaMultilingualNeural');
@@ -311,7 +321,7 @@ describe('Tools Helpers', () => {
       },
     ]);
     expect(config.tools).toHaveLength(1);
-    expect(config.tools![0]!.name).toBe('get_weather');
+    expect(config.tools![0]).toMatchObject({ name: 'get_weather' });
     expect(config.toolChoice).toBe('auto');
   });
 
@@ -324,9 +334,9 @@ describe('Tools Helpers', () => {
 
 describe('Composition', () => {
   it('compose chains functions left to right', () => {
-    const addA = (s: string) => s + 'A';
-    const addB = (s: string) => s + 'B';
-    const addC = (s: string) => s + 'C';
+    const addA = (s: string): string => s + 'A';
+    const addB = (s: string): string => s + 'B';
+    const addC = (s: string): string => s + 'C';
 
     const combined = compose(addA, addB, addC);
     expect(combined('')).toBe('ABC');

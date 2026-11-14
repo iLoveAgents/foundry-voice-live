@@ -26,7 +26,7 @@ import {
  *
  * Prerequisites:
  * - examples .env: VITE_FOUNDRY_AGENT_NAME, VITE_FOUNDRY_PROJECT_NAME
- * - proxy .env: FOUNDRY_RESOURCE_NAME, API_VERSION=2026-01-01-preview
+ * - proxy .env: FOUNDRY_RESOURCE_NAME, API_VERSION=2026-07-15
  * - `az login` for local dev (or managed identity in production)
  */
 export default function FoundryAgentAvatar(): JSX.Element {
@@ -59,7 +59,7 @@ export default function FoundryAgentAvatar(): JSX.Element {
       .semanticVAD({ interruptResponse: true })
       .echoCancellation()
       .noiseReduction()
-      .transcription()
+      .transcription({ model: 'azure-speech' })
       .build(),
     onEvent: (event) => {
       if (
@@ -135,7 +135,7 @@ export default function FoundryAgentAvatar(): JSX.Element {
             </ul>
             <p>
               The proxy also needs <code>FOUNDRY_RESOURCE_NAME</code> and{' '}
-              <code>API_VERSION=2026-01-01-preview</code>. For local dev, run{' '}
+              <code>API_VERSION=2026-07-15</code>. For local dev, run{' '}
               <code>az login</code>. In production, use managed identity or a
               service principal.
             </p>

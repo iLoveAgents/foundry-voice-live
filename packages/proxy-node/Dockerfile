@@ -1,63 +1,41 @@
-# Foundry Voice Live Proxy - Docker Image
-# Multi-stage build for optimized production image
+# Build from the repository root:
+# docker build -f packages/proxy-node/Dockerfile -t foundry-voice-live-proxy .
+FROM node:26-alpine AS base
 
-# Stage 1: Build
-FROM node:20-alpine AS builder
-
-# Install pnpm
-RUN corepack enable && corepack prepare pnpm@latest --activate
-
+# Node 26 does not bundle Corepack. Keep this version aligned with packageManager.
+RUN npm install --global pnpm@9.15.0
 WORKDIR /app
 
-# Copy package files
-COPY package.json tsconfig.json ./
+# Preserve the workspace lockfile and root dependency overrides in every install.
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY packages/proxy-node/package.json ./packages/proxy-node/package.json
+COPY packages/react/package.json ./packages/react/package.json
+COPY examples/package.json ./examples/package.json
 
-# Install dependencies
-RUN pnpm install
+FROM base AS builder
+RUN pnpm --filter @iloveagents/foundry-voice-live-proxy-node install --frozen-lockfile
+COPY packages/proxy-node/tsconfig.json packages/proxy-node/tsconfig.build.json ./packages/proxy-node/
+COPY packages/proxy-node/src ./packages/proxy-node/src
+RUN pnpm --filter @iloveagents/foundry-voice-live-proxy-node run build
 
-# Copy source code
-COPY src ./src
+FROM base AS production-dependencies
+ENV NODE_ENV=production
+RUN pnpm --filter @iloveagents/foundry-voice-live-proxy-node install --prod --frozen-lockfile --ignore-scripts
 
-# Build TypeScript
-RUN pnpm run build
-
-# Stage 2: Production
-FROM node:20-alpine
-
-# Install pnpm
-RUN corepack enable && corepack prepare pnpm@latest --activate
-
-# Add security: non-root user
-RUN addgroup -g 1001 -S nodejs && \
-    adduser -S nodejs -u 1001
-
+FROM node:26-alpine AS production
+RUN addgroup -g 1001 -S nodejs && adduser -S nodejs -u 1001
 WORKDIR /app
+ENV NODE_ENV=production
 
-# Environment for runtime image
-ENV NODE_ENV=production \
-  HUSKY=0
+# Keep pnpm's root store and package symlinks at their original relative paths.
+COPY --from=production-dependencies --chown=nodejs:nodejs /app/node_modules ./node_modules
+COPY --from=production-dependencies --chown=nodejs:nodejs /app/packages/proxy-node/package.json ./packages/proxy-node/package.json
+COPY --from=production-dependencies --chown=nodejs:nodejs /app/packages/proxy-node/node_modules ./packages/proxy-node/node_modules
+COPY --from=builder --chown=nodejs:nodejs /app/packages/proxy-node/dist ./packages/proxy-node/dist
 
-# Copy package files
-COPY package.json ./
-
-# Install production dependencies only, skip lifecycle scripts (e.g., husky)
-RUN pnpm install --prod --ignore-scripts
-
-# Copy built application from builder
-COPY --from=builder /app/dist ./dist
-
-# Change ownership to non-root user
-RUN chown -R nodejs:nodejs /app
-
-# Switch to non-root user
+WORKDIR /app/packages/proxy-node
 USER nodejs
-
-# Expose port
 EXPOSE 8080
-
-# Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
   CMD node -e "require('http').get('http://localhost:8080/health', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})"
-
-# Start application
 CMD ["node", "dist/index.js"]

@@ -114,7 +114,7 @@ export default function AgentServiceProxy(): JSX.Element {
           },
           inputAudioFormat: 'pcm16',
           outputAudioFormat: 'pcm16',
-          inputAudioTranscription: { model: 'whisper-1' },
+          inputAudioTranscription: { model: 'azure-speech' },
           turnDetection: {
             type: 'azure_semantic_vad',
             threshold: 0.6,
@@ -193,7 +193,7 @@ export default function AgentServiceProxy(): JSX.Element {
   return (
     <SampleLayout
       title="Agent Service (classic) with Backend Proxy"
-      description="Voice conversation with Azure AI Agent Service. Uses Entra ID authentication with Azure AI scope (https://ai.azure.com/.default) and backend proxy for secure token handling."
+      description="Legacy Agent Service (classic) voice conversation. For new integrations, use the Foundry Agent Service examples. Uses Entra ID authentication with Azure AI scope (https://ai.azure.com/.default) and backend proxy for secure token handling."
     >
       <ErrorPanel error={error || authError} />
 

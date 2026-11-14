@@ -13,13 +13,14 @@ import {
   AvatarContainer,
 } from '../components';
 
+import { modelProxyUrl } from '../utils/proxyUrl';
+
 export function AvatarAdvanced(): JSX.Element {
   const [error, setError] = useState<string | null>(null);
 
   const { connect, disconnect, connectionState, videoStream, audioStream } = useVoiceLive({
     connection: {
-      resourceName: import.meta.env.VITE_FOUNDRY_RESOURCE_NAME,
-      apiKey: import.meta.env.VITE_FOUNDRY_API_KEY,
+      proxyUrl: modelProxyUrl(),
     },
     session: sessionConfig()
       .instructions('You are a helpful assistant.')

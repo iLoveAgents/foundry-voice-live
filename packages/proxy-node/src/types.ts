@@ -11,10 +11,14 @@
  * - Standard mode: Otherwise (or if model param is present)
  */
 export interface QueryParams {
+  /** Audio transport: WebSocket PCM (default) or WebRTC media with WebSocket control. */
+  transport?: "websocket" | "webrtc";
   /** Model name for standard mode (default: gpt-realtime) */
   model?: string;
   /** MSAL Bearer token for authentication (or auto-acquired via Azure CLI) */
   token?: string;
+  /** Separate classic agent invocation token; defaults to token for compatibility. */
+  agentAccessToken?: string;
   /** Agent ID for Agent Service v1 (classic) - triggers agent mode when present */
   agentId?: string;
   /** Agent name for Foundry Agents v2 - triggers agent mode when present */
@@ -27,6 +31,14 @@ export interface QueryParams {
   agentVersion?: string;
   /** Override API version (default: from proxy config) */
   apiVersion?: string;
+  /** Service feature flags, e.g. client_ec_reference:true (preview). */
+  features?: string;
+  /** Bring-your-own-model profile; model is the deployment name. */
+  profile?: string;
+  /** Resource hosting a BYOM deployment or Foundry agent. */
+  foundryResourceOverride?: string;
+  /** User-assigned managed identity for cross-resource agent invocation. */
+  authenticationIdentityClientId?: string;
 }
 
 /**
@@ -34,6 +46,8 @@ export interface QueryParams {
  */
 export interface AzureConnectionConfig {
   url: string;
+  /** WebSocket subprotocols; WebRTC signaling uses realtime. */
+  protocols?: string[];
   headers: Record<string, string>;
 }
 

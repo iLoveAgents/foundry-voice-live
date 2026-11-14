@@ -15,10 +15,12 @@
  */
 
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { useVoiceLive, createVoiceLiveConfig, withViseme } from '@iloveagents/foundry-voice-live-react';
-import { SampleLayout, StatusBadge, Section, ControlGroup, ErrorPanel } from '../components';
 import * as PIXI from 'pixi.js';
 import { Live2DModel } from 'pixi-live2d-display/cubism4';
+
+import { useVoiceLive, createVoiceLiveConfig, withViseme } from '@iloveagents/foundry-voice-live-react';
+import { modelProxyUrl } from '../utils/proxyUrl';
+import { SampleLayout, StatusBadge, Section, ControlGroup, ErrorPanel } from '../components';
 
 // ============================================================================
 // Configuration Constants
@@ -150,8 +152,7 @@ export function Live2DAvatarExample(): JSX.Element {
   // ---------------------------------------------------------------------------
   const config = createVoiceLiveConfig({
     connection: {
-      resourceName: import.meta.env.VITE_FOUNDRY_RESOURCE_NAME,
-      apiKey: import.meta.env.VITE_FOUNDRY_API_KEY,
+      proxyUrl: modelProxyUrl(),
     },
     session: withViseme({
       instructions: 'You are a helpful assistant. Always respond in English. Keep responses brief.',

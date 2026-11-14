@@ -13,13 +13,16 @@ import type {
   VoiceConfig,
   TurnDetectionConfig,
   StandardVoice,
+  ToolChoice,
+  ResponseCreateOptions,
+  ConversationItem,
 } from '../types/voiceLive';
 
 /**
  * Default session configuration
  * 
  * Optimized for best quality and user experience:
- * - Uses OpenAI 'alloy' voice (works with all models)
+ * - Uses OpenAI 'alloy' voice for the default gpt-realtime model
  * - Enables Azure semantic VAD for robust turn detection
  * - Includes audio enhancements (echo cancellation, noise reduction)
  * - Supports interruption for natural conversation flow
@@ -124,23 +127,55 @@ export function buildAgentSessionConfig(
     },
   };
 
-  // Allow user to override audio settings if provided
-  if (userConfig) {
-    if (userConfig.modalities) agentConfig.modalities = userConfig.modalities;
-    if (userConfig.inputAudioFormat) agentConfig.inputAudioFormat = userConfig.inputAudioFormat;
-    if (userConfig.outputAudioFormat) agentConfig.outputAudioFormat = userConfig.outputAudioFormat;
-    if (userConfig.inputAudioSamplingRate) agentConfig.inputAudioSamplingRate = userConfig.inputAudioSamplingRate;
-    if (userConfig.inputAudioEchoCancellation !== undefined) agentConfig.inputAudioEchoCancellation = userConfig.inputAudioEchoCancellation;
-    if (userConfig.inputAudioNoiseReduction !== undefined) agentConfig.inputAudioNoiseReduction = userConfig.inputAudioNoiseReduction;
-    if (userConfig.turnDetection !== undefined) agentConfig.turnDetection = userConfig.turnDetection;
-    if (userConfig.inputAudioTranscription !== undefined) agentConfig.inputAudioTranscription = userConfig.inputAudioTranscription;
-    if (userConfig.voice !== undefined) agentConfig.voice = userConfig.voice;
-    if (userConfig.interimResponse !== undefined) agentConfig.interimResponse = userConfig.interimResponse;
-    if (userConfig.avatar !== undefined) agentConfig.avatar = userConfig.avatar;
-  }
+  return buildSessionUpdate(deepMerge(agentConfig, userConfig ?? {}), true);
+}
 
-  // Convert to session.update format
-  return convertToSessionUpdate(agentConfig);
+/** Serialize a patch without injecting connection-time defaults. */
+export function buildSessionUpdate(
+  config: VoiceLiveSessionConfig,
+  isAgentMode = false
+): Record<string, unknown> {
+  if (!isAgentMode) return convertToSessionUpdate(config);
+  const audioConfig = { ...config };
+  // Agent instructions and model/tool policy are owned by the Foundry agent.
+  delete audioConfig.instructions;
+  delete audioConfig.temperature;
+  delete audioConfig.maxResponseOutputTokens;
+  delete audioConfig.tools;
+  delete audioConfig.toolChoice;
+  delete audioConfig.parallelToolCalls;
+  delete audioConfig.reasoningEffort;
+  return convertToSessionUpdate(audioConfig);
+}
+
+/** Serialize per-response overrides and conversation content without session defaults. */
+export function buildResponseConfig(options: ResponseCreateOptions = {}): Record<string, unknown> {
+  const response = convertToSessionUpdate(options);
+  if (options.conversation !== undefined) response.conversation = options.conversation;
+  if (options.input) response.input = options.input.map(convertConversationItem);
+  if (options.preGeneratedAssistantMessage) {
+    response.pre_generated_assistant_message = convertConversationItem(options.preGeneratedAssistantMessage);
+  }
+  if (options.invokeInput !== undefined) response.invoke_input = options.invokeInput;
+  return response;
+}
+
+function convertConversationItem(item: ConversationItem): Record<string, unknown> {
+  const { callId, approvalRequestId, content, ...rest } = item;
+  return {
+    ...rest,
+    ...(callId !== undefined ? { call_id: callId } : {}),
+    ...(approvalRequestId !== undefined ? { approval_request_id: approvalRequestId } : {}),
+    ...(content ? { content: content.map(({ imageUrl, ...part }) => ({
+      ...part,
+      ...(imageUrl !== undefined ? { image_url: imageUrl } : {}),
+    })) } : {}),
+  };
+}
+
+function convertToolChoice(choice: ToolChoice): string | { type: 'function'; name: string } {
+  if (typeof choice === 'string') return choice;
+  return { type: 'function', name: 'name' in choice ? choice.name : choice.function.name };
 }
 
 /**
@@ -156,6 +191,10 @@ export function buildAgentSessionConfig(
 function convertToSessionUpdate(config: VoiceLiveSessionConfig): any {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const session: any = {};
+
+  if (config.parallelToolCalls !== undefined) session.parallel_tool_calls = config.parallelToolCalls;
+  if (config.reasoningEffort !== undefined) session.reasoning_effort = config.reasoningEffort;
+  if (config.metadata !== undefined) session.metadata = config.metadata;
 
   // Core configuration
   if (config.instructions !== undefined) {
@@ -195,6 +234,10 @@ function convertToSessionUpdate(config: VoiceLiveSessionConfig): any {
     } else {
       session.input_audio_echo_cancellation = {
         type: config.inputAudioEchoCancellation.type,
+        ...(config.inputAudioEchoCancellation.referenceSource !== undefined
+          ? { reference_source: config.inputAudioEchoCancellation.referenceSource } : {}),
+        ...(config.inputAudioEchoCancellation.channels !== undefined
+          ? { channels: config.inputAudioEchoCancellation.channels } : {}),
       };
     }
   }
@@ -251,7 +294,7 @@ function convertToSessionUpdate(config: VoiceLiveSessionConfig): any {
   }
 
   if (config.toolChoice) {
-    session.tool_choice = config.toolChoice;
+    session.tool_choice = convertToolChoice(config.toolChoice);
   }
 
   // Voice Live: Output audio timestamps
@@ -263,24 +306,31 @@ function convertToSessionUpdate(config: VoiceLiveSessionConfig): any {
   if (config.animation) {
     session.animation = {
       outputs: config.animation.outputs,
+      ...(config.animation.modelName !== undefined ? { model_name: config.animation.modelName } : {}),
     };
   }
 
   // Voice Live: Interim response
-  if (config.interimResponse) {
+  if (config.interimResponse === null) {
+    session.interim_response = null;
+  } else if (config.interimResponse) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const interim: any = {
       type: config.interimResponse.type,
       triggers: config.interimResponse.triggers,
     };
     if (config.interimResponse.latencyThresholdInMs !== undefined) {
-      interim.latency_threshold_in_ms = config.interimResponse.latencyThresholdInMs;
+      interim.latency_threshold_ms = config.interimResponse.latencyThresholdInMs;
     }
     if (config.interimResponse.instructions !== undefined) {
       interim.instructions = config.interimResponse.instructions;
     }
     if (config.interimResponse.texts !== undefined) {
       interim.texts = config.interimResponse.texts;
+    }
+    if (config.interimResponse.model !== undefined) interim.model = config.interimResponse.model;
+    if (config.interimResponse.maxCompletionTokens !== undefined) {
+      interim.max_completion_tokens = config.interimResponse.maxCompletionTokens;
     }
     session.interim_response = interim;
   }
@@ -292,6 +342,18 @@ function convertToSessionUpdate(config: VoiceLiveSessionConfig): any {
       style: config.avatar.style,
       customized: config.avatar.customized,
     };
+    if (config.avatar.type !== undefined) session.avatar.type = config.avatar.type;
+    if (config.avatar.model !== undefined) session.avatar.model = config.avatar.model;
+    if (config.avatar.outputProtocol !== undefined) session.avatar.output_protocol = config.avatar.outputProtocol;
+    if (config.avatar.outputAuditAudio !== undefined) session.avatar.output_audit_audio = config.avatar.outputAuditAudio;
+    if (config.avatar.scene) {
+      const scene = config.avatar.scene;
+      session.avatar.scene = {
+        zoom: scene.zoom, position_x: scene.positionX, position_y: scene.positionY,
+        rotation_x: scene.rotationX, rotation_y: scene.rotationY, rotation_z: scene.rotationZ,
+        amplitude: scene.amplitude,
+      };
+    }
 
     if (config.avatar.iceServers) {
       session.avatar.ice_servers = config.avatar.iceServers;
@@ -302,6 +364,7 @@ function convertToSessionUpdate(config: VoiceLiveSessionConfig): any {
         codec: config.avatar.video.codec,
         bitrate: config.avatar.video.bitrate,
         resolution: config.avatar.video.resolution,
+        ...(config.avatar.video.gopSize !== undefined ? { gop_size: config.avatar.video.gopSize } : {}),
       };
 
       if (config.avatar.video.crop) {
@@ -337,13 +400,14 @@ function convertToSessionUpdate(config: VoiceLiveSessionConfig): any {
 function convertVoiceConfig(voice: string | StandardVoice | VoiceConfig): any {
   // Simple string voice name
   if (typeof voice === 'string') {
-    return { name: voice };
+    return { type: inferVoiceType(voice), name: voice };
   }
 
   // Full VoiceConfig
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const voiceConfig: any = {
     name: voice.name,
+    type: voice.type ?? inferVoiceType(voice.name),
   };
 
   if (voice.type) {
@@ -358,7 +422,21 @@ function convertVoiceConfig(voice: string | StandardVoice | VoiceConfig): any {
     voiceConfig.rate = String(voice.rate);
   }
 
+  const fields = {
+    endpointId: 'endpoint_id', model: 'model', customLexiconUrl: 'custom_lexicon_url',
+    customTextNormalizationUrl: 'custom_text_normalization_url', preferLocales: 'prefer_locales',
+    locale: 'locale', style: 'style', pitch: 'pitch', volume: 'volume',
+  } as const;
+  for (const key of Object.keys(fields) as (keyof typeof fields)[]) {
+    if (voice[key] !== undefined) voiceConfig[fields[key]] = voice[key];
+  }
+
   return voiceConfig;
+}
+
+function inferVoiceType(name: string): 'openai' | 'azure-standard' {
+  return ['alloy', 'ash', 'ballad', 'coral', 'echo', 'sage', 'shimmer', 'verse', 'marin', 'cedar'].includes(name)
+    ? 'openai' : 'azure-standard';
 }
 
 /**
@@ -475,6 +553,12 @@ function deepMerge<T>(target: T, source: Partial<T>): T {
       !Array.isArray(targetValue) &&
       targetValue !== null
     ) {
+      // Different discriminators describe different configurations, not a patch of
+      // the old variant (e.g. semantic_vad must not inherit Azure VAD fields).
+      if ('type' in sourceValue && 'type' in targetValue && sourceValue.type !== targetValue.type) {
+        (result as Record<string, unknown>)[key] = sourceValue;
+        continue;
+      }
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (result as any)[key] = deepMerge(targetValue, sourceValue);
     } else {

@@ -1,5 +1,6 @@
 import { useRef, useEffect, useState } from 'react';
 import { useVoiceLive, createVoiceLiveConfig } from '@iloveagents/foundry-voice-live-react';
+import { modelProxyUrl } from '../utils/proxyUrl';
 import { SampleLayout, StatusBadge, ControlGroup, ErrorPanel } from '../components';
 
 export function VoiceProxy(): JSX.Element {
@@ -10,7 +11,7 @@ export function VoiceProxy(): JSX.Element {
     connection: {
       // Proxy mode: API key secured in backend
       // Mode is auto-detected (standard mode - no agentId/projectName)
-      proxyUrl: 'ws://localhost:8080/ws?model=gpt-realtime',
+      proxyUrl: modelProxyUrl(),
     },
     session: {
       instructions: 'You are a helpful assistant. Keep responses brief.',

@@ -11,7 +11,7 @@
 export * from './voiceLive';
 
 // Import types needed for legacy interfaces
-import type { Tool } from './voiceLive';
+import type { Tool, AvatarConfig } from './voiceLive';
 
 // ==================== Legacy Types (for backward compatibility) ====================
 
@@ -42,26 +42,6 @@ export interface VoiceLiveSession {
   output_audio_format?: string;
   tools?: Tool[];
   avatar?: AvatarConfig;
-}
-
-/**
- * Avatar configuration for the Voice Live API session
- */
-export interface AvatarConfig {
-  character: string;
-  style: string;
-  customized?: boolean;
-  video?: {
-    codec: string;
-    resolution: {
-      width: number;
-      height: number;
-    };
-    bitrate: number;
-    background?: {
-      color: string;
-    };
-  };
 }
 
 /**

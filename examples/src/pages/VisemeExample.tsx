@@ -12,6 +12,7 @@ import {
   ErrorPanel,
 } from '../components';
 
+import { modelProxyUrl } from '../utils/proxyUrl';
 interface VisemeData {
   viseme_id: number;
   audio_offset_ms: number;
@@ -31,8 +32,7 @@ export function VisemeExample(): JSX.Element {
   // IMPORTANT: Visemes only work with Azure STANDARD voices (not HD or OpenAI voices)
   const config = createVoiceLiveConfig({
     connection: {
-      resourceName: import.meta.env.VITE_FOUNDRY_RESOURCE_NAME,
-      apiKey: import.meta.env.VITE_FOUNDRY_API_KEY,
+      proxyUrl: modelProxyUrl(),
     },
     session: withViseme({
       instructions:

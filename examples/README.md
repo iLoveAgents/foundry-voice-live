@@ -12,10 +12,12 @@ pnpm install
 
 ### 2. Configure environment
 
-Copy the example environment file and add your Azure credentials:
+Copy the example environment file. Configure the proxy with your Foundry resource and server-side credentials; MSAL examples additionally need a public client ID and tenant ID:
 
 ```bash
-cp .env.example .env
+# From the repository root
+cp examples/.env.example examples/.env
+cp packages/proxy-node/.env.example packages/proxy-node/.env
 ```
 
 ### 3. Download Live2D Model (Optional)
@@ -47,15 +49,24 @@ public/models/kei_vowels_pro/
 
 ### 4. Run examples
 
+Start the proxy and examples in separate terminals from the repository root:
+
 ```bash
+just dev-proxy
 just dev-examples
 ```
 
-Open http://localhost:3001 in your browser.
+Open [the examples](http://localhost:3001) in your browser. Start with [Azure Realtime and Streaming Text](http://localhost:3001/current-capabilities): it uses `azure-realtime`, the native `ava` voice, `mai-transcribe-2`, sequential function calls, streamed text chunks, and the server-reported session expiration. The microphone is optional and starts only on request.
+
+Try [Voice over WebRTC](http://localhost:3001/voice-webrtc) for native audio media tracks with text input, a time-lookup tool, transcripts, mute controls, and an optional microphone. It uses `connection.transport: 'webrtc'`; the proxy authenticates signaling while audio flows directly over WebRTC. Microsoft currently offers this transport in preview with global routing, and does not support avatar configuration with its sideband control. See [Voice Live WebRTC](https://learn.microsoft.com/azure/ai-services/speech-service/voice-live-webrtc).
+
+The SDK and proxy default to stable API version `2026-07-15`. Check [Voice Live model and region availability](https://learn.microsoft.com/azure/ai-services/speech-service/regions?tabs=voice-live#regions) before selecting a model. Foundry Agent Service examples use current named agents; Agent Service (classic) examples are retained for legacy agent IDs.
+
+All model examples keep resource credentials on the proxy. Any `VITE_*` variable is included in browser code; never put API keys there. Set `VITE_BACKEND_PROXY_URL` to your `wss://` proxy URL when hosting these examples remotely.
 
 ## Features
 
-- Voice-only mode testing
+- Voice-only mode testing over WebSocket and WebRTC
 - Avatar mode with Microsoft avatars
 - Live2D avatar integration (requires model download)
 - Real-time audio visualization

@@ -11,6 +11,8 @@ import {
   ErrorPanel,
 } from '../components';
 
+import { modelProxyUrl } from '../utils/proxyUrl';
+
 export function FunctionCalling(): JSX.Element {
   const [logs, setLogs] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -113,8 +115,7 @@ export function FunctionCalling(): JSX.Element {
 
   const config = createVoiceLiveConfig({
     connection: {
-      resourceName: import.meta.env.VITE_FOUNDRY_RESOURCE_NAME,
-      apiKey: import.meta.env.VITE_FOUNDRY_API_KEY,
+      proxyUrl: modelProxyUrl(),
     },
     session: {
       instructions:

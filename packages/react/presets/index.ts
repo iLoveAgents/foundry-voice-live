@@ -42,10 +42,6 @@ import type { UseVoiceLiveConfig } from '../types/voiceLive';
  */
 export function createVoiceLiveConfig(config: Partial<UseVoiceLiveConfig> & { connection: UseVoiceLiveConfig['connection'] }): UseVoiceLiveConfig {
   return {
-    connection: config.connection,
-    session: config.session,
-    toolExecutor: config.toolExecutor,
-    autoConnect: config.autoConnect,
-    onEvent: config.onEvent,
+    ...config,
   };
 }

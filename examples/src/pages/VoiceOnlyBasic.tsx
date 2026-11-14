@@ -1,5 +1,6 @@
 import { useRef, useEffect, useState } from 'react';
 import { useVoiceLive, createVoiceLiveConfig } from '@iloveagents/foundry-voice-live-react';
+import { modelProxyUrl } from '../utils/proxyUrl';
 import { SampleLayout, StatusBadge, ControlGroup, ErrorPanel } from '../components';
 
 /**
@@ -15,8 +16,7 @@ export function VoiceOnlyBasic(): JSX.Element {
   // Create Voice Live configuration
   const config = createVoiceLiveConfig({
     connection: {
-      resourceName: import.meta.env.VITE_FOUNDRY_RESOURCE_NAME,
-      apiKey: import.meta.env.VITE_FOUNDRY_API_KEY,
+      proxyUrl: modelProxyUrl(),
     }
   });
 

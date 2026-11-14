@@ -2,7 +2,7 @@
  * Complete Voice Live API Type Definitions
  *
  * Comprehensive TypeScript types for Microsoft Foundry Voice Live API
- * Includes all parameters from Azure OpenAI Realtime API + Voice Live additions
+ * Typed configuration for the Voice Live 2026-07-15 WebSocket API.
  */
 
 // ============================================================================
@@ -27,6 +27,23 @@ export interface VoiceLiveEvent {
  * Known Voice Live models with their pricing tiers
  */
 export type KnownVoiceLiveModel =
+  | 'azure-realtime'
+  | 'gpt-realtime-2.1'
+  | 'gpt-realtime-2.1-datazone'
+  | 'gpt-realtime-2.1-regional'
+  | 'gpt-realtime-2.1-mini'
+  | 'gpt-realtime-1.5'
+  | 'gpt-realtime-1.5-datazone'
+  | 'gpt-realtime-datazone'
+  | 'gpt-realtime-regional'
+  | 'gpt-6.1-sol'
+  | 'gpt-6-luna'
+  | 'gpt-5.6-terra'
+  | 'gpt-5.6-luna'
+  | 'gpt-5.4'
+  | 'gpt-5.2'
+  | 'gpt-5.1'
+  | 'gpt-4.1-nano'
   // Pro tier - Best quality
   | 'gpt-realtime'        // Native audio, best quality
   | 'gpt-4o'              // Azure STT/TTS
@@ -53,6 +70,11 @@ export type VoiceLiveModel = KnownVoiceLiveModel | (string & Record<string, neve
  * Connection configuration for Voice Live API
  */
 export interface VoiceLiveConnectionConfig {
+  /** Voice transport. WebRTC uses RTP media and a data channel with WebSocket signaling. */
+  transport?: 'websocket' | 'webrtc';
+
+  /** Options for the WebRTC voice transport (distinct from avatar media). */
+  webRTC?: VoiceLiveWebRTCOptions;
   /** Azure AI Foundry resource name */
   resourceName?: string;
 
@@ -70,9 +92,21 @@ export interface VoiceLiveConnectionConfig {
 
   /**
    * API version
-   * @default '2025-10-01'
+   * @default '2026-07-15'
    */
   apiVersion?: string;
+
+  /** Explicit preview feature names, for example ['client_ec_reference']. */
+  previewFeatures?: string[];
+
+  /** Bring-your-own-model profile; availability depends on the resource/model. */
+  profile?: string;
+
+  /** Foundry resource override for bring-your-own-model connections. */
+  foundryResourceOverride?: string;
+
+  /** Managed identity client ID for cross-resource Foundry agent authentication. */
+  authenticationIdentityClientId?: string;
 
   // ===== Agent Service Mode (mutually exclusive with model) =====
 
@@ -90,7 +124,7 @@ export interface VoiceLiveConnectionConfig {
   /**
    * Agent name as configured in Azure AI Foundry portal.
    * Uses Foundry Agents v2 API with Entra ID authentication.
-   * Requires proxy for browser apps (Authorization header not settable from browser WebSocket).
+   * Browser connections use the Authorization query parameter; a proxy is recommended.
    *
    * @example 'VoiceLiveAgent'
    * @see {@link https://learn.microsoft.com/azure/ai-services/speech-service/voice-live-agents-quickstart}
@@ -113,7 +147,7 @@ export interface VoiceLiveConnectionConfig {
 
   /**
    * Proxy WebSocket URL (for secure backend proxy)
-   * When set, overrides all other connection parameters
+   * Explicit URL query parameters take precedence over typed connection parameters.
    *
    * Supports @iloveagents/foundry-voice-live-proxy-node or custom proxy servers.
    * Mode is automatically detected by the proxy based on URL parameters.
@@ -143,6 +177,15 @@ export interface VoiceLiveConnectionConfig {
   agentMode?: boolean;
 }
 
+export interface VoiceLiveWebRTCOptions {
+  /** Optional ICE servers and browser peer-connection policy. */
+  rtcConfiguration?: RTCConfiguration;
+  /** Total signaling/media/data-channel connection timeout in milliseconds. */
+  connectionTimeoutMs?: number;
+  /** Maximum wait for non-trickle ICE gathering in milliseconds. */
+  iceGatheringTimeoutMs?: number;
+}
+
 // ============================================================================
 // AUDIO FORMATS
 // ============================================================================
@@ -152,10 +195,12 @@ export interface VoiceLiveConnectionConfig {
  */
 export type AudioFormat = 'pcm16' | 'g711_ulaw' | 'g711_alaw';
 
+export type OutputAudioFormat = AudioFormat | 'pcm16_8000hz' | 'pcm16_16000hz';
+
 /**
  * Input audio sampling rate (Voice Live)
  */
-export type InputAudioSamplingRate = 16000 | 24000;
+export type InputAudioSamplingRate = 8000 | 16000 | 24000;
 
 // ============================================================================
 // INPUT AUDIO CONFIGURATION
@@ -167,12 +212,18 @@ export type InputAudioSamplingRate = 16000 | 24000;
  */
 export interface InputAudioEchoCancellation {
   type: 'server_echo_cancellation';
+  /** Client reference is preview and requires the client_ec_reference feature flag. */
+  referenceSource?: 'server' | 'client';
+  /** Stereo requires PCM16: microphone on channel 0, playback reference on channel 1. */
+  channels?: 1 | 2;
 }
 
 /**
  * Noise reduction type
  */
 export type NoiseReductionType =
+  | 'azure_deep_noise_suppression_headset'
+  | 'azure_personal_noise_suppression'
   | 'azure_deep_noise_suppression'  // Voice Live: Optimized for close microphones
   | 'near_field'                     // Azure OpenAI: Close-talking microphones
   | 'far_field';                     // Azure OpenAI: Far-field microphones
@@ -189,6 +240,8 @@ export interface InputAudioNoiseReduction {
  * Transcription model for input audio
  */
 export type TranscriptionModel =
+  | 'mai-transcribe'
+  | 'mai-transcribe-2'
   | 'whisper-1'
   | 'gpt-4o-transcribe'
   | 'gpt-4o-mini-transcribe'
@@ -196,7 +249,7 @@ export type TranscriptionModel =
 
 /**
  * Custom speech model configuration per locale (Voice Live)
- * Maps locale codes to custom speech model IDs
+ * Maps locale codes to deployed custom speech endpoint IDs on the same resource
  *
  * @example
  * ```ts
@@ -236,7 +289,7 @@ export interface InputAudioTranscription {
    * Phrase list for lightweight just-in-time customization (Voice Live)
    * Improves recognition accuracy for specific words/phrases
    *
-   * Note: Only works with model: 'azure-speech'
+   * Supported with azure-speech, mai-transcribe, and mai-transcribe-2.
    * Does not support gpt-realtime, gpt-4o-mini-realtime, phi4-mm-realtime
    *
    * @example ['Neo QLED TV', 'TUF Gaming', 'AutoQuote Explorer']
@@ -279,6 +332,7 @@ export type Eagerness = 'low' | 'medium' | 'high' | 'auto';
  * End of utterance detection model (Voice Live)
  */
 export type EndOfUtteranceModel =
+  | 'smart_end_of_turn_detection'        // Preview: audio-based end-of-turn detection
   | 'semantic_detection_v1'              // English only
   | 'semantic_detection_v1_multilingual'; // Multi-language support
 
@@ -407,12 +461,16 @@ export interface TurnDetectionConfig {
  */
 export type StandardVoice =
   | 'alloy' | 'ash' | 'ballad' | 'coral'
-  | 'echo' | 'sage' | 'shimmer' | 'verse';
+  | 'echo' | 'sage' | 'shimmer' | 'verse' | 'marin' | 'cedar';
+
+export type AzureRealtimeVoice =
+  | 'aarti' | 'andrew' | 'ava' | 'denise' | 'diya' | 'elsa'
+  | 'florian' | 'francisca' | 'meera' | 'ximena' | 'xiaoxiao' | 'yunxi';
 
 /**
  * Voice type (Voice Live)
  */
-export type VoiceType = 'azure-standard' | 'azure-custom';
+export type VoiceType = 'openai' | 'azure-standard' | 'azure-custom' | 'azure-personal' | 'azure-realtime-native';
 
 /**
  * Voice configuration
@@ -446,6 +504,17 @@ export interface VoiceConfig {
    * @default '1.0'
    */
   rate?: string;
+  /** Required for azure-custom voices. */
+  endpointId?: string;
+  /** Base model for azure-personal voices. */
+  model?: 'DragonLatestNeural' | 'DragonHDOmniLatestNeural';
+  customLexiconUrl?: string;
+  customTextNormalizationUrl?: string;
+  preferLocales?: string[];
+  locale?: string;
+  style?: string;
+  pitch?: string;
+  volume?: string;
 }
 
 /**
@@ -456,16 +525,17 @@ export type TimestampType = 'word';
 /**
  * Animation output type (Voice Live)
  */
-export type AnimationOutput = 'viseme_id';
+export type AnimationOutput = 'viseme_id' | 'blendshapes';
 
 /**
  * Animation configuration (Voice Live)
  * Enable viseme output for lip-sync animation
  */
 export interface AnimationConfig {
+  modelName?: string;
   /**
    * Animation outputs to enable
-   * Currently only supports 'viseme_id'
+   * Viseme IDs and/or blendshape frames.
    */
   outputs?: AnimationOutput[];
 }
@@ -477,7 +547,7 @@ export interface AnimationConfig {
 /**
  * Avatar video codec
  */
-export type AvatarCodec = 'h264' | 'vp8' | 'vp9';
+export type AvatarCodec = 'h264' | 'vp8' | 'vp9'; // vp8/vp9 retained for legacy callers; current API documents h264.
 
 /**
  * Avatar video crop configuration
@@ -509,6 +579,8 @@ export interface AvatarBackground {
  * Avatar video configuration
  */
 export interface AvatarVideoConfig {
+  /** Group of pictures size, 1–2000. */
+  gopSize?: number;
   /**
    * Video codec
    * @default 'h264'
@@ -544,6 +616,12 @@ export interface AvatarVideoConfig {
  * Avatar configuration (Voice Live)
  */
 export interface AvatarConfig {
+  type?: 'video-avatar' | 'photo-avatar';
+  /** Required for photo-avatar. */
+  model?: 'vasa-1';
+  outputProtocol?: 'websocket' | 'webrtc';
+  outputAuditAudio?: boolean;
+  scene?: AvatarScene;
   /**
    * Avatar character
    * @example 'lisa'
@@ -554,7 +632,7 @@ export interface AvatarConfig {
    * Avatar style
    * @example 'casual-sitting', 'casual-standing'
    */
-  style: string;
+  style?: string;
 
   /**
    * Whether using custom avatar
@@ -572,6 +650,16 @@ export interface AvatarConfig {
   video?: AvatarVideoConfig;
 }
 
+export interface AvatarScene {
+  zoom?: number;
+  positionX?: number;
+  positionY?: number;
+  rotationX?: number;
+  rotationY?: number;
+  rotationZ?: number;
+  amplitude?: number;
+}
+
 // ============================================================================
 // TOOLS & FUNCTION CALLING
 // ============================================================================
@@ -587,14 +675,38 @@ export interface FunctionTool {
 }
 
 /**
- * Tool definition (currently only functions supported)
+ * Tool definitions use API wire field names, matching function JSON schemas.
  */
-export type Tool = FunctionTool;
+export type Tool = FunctionTool | MCPTool | FoundryAgentTool;
+
+export interface MCPTool {
+  type: 'mcp';
+  server_label: string;
+  server_url: string;
+  allowed_tools?: string[];
+  headers?: Record<string, string>;
+  authorization?: string;
+  require_approval?: 'never' | 'always' | { never?: string[]; always?: string[] };
+}
+
+export interface FoundryAgentTool {
+  type: 'foundry_agent';
+  agent_name: string;
+  project_name: string;
+  agent_version?: string;
+  client_id?: string;
+  description?: string;
+  foundry_resource_override?: string;
+  agent_context_type?: 'no_context' | 'agent_context';
+  return_agent_response_directly?: boolean;
+}
 
 /**
  * Tool choice strategy
  */
 export type ToolChoice =
+  | string // A function name, or auto/none/required
+  | { type: 'function'; name: string }
   | 'auto'      // Let model decide
   | 'none'      // Don't call functions
   | 'required'  // Must call a function
@@ -610,7 +722,9 @@ export type ToolChoice =
 /**
  * Session modality
  */
-export type Modality = 'text' | 'audio';
+export type Modality = 'text' | 'audio' | 'animation' | 'avatar';
+
+export type ReasoningEffort = 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
 
 // ============================================================================
 // SESSION CONFIGURATION
@@ -618,9 +732,13 @@ export type Modality = 'text' | 'audio';
 
 /**
  * Complete Voice Live session configuration
- * Combines all parameters from Azure OpenAI Realtime API + Voice Live additions
+ * Configuration for model and agent Voice Live sessions.
  */
 export interface VoiceLiveSessionConfig {
+  parallelToolCalls?: boolean;
+  reasoningEffort?: ReasoningEffort;
+  /** Tracing metadata: at most 16 pairs, keys 64 and values 512 characters. */
+  metadata?: Record<string, string>;
   // ===== Core Configuration =====
 
   /**
@@ -651,7 +769,7 @@ export interface VoiceLiveSessionConfig {
    * Output audio format
    * @default 'pcm16'
    */
-  outputAudioFormat?: AudioFormat;
+  outputAudioFormat?: OutputAudioFormat;
 
   /**
    * Turn detection configuration
@@ -726,7 +844,7 @@ export interface VoiceLiveSessionConfig {
    * Interim response configuration.
    * Provides filler messages while tools execute or during high latency.
    */
-  interimResponse?: InterimResponseConfig;
+  interimResponse?: InterimResponseConfig | null;
 
   /** Avatar configuration */
   avatar?: AvatarConfig;
@@ -756,13 +874,15 @@ export interface InterimResponseConfig {
   type: 'llm_interim_response' | 'static_interim_response';
 
   /** What triggers the interim response */
-  triggers: InterimResponseTrigger[];
+  triggers?: InterimResponseTrigger[];
 
   /**
    * Latency threshold in milliseconds before triggering interim response
-   * @default 100
+   * @default 2000
    */
   latencyThresholdInMs?: number;
+  model?: string;
+  maxCompletionTokens?: number;
 
   /** Instructions for LLM interim response generation (for 'llm_interim_response' type) */
   instructions?: string;
@@ -802,7 +922,10 @@ export type ConversationMode = 'auto' | 'none';
  * Content part for conversation items
  */
 export interface ContentPart {
-  type: 'input_text' | 'input_audio' | 'item_reference';
+  type: 'input_text' | 'input_audio' | 'input_image' | 'text' | 'audio' | 'item_reference';
+  /** Serialized as image_url, never url. */
+  imageUrl?: string;
+  detail?: 'auto' | 'low' | 'high';
   text?: string;
   audio?: string;      // Base64
   transcript?: string;
@@ -813,7 +936,9 @@ export interface ContentPart {
  * Conversation item for response.create
  */
 export interface ConversationItem {
-  type: 'message' | 'function_call' | 'function_call_output';
+  type: 'message' | 'function_call' | 'function_call_output' | 'mcp_approval_response' | 'item_reference';
+  approvalRequestId?: string;
+  approve?: boolean;
   id?: string;
   role?: 'system' | 'user' | 'assistant';
   content?: ContentPart[];
@@ -832,7 +957,12 @@ export interface ResponseCreateOptions {
   modalities?: Modality[];
   instructions?: string;
   voice?: string | StandardVoice | VoiceConfig;
-  outputAudioFormat?: AudioFormat;
+  outputAudioFormat?: OutputAudioFormat;
+  reasoningEffort?: ReasoningEffort;
+  animation?: AnimationConfig;
+  interimResponse?: InterimResponseConfig | null;
+  preGeneratedAssistantMessage?: ConversationItem;
+  invokeInput?: Record<string, unknown>;
   tools?: Tool[];
   toolChoice?: ToolChoice;
   temperature?: number;
@@ -953,7 +1083,26 @@ export type SessionState = 'idle' | 'listening' | 'thinking' | 'speaking';
 /**
  * Return type for useVoiceLive hook
  */
+export interface MicrophoneStatus {
+  deviceLabel: string;
+  deviceId: string;
+  readyState: MediaStreamTrackState;
+  enabled: boolean;
+  /** Browser/OS source is temporarily unable to provide audio. */
+  sourceMuted: boolean;
+  /** Linear input level (0–1); null if the browser does not report it. */
+  audioLevel: number | null;
+  totalAudioEnergy: number | null;
+  packetsSent: number | null;
+  bytesSent: number | null;
+}
+
 export interface UseVoiceLiveReturn {
+  /** Server-set expiration timestamp in Unix seconds; null until supplied. */
+  sessionExpiresAt: number | null;
+  appendText: (id: string, delta: string, contentIndex?: number) => void;
+  finishText: (id: string, contentIndex?: number) => void;
+  createResponse: (options?: ResponseCreateOptions) => void;
   /** Current connection state */
   connectionState: 'disconnected' | 'connecting' | 'connected' | 'error';
 
@@ -992,6 +1141,9 @@ export interface UseVoiceLiveReturn {
 
   /** Start microphone capture (for manual control) */
   startMic: () => Promise<void>;
+
+  /** WebRTC input and RTP diagnostics; null when no WebRTC microphone is attached. */
+  getMicrophoneStatus: () => Promise<MicrophoneStatus | null>;
 
   /** Stop microphone capture (for manual control) */
   stopMic: () => void;

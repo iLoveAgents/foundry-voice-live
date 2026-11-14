@@ -17,15 +17,19 @@ npm run test:coverage
 
 ## Test Coverage
 
-The test suite covers:
+The tests import the production connection builder and security helpers. They cover:
 
-- **URL Building** - Standard and Agent mode URL construction with different auth methods
-- **Configuration Validation** - Environment variable parsing and validation
-- **Message Filtering** - High-frequency message type identification
-- **CORS Validation** - Origin validation and security checks
-- **Connection Tracking** - Connection lifecycle and limits
-- **Health Checks** - Server status and metrics
-- **API Endpoints** - Server metadata and documentation
+- GA defaults, explicit API overrides, and safely encoded query parameters
+- WebRTC calls routing, realtime subprotocol, transport validation, and unchanged WebSocket defaults
+- Early SDP buffering, persistent control/tool event forwarding, bounded buffering, and idempotent connection cleanup
+- API-key headers, caller-token precedence, and server-side Entra authentication
+- Foundry agent routing, version pinning, conversation resume, and resource overrides
+- Classic agent invocation tokens and isolation from default-agent configuration
+- BYOM profiles and preview feature forwarding
+- Invalid/repeated parameters and credential failures
+- Secret redaction and exact origin matching
+
+These are offline unit tests. They exercise relay behavior with controlled sockets but do not connect to an Azure resource or transmit live WebRTC audio.
 
 ## Test Framework
 

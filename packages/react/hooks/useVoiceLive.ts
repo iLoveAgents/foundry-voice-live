@@ -1,24 +1,22 @@
 /**
  * useVoiceLive Hook - Comprehensive Implementation
  *
- * React hook for Microsoft Foundry Voice Live API with full parameter support.
- * Supports all Voice Live features with sensible defaults.
+ * React hook for Microsoft Foundry Voice Live WebSocket sessions.
+ * Provides microphone capture, audio playback, and WebRTC avatar rendering.
  *
  * @example
  * ```tsx
  * // Simple usage with defaults
  * const { connectionState, videoStream, connect } = useVoiceLive({
  *   connection: {
- *     resourceName: 'my-resource',
- *     apiKey: 'xxx',
+ *     proxyUrl: 'ws://localhost:8080/ws',
  *   },
  * });
  *
  * // Advanced usage with full config
  * const api = useVoiceLive({
  *   connection: {
- *     resourceName: 'my-resource',
- *     apiKey: 'xxx',
+ *     proxyUrl: 'ws://localhost:8080/ws',
  *     model: 'gpt-4o', // or any model
  *   },
  *   session: {
@@ -52,8 +50,14 @@ import type {
   UseVoiceLiveReturn,
   VoiceLiveEvent,
   SessionState,
+  ResponseCreateOptions,
+  VoiceLiveSessionConfig,
+  OutputAudioFormat,
+  InputAudioSamplingRate,
 } from '../types/voiceLive';
-import { buildSessionConfig, buildAgentSessionConfig } from '../utils/sessionBuilder';
+import { buildSessionConfig, buildAgentSessionConfig, buildSessionUpdate, buildResponseConfig } from '../utils/sessionBuilder';
+import { buildConnectionUrl, redactConnectionUrl } from '../utils/connectionHelpers';
+import { VoiceLiveWebRTCTransport } from '../utils/webRTCTransport';
 import { useAudioCapture } from './useAudioCapture';
 import { arrayBufferToBase64 } from '../utils/audioHelpers';
 
@@ -81,6 +85,9 @@ class AudioPlaybackProcessor extends AudioWorkletProcessor {
         this.bufferQueue = [];
         this.currentBuffer = null;
         this.currentOffset = 0;
+      } else if (typeof event.data.sourceSampleRate === 'number') {
+        this.sourceSampleRate = event.data.sourceSampleRate;
+        this.ratio = sampleRate / this.sourceSampleRate;
       } else {
         // Receive Int16Array buffer, convert and resample
         const int16 = new Int16Array(event.data);
@@ -146,6 +153,12 @@ class AudioPlaybackProcessor extends AudioWorkletProcessor {
 registerProcessor('audio-playback-processor', AudioPlaybackProcessor);
 `;
 
+function getOutputSampleRate(format: OutputAudioFormat): number {
+  if (format === 'pcm16_16000hz') return 16000;
+  if (format === 'pcm16') return 24000;
+  return 8000;
+}
+
 function createPlaybackProcessorBlobUrl(): string {
   const blob = new Blob([AUDIO_PLAYBACK_PROCESSOR_CODE], { type: 'application/javascript' });
   return URL.createObjectURL(blob);
@@ -167,7 +180,7 @@ const getTimestamp = (): string => {
 
 /**
  * Hook for Microsoft Foundry Voice Live API integration
- * Supports all Voice Live parameters with best-practice defaults
+ * Uses typed configuration with raw protocol events available through sendEvent/onEvent.
  */
 export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
   const {
@@ -175,7 +188,7 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
     session,
     autoConnect = false,
     autoStartMic = true,
-    audioSampleRate = 24000,
+    audioSampleRate = session?.inputAudioSamplingRate ?? (session?.inputAudioFormat?.startsWith('g711_') ? 8000 : 24000),
     audioConstraints,
     onEvent,
     onTranscript,
@@ -185,12 +198,20 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
   const [connectionState, setConnectionState] = useState<UseVoiceLiveReturn['connectionState']>('disconnected');
   const [sessionState, setSessionState] = useState<SessionState>('idle');
   const [isReady, setIsReady] = useState(false);
+  const [sessionExpiresAt, setSessionExpiresAt] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [videoStream, setVideoStream] = useState<MediaStream | null>(null);
   const [audioStream, setAudioStream] = useState<MediaStream | null>(null);
   const [, forceUpdate] = useState({});
 
   const wsRef = useRef<WebSocket | null>(null);
+  const voiceRTCRef = useRef<VoiceLiveWebRTCTransport | null>(null);
+  const transportRef = useRef<'websocket' | 'webrtc'>('websocket');
+  const connectionAttemptRef = useRef(0);
+  const greetingSentRef = useRef(false);
+  const remoteAudioSourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
+  const [rtcMicActive, setRTCMicActive] = useState(false);
+  const [rtcMuted, setRTCMuted] = useState(false);
   const pcRef = useRef<RTCPeerConnection | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const audioStreamDestinationRef = useRef<MediaStreamAudioDestinationNode | null>(null);
@@ -204,6 +225,10 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
   const isFirstChunkRef = useRef<boolean>(true);
   const isAgentModeRef = useRef<boolean>(false);
   const assistantTranscriptRef = useRef<string>('');
+  const sessionOutputAudioFormatRef = useRef<OutputAudioFormat>(session?.outputAudioFormat ?? 'pcm16');
+  const outputAudioFormatRef = useRef<OutputAudioFormat>(session?.outputAudioFormat ?? 'pcm16');
+  const requestedOutputFormatsRef = useRef<OutputAudioFormat[]>([]);
+  const playbackSourceRateRef = useRef<number | null>(null);
 
   // Keep a stable ref for sendEvent to use in audio capture callback
   const sendEventRef = useRef<(event: VoiceLiveEvent) => void>();
@@ -226,11 +251,11 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
    * Integrate audio capture for microphone input
    */
   const {
-    isCapturing: isMicActive,
-    isMuted,
-    startCapture: startMic,
-    stopCapture: stopMic,
-    toggleMute,
+    isCapturing: captureActive,
+    isMuted: captureMuted,
+    startCapture,
+    stopCapture,
+    toggleMute: toggleCaptureMute,
   } = useAudioCapture({
     sampleRate: audioSampleRate,
     audioConstraints: typeof audioConstraints === 'boolean' ? undefined : audioConstraints,
@@ -242,6 +267,10 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
    * Send an event to the Voice Live API
    */
   const sendEvent = useCallback((event: VoiceLiveEvent): void => {
+    if (voiceRTCRef.current) {
+      voiceRTCRef.current.sendEvent(event);
+      return;
+    }
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
       // Skip logging for verbose events
       const skipSendLogging = [
@@ -251,6 +280,10 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
       ];
       if (!skipSendLogging.includes(event.type)) {
         console.log(`[${getTimestamp()}] Sending:`, event.type);
+      }
+      if (event.type === 'response.create') {
+        const response = event.response as { output_audio_format?: OutputAudioFormat } | undefined;
+        requestedOutputFormatsRef.current.push(response?.output_audio_format ?? sessionOutputAudioFormatRef.current);
       }
       wsRef.current.send(JSON.stringify(event));
     } else {
@@ -263,23 +296,52 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
     sendEventRef.current = sendEvent;
   }, [sendEvent]);
 
-  /**
-   * Update session configuration
-   */
-  const updateSession = useCallback(
-    (partialSession: Partial<typeof session>) => {
-      const updatedSession = buildSessionConfig({
-        ...session,
-        ...partialSession,
-      });
+  /** Send only requested changes; defaults belong to initial session setup. */
+  const updateSession = useCallback((partialSession: Partial<VoiceLiveSessionConfig>): void => {
+    sendEvent({
+      type: 'session.update',
+      session: buildSessionUpdate(partialSession, isAgentModeRef.current),
+    });
+  }, [sendEvent]);
 
-      sendEvent({
-        type: 'session.update',
-        session: updatedSession,
-      });
-    },
-    [session, sendEvent]
-  );
+  const createResponse = useCallback((options?: ResponseCreateOptions): void => {
+    sendEvent({ type: 'response.create', ...(options ? { response: buildResponseConfig(options) } : {}) });
+  }, [sendEvent]);
+
+  const appendText = useCallback((id: string, delta: string, contentIndex?: number): void => {
+    sendEvent({ type: 'input_text.delta', id, delta, ...(contentIndex !== undefined ? { content_index: contentIndex } : {}) });
+  }, [sendEvent]);
+
+  const finishText = useCallback((id: string, contentIndex?: number): void => {
+    sendEvent({ type: 'input_text.done', id, ...(contentIndex !== undefined ? { content_index: contentIndex } : {}) });
+  }, [sendEvent]);
+
+  const stopMic = useCallback((): void => {
+    if (voiceRTCRef.current) voiceRTCRef.current.stopMic();
+    else stopCapture();
+  }, [stopCapture]);
+
+  const toggleMute = useCallback((): void => {
+    if (voiceRTCRef.current) voiceRTCRef.current.toggleMute();
+    else if (transportRef.current === 'websocket') toggleCaptureMute();
+  }, [toggleCaptureMute]);
+
+  const startMic = useCallback(async (): Promise<void> => {
+    if (voiceRTCRef.current) return voiceRTCRef.current.startMic(audioConstraints);
+    if (transportRef.current === 'webrtc') throw new Error('Connect the WebRTC session before starting the microphone.');
+    if (session?.inputAudioFormat && session.inputAudioFormat !== 'pcm16') {
+      throw new Error('Built-in microphone capture requires pcm16. Use autoStartMic: false and sendEvent for encoded audio input.');
+    }
+    if (session?.inputAudioEchoCancellation?.referenceSource === 'client') {
+      throw new Error('Client echo reference requires interleaved stereo audio. Use autoStartMic: false and sendEvent with your microphone/reference stream.');
+    }
+    if (session?.inputAudioSamplingRate && audioSampleRate !== session.inputAudioSamplingRate) {
+      throw new Error('audioSampleRate must match session.inputAudioSamplingRate.');
+    }
+    await startCapture();
+  }, [session, audioSampleRate, startCapture, audioConstraints]);
+
+  const getMicrophoneStatus = useCallback(() => voiceRTCRef.current?.getMicrophoneStatus() ?? Promise.resolve(null), []);
 
   /**
    * Stop all audio playback immediately (for interruptions/barge-in)
@@ -315,7 +377,7 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
       await audioContext.audioWorklet.addModule(blobUrl);
 
       const workletNode = new AudioWorkletNode(audioContext, 'audio-playback-processor', {
-        processorOptions: { sourceSampleRate: audioSampleRate },
+        processorOptions: { sourceSampleRate: getOutputSampleRate(outputAudioFormatRef.current) },
       });
 
       // Connect worklet to gain node (for visualization) or directly to destination
@@ -326,12 +388,13 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
       }
 
       playbackWorkletRef.current = workletNode;
+      playbackSourceRateRef.current = getOutputSampleRate(outputAudioFormatRef.current);
       console.log(`[${getTimestamp()}] Playback worklet initialized (Lanczos-3 resampling, off main thread)`);
     })();
 
     playbackInitPromiseRef.current = initPromise;
     await initPromise;
-  }, [audioSampleRate]);
+  }, []);
 
   /**
    * Play audio chunk for voice-only mode via AudioWorklet
@@ -353,6 +416,13 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
         await initPlaybackWorklet();
       }
 
+      const outputFormat = outputAudioFormatRef.current;
+      const outputRate = getOutputSampleRate(outputFormat);
+      if (playbackSourceRateRef.current !== outputRate) {
+        playbackWorkletRef.current?.port.postMessage({ sourceSampleRate: outputRate });
+        playbackSourceRateRef.current = outputRate;
+      }
+
       // Track response start time for viseme sync
       if (isFirstChunkRef.current) {
         responseStartTimeRef.current = audioContext.currentTime;
@@ -367,7 +437,25 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
       }
 
       // Transfer PCM16 buffer to worklet (transferable for zero-copy performance)
-      const buffer = bytes.buffer;
+      let buffer: ArrayBuffer = bytes.buffer;
+      if (outputFormat === 'g711_ulaw' || outputFormat === 'g711_alaw') {
+        const samples = new Int16Array(bytes.length);
+        for (let i = 0; i < bytes.length; i++) {
+          if (outputFormat === 'g711_ulaw') {
+            const sample = (~bytes[i]!) & 0xff;
+            const magnitude = (((sample & 0x0f) << 3) + 0x84) << ((sample & 0x70) >> 4);
+            samples[i] = sample & 0x80 ? 0x84 - magnitude : magnitude - 0x84;
+          } else {
+            const sample = bytes[i]! ^ 0x55;
+            const segment = (sample & 0x70) >> 4;
+            let magnitude = (sample & 0x0f) << 4;
+            magnitude += segment === 0 ? 8 : 0x108;
+            if (segment > 1) magnitude <<= segment - 1;
+            samples[i] = sample & 0x80 ? magnitude : -magnitude;
+          }
+        }
+        buffer = samples.buffer;
+      }
       playbackWorkletRef.current?.port.postMessage(buffer, [buffer]);
     } catch (err) {
       console.error('Error playing audio chunk:', err);
@@ -414,12 +502,20 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
       switch (data.type) {
         case 'session.created': {
           console.log(`[${getTimestamp()}] Session created`);
+          setSessionExpiresAt(typeof data.session?.expires_at === 'number' ? data.session.expires_at : null);
+          if (transportRef.current === 'webrtc') break;
 
           // Send session.update immediately after session.created
           // Don't start audio capture until session is configured
+          const initialSession: VoiceLiveSessionConfig = {
+            ...(data.session?.model === 'azure-realtime' && session?.voice === undefined
+              ? { voice: { type: 'azure-realtime-native', name: 'ava' } as const } : {}),
+            ...session,
+            inputAudioSamplingRate: session?.inputAudioSamplingRate ?? audioSampleRate as InputAudioSamplingRate,
+          };
           const sessionConfig = isAgentModeRef.current
-            ? buildAgentSessionConfig(session)
-            : buildSessionConfig(session);
+            ? buildAgentSessionConfig(initialSession)
+            : buildSessionConfig(initialSession);
 
           console.log(`[${getTimestamp()}] Configuring session...`);
           sendEvent({
@@ -431,9 +527,16 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
 
         case 'session.updated':
           console.log(`[${getTimestamp()}] Session configured`);
+          if (typeof data.session?.expires_at === 'number') setSessionExpiresAt(data.session.expires_at);
+          if (data.session?.output_audio_format) {
+            sessionOutputAudioFormatRef.current = data.session.output_audio_format;
+            outputAudioFormatRef.current = data.session.output_audio_format;
+          }
+
+          if (transportRef.current === 'webrtc') break;
 
           // Set up WebRTC after session update (avatar mode)
-          if (data.session?.avatar?.ice_servers) {
+          if (data.session?.avatar?.ice_servers && (data.session.avatar.output_protocol ?? session?.avatar?.outputProtocol) !== 'websocket' && !pcRef.current) {
             console.log(`[${getTimestamp()}] Setting up avatar WebRTC...`);
 
             const newConfig: RTCConfiguration = {
@@ -509,8 +612,8 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
               });
               console.log(`[${getTimestamp()}] Avatar connection request sent`);
             }
-          } else {
-            // Voice-only mode (no avatar) - session is ready immediately
+          } else if (!pcRef.current) {
+            // Voice-only or raw WebSocket avatar output is ready immediately
             console.log(`[${getTimestamp()}] Voice-only session ready`);
             setIsReady(true);
             setSessionState('listening');
@@ -529,6 +632,7 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
           break;
 
         case 'response.created':
+          outputAudioFormatRef.current = requestedOutputFormatsRef.current.shift() ?? sessionOutputAudioFormatRef.current;
           setSessionState('speaking');
           // Reset transcript accumulator for new response
           assistantTranscriptRef.current = '';
@@ -565,7 +669,7 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
         case 'response.audio.delta':
           // Play audio for voice-only mode (no avatar)
           // Only play if this is the current response (not interrupted)
-          if (data.delta && !videoStream && data.response_id === currentResponseIdRef.current) {
+          if (transportRef.current === 'websocket' && data.delta && !session?.avatar && data.response_id === currentResponseIdRef.current) {
             playAudioChunk(data.delta);
           }
           break;
@@ -598,6 +702,7 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
           }
           break;
 
+        case 'rtc.call.error':
         case 'error': {
           const errorCode = data.error?.code || '';
           const errorMessage = data.error?.message || 'Unknown API error';
@@ -617,102 +722,115 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
         }
       }
     },
-    [onEvent, onTranscript, sendEvent, toolExecutor, playAudioChunk, stopAudioPlayback, videoStream, session]
+    [onEvent, onTranscript, sendEvent, toolExecutor, playAudioChunk, stopAudioPlayback, session, audioSampleRate]
   );
+
+  // Dispatch current callbacks without capturing stale React state in a long-lived transport.
+  const handleMessageRef = useRef(handleMessage);
+  handleMessageRef.current = handleMessage;
+
+  const setWebRTCAudioStream = useCallback((stream: MediaStream | null): void => {
+    remoteAudioSourceRef.current?.disconnect();
+    remoteAudioSourceRef.current = null;
+    setAudioStream(stream);
+    if (!stream) {
+      audioAnalyserRef.current = null;
+      const context = audioContextRef.current;
+      audioContextRef.current = null;
+      if (context) void context.close().catch(() => {});
+      return;
+    }
+    // Audio playback uses the remote stream directly; this branch is only for visualization.
+    if (typeof AudioContext !== 'undefined') {
+      try {
+        const context = audioContextRef.current ?? new AudioContext({ latencyHint: 'interactive' });
+        audioContextRef.current = context;
+        const analyser = context.createAnalyser();
+        analyser.fftSize = 256;
+        analyser.smoothingTimeConstant = 0.8;
+        audioAnalyserRef.current = analyser;
+        remoteAudioSourceRef.current = context.createMediaStreamSource(stream);
+        remoteAudioSourceRef.current.connect(analyser);
+        forceUpdate({});
+      } catch (err) {
+        console.warn('[VoiceLive] Audio visualization unavailable:', err);
+      }
+    }
+  }, []);
 
   /**
    * Connect to Voice Live API
    */
   const connect = useCallback(async () => {
+    if (voiceRTCRef.current || (wsRef.current && wsRef.current.readyState <= WebSocket.OPEN)) return;
+    const attempt = ++connectionAttemptRef.current;
+    greetingSentRef.current = false;
     try {
       setError(null);
       setConnectionState('connecting');
+      setSessionExpiresAt(null);
+      sessionOutputAudioFormatRef.current = session?.outputAudioFormat ?? 'pcm16';
+      outputAudioFormatRef.current = sessionOutputAudioFormatRef.current;
+      requestedOutputFormatsRef.current = [];
+      const { url: wsUrl, isAgentMode, transport } = buildConnectionUrl(connection);
+      transportRef.current = transport;
+      isAgentModeRef.current = isAgentMode;
+      console.log(`[${getTimestamp()}] Connecting ${connection.proxyUrl ? 'via proxy' : 'to Voice Live API'}...`);
+      console.log(`[${getTimestamp()}] URL: ${redactConnectionUrl(wsUrl)}`);
 
-      // Build WebSocket URL
-      let wsUrl: string;
-      let isAgentMode = false;
-
-      // Proxy mode: use proxy URL if provided
-      if (connection.proxyUrl) {
-        wsUrl = connection.proxyUrl;
-        // Detect agent mode from URL parameters
-        // Mode is auto-detected by proxy, but we check here for logging
-        isAgentMode = connection.agentMode || wsUrl.includes('agentId=') || wsUrl.includes('agentName=') || wsUrl.includes('projectName=');
-        isAgentModeRef.current = isAgentMode;
-        const mode = wsUrl.includes('agentName=') ? 'Foundry Agents v2'
-          : wsUrl.includes('agentId=') ? 'Agent Service v1 (classic)'
-          : 'Standard (Voice/Avatar)';
-        console.log(`[${getTimestamp()}] Connecting via proxy...`);
-        console.log(`[${getTimestamp()}] URL: ${wsUrl.replace(/token=[^&]+/, 'token=***')}`);
-        console.log(`[${getTimestamp()}] Mode: ${mode}`);
-      } else {
-        // Direct connection mode
-        const projectIdentifier = connection.projectName;
-        isAgentMode = !!(connection.agentId || connection.agentName) && !!projectIdentifier;
-        isAgentModeRef.current = isAgentMode;
-
-        if (connection.agentName && projectIdentifier) {
-          // Foundry Agents v2 - uses agent-name query param and Entra ID bearer token
-          const apiVersion = connection.apiVersion || '2026-01-01-preview';
-          wsUrl = `wss://${connection.resourceName}.services.ai.azure.com/voice-live/realtime`
-            + `?api-version=${apiVersion}`
-            + `&agent-name=${encodeURIComponent(connection.agentName)}`
-            + `&agent-project-name=${encodeURIComponent(projectIdentifier)}`;
-
-          if (connection.conversationId) {
-            wsUrl += `&conversation-id=${encodeURIComponent(connection.conversationId)}`;
-          }
-          if (connection.agentVersion) {
-            wsUrl += `&agent-version=${encodeURIComponent(connection.agentVersion)}`;
-          }
-
-          // Foundry Agents v2: Entra ID bearer token
-          // Browser WebSocket can't set Authorization header, so token goes in query param
-          // For production, use proxy which moves token to Authorization header
-          if (connection.token) {
-            wsUrl += `&token=${encodeURIComponent(connection.token)}`;
-          } else {
-            throw new Error(
-              'Foundry Agents requires either proxyUrl (recommended) or token for direct connection.'
-            );
-          }
-        } else if (connection.agentId && projectIdentifier) {
-          // Agent Service v1 (classic) - per Azure docs: use agent-id and agent-project-name
-          wsUrl = `wss://${connection.resourceName}.services.ai.azure.com/voice-live/realtime?api-version=${
-            connection.apiVersion || '2025-10-01'
-          }&agent-id=${connection.agentId}&agent-project-name=${projectIdentifier}`;
-
-          // Agent Service v1 authentication: agent-access-token query parameter
-          if (connection.agentAccessToken) {
-            wsUrl += `&agent-access-token=${encodeURIComponent(connection.agentAccessToken)}`;
-          } else {
-            throw new Error('agentAccessToken is required for Agent Service v1 mode.');
-          }
-        } else {
-          // Standard mode with model
-          const model = connection.model || 'gpt-realtime'; // Default to best quality
-          wsUrl = `wss://${connection.resourceName}.services.ai.azure.com/voice-live/realtime?api-version=${
-            connection.apiVersion || '2025-10-01'
-          }&model=${model}`;
-
-          // Standard mode authentication: use api-key
-          if (connection.apiKey) {
-            wsUrl += `&api-key=${encodeURIComponent(connection.apiKey)}`;
-          }
-          // Note: Token auth via Authorization header would need different WebSocket setup
+      if (transport === 'webrtc') {
+        if (session?.avatar || session?.modalities?.includes('avatar')) {
+          throw new Error('Voice Live does not support avatar configuration with WebRTC voice side-band control. Use transport: websocket for avatars.');
         }
-
-        console.log(`[${getTimestamp()}] Connecting to Voice Live API...`);
-        console.log(`[${getTimestamp()}] URL: ${wsUrl.replace(/api-key=[^&]+/, 'api-key=***').replace(/agent-access-token=[^&]+/, 'agent-access-token=***').replace(/token=[^&]+/, 'token=***')}`);
-        if (connection.agentName) {
-          console.log(`[${getTimestamp()}] Foundry Agent: ${connection.agentName}, Project: ${projectIdentifier}`);
-        } else if (connection.agentId) {
-          console.log(`[${getTimestamp()}] Agent: ${connection.agentId}, Project: ${projectIdentifier}`);
-        } else {
-          console.log(`[${getTimestamp()}] Model: ${connection.model || 'gpt-realtime'}`);
+        if (session?.inputAudioEchoCancellation?.referenceSource === 'client') {
+          throw new Error('Client PCM echo-reference input is not supported with WebRTC media tracks. Use browser echoCancellation audio constraints.');
         }
+        const model = new URL(wsUrl).searchParams.get('model') ?? connection.model;
+        const initialSession: VoiceLiveSessionConfig = {
+          ...(model === 'azure-realtime' && session?.voice === undefined
+            ? { voice: { type: 'azure-realtime-native', name: 'ava' } as const } : {}),
+          ...session,
+        };
+        const rtc = new VoiceLiveWebRTCTransport({
+          url: wsUrl,
+          session: isAgentMode ? buildAgentSessionConfig(initialSession) : buildSessionConfig(initialSession),
+          autoStartMic,
+          audioConstraints,
+          ...connection.webRTC,
+          onEvent: (event) => {
+            if (voiceRTCRef.current !== rtc) return;
+            void handleMessageRef.current(new MessageEvent('message', { data: JSON.stringify(event) }))
+              .catch((err: unknown) => setError(err instanceof Error ? err.message : 'Failed to handle WebRTC event'));
+          },
+          onAudioStream: (stream) => {
+            if (voiceRTCRef.current === rtc) setWebRTCAudioStream(stream);
+          },
+          onMicStateChange: (active, muted) => {
+            if (voiceRTCRef.current !== rtc) return;
+            setRTCMicActive(active);
+            setRTCMuted(muted);
+          },
+          onStateChange: (state, failure) => {
+            if (voiceRTCRef.current !== rtc) return;
+            setConnectionState(state);
+            setIsReady(state === 'connected');
+            setSessionState(state === 'connected' ? 'listening' : 'idle');
+            if (failure) setError(failure.message);
+            if (state === 'error' || state === 'disconnected') {
+              setRTCMicActive(false);
+              setRTCMuted(false);
+              setSessionExpiresAt(null);
+              setWebRTCAudioStream(null);
+              voiceRTCRef.current = null;
+            }
+          },
+        });
+        voiceRTCRef.current = rtc;
+        await rtc.connect();
+        return;
       }
 
+      if (![8000, 16000, 24000].includes(audioSampleRate)) throw new Error('audioSampleRate must be 8000, 16000, or 24000 Hz.');
       const ws = new WebSocket(wsUrl);
       wsRef.current = ws;
 
@@ -773,8 +891,13 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
         }
         setConnectionState('disconnected');
         setIsReady(false);
+        setSessionExpiresAt(null);
+        setSessionState('idle');
+        stopMic();
+        stopAudioPlayback();
       };
     } catch (err) {
+      if (attempt !== connectionAttemptRef.current) return;
       const errorMessage = err instanceof Error ? err.message : 'Failed to connect';
       console.error(`[${getTimestamp()}] Connection error:`, err);
       setError(errorMessage);
@@ -785,6 +908,12 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
     connection,
     session,
     handleMessage,
+    audioSampleRate,
+    autoStartMic,
+    audioConstraints,
+    setWebRTCAudioStream,
+    stopMic,
+    stopAudioPlayback,
   ]);
 
   /**
@@ -792,6 +921,14 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
    */
   const disconnect = useCallback(() => {
     console.log(`[${getTimestamp()}] Disconnecting...`);
+    connectionAttemptRef.current++;
+    const rtc = voiceRTCRef.current;
+    voiceRTCRef.current = null;
+    rtc?.disconnect();
+    setRTCMicActive(false);
+    setRTCMuted(false);
+    remoteAudioSourceRef.current?.disconnect();
+    remoteAudioSourceRef.current = null;
 
     // Stop microphone capture
     stopMic();
@@ -803,6 +940,7 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
       playbackWorkletRef.current = null;
     }
     playbackInitPromiseRef.current = null;
+    playbackSourceRateRef.current = null;
 
     // Cleanup playback blob URL
     if (playbackBlobUrlRef.current) {
@@ -815,6 +953,11 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
       audioContextRef.current.close();
       audioContextRef.current = null;
     }
+    audioStreamDestinationRef.current = null;
+    audioAnalyserRef.current = null;
+    audioGainRef.current = null;
+    currentResponseIdRef.current = null;
+    responseStartTimeRef.current = null;
 
     // Close WebSocket
     if (wsRef.current) {
@@ -831,6 +974,7 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
     setVideoStream(null);
     setAudioStream(null);
     setIsReady(false);
+    setSessionExpiresAt(null);
     setSessionState('idle');
     setConnectionState('disconnected');
   }, [stopMic]);
@@ -844,17 +988,20 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
 
   // Auto-start microphone when session is ready
   useEffect(() => {
-    if (isReady && autoStartMic && !isMicActive) {
+    if (transportRef.current === 'websocket' && isReady && autoStartMic && !captureActive) {
       console.log(`[${getTimestamp()}] Starting microphone...`);
       startMic().catch((err) => {
         console.error(`[${getTimestamp()}] Microphone error:`, err);
+        setError(err instanceof Error ? err.message : 'Failed to start microphone');
       });
     }
-  }, [isReady, autoStartMic, isMicActive, startMic]);
+  }, [isReady, autoStartMic, captureActive, startMic]);
 
   // Send proactive greeting when session is ready
   useEffect(() => {
-    if (!isReady || !session?.greeting) return;
+    if (!isReady || !session?.greeting || greetingSentRef.current) return;
+    // ICE recovery resumes the same session and must not greet a second time.
+    greetingSentRef.current = true;
 
     const { type, text } = session.greeting;
     console.log(`[${getTimestamp()}] Sending proactive greeting (${type})...`);
@@ -879,10 +1026,10 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
         type: 'response.create',
         event_id: `evt_greeting_${Date.now()}`,
         response: {
-          preGeneratedAssistantMessage: {
+          pre_generated_assistant_message: {
             type: 'message',
             role: 'assistant',
-            content: [{ type: 'output_text', text }],
+            content: [{ type: 'text', text }],
           },
         },
       });
@@ -912,21 +1059,26 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
   return {
     connectionState,
     sessionState,
+    sessionExpiresAt,
     videoStream,
     audioStream,
     audioContext: audioContextRef.current,
     audioAnalyser: audioAnalyserRef.current,
     isReady,
-    isMicActive,
-    isMuted,
+    isMicActive: transportRef.current === 'webrtc' ? rtcMicActive : captureActive,
+    isMuted: transportRef.current === 'webrtc' ? rtcMuted : captureMuted,
     error,
     connect,
     disconnect,
     startMic,
+    getMicrophoneStatus,
     stopMic,
     toggleMute,
     sendEvent,
     updateSession,
+    createResponse,
+    appendText,
+    finishText,
     getAudioPlaybackTime,
   };
 }

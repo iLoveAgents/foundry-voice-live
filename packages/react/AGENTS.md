@@ -33,6 +33,8 @@ index.ts        # Public API
 
 ## Key Concepts
 
+- Default API version is `2026-07-15`; keep preview features opt-in.
+- `buildSessionUpdate()` serializes patches without resetting initial defaults.
 - Agent mode is auto-detected from URL params (`agentName=`, `agentId=`)
 - In agent mode, `buildAgentSessionConfig()` strips fields unsupported by agents (`temperature`, `instructions`)
 - `sessionConfig()` builder produces config compatible with both standard and agent modes
@@ -58,11 +60,11 @@ index.ts        # Public API
 import { useVoiceLive } from '@iloveagents/foundry-voice-live-react';
 
 function App() {
-  const { status, connect, disconnect } = useVoiceLive({
-    onMessage: (event) => console.log(event),
-    onError: (error) => console.error(error),
+  const { connectionState, connect } = useVoiceLive({
+    connection: { proxyUrl: 'ws://localhost:8080/ws?model=gpt-realtime' },
+    onEvent: (event) => console.log(event),
   });
 
-  return <button onClick={connect}>{status}</button>;
+  return <button onClick={connect}>{connectionState}</button>;
 }
 ```

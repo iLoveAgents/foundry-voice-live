@@ -6,6 +6,8 @@ import { HomePage } from './pages/HomePage';
 import { VoiceOnlyBasic } from './pages/VoiceOnlyBasic';
 import { VoiceAdvanced } from './pages/VoiceAdvanced';
 import { VoiceProxy } from './pages/VoiceProxy';
+import { CurrentCapabilities } from './pages/CurrentCapabilities';
+import { WebRTCVoice } from './pages/WebRTCVoice';
 import { VoiceProxyMSAL } from './pages/VoiceProxyMSAL';
 import { AvatarBasic } from './pages/AvatarBasic';
 import { AvatarAdvanced } from './pages/AvatarAdvanced';
@@ -39,7 +41,7 @@ const msalConfig = {
 
 const msalInstance = new PublicClientApplication(msalConfig);
 
-function App() {
+function App(): JSX.Element {
   const [msalInitialized, setMsalInitialized] = useState(false);
 
   useEffect(() => {
@@ -61,6 +63,8 @@ function App() {
           <Route path="/voice-basic" element={<VoiceOnlyBasic />} />
           <Route path="/voice-advanced" element={<VoiceAdvanced />} />
           <Route path="/voice-proxy" element={<VoiceProxy />} />
+          <Route path="/current-capabilities" element={<CurrentCapabilities />} />
+          <Route path="/voice-webrtc" element={<WebRTCVoice />} />
           <Route path="/voice-proxy-msal" element={<VoiceProxyMSAL />} />
           <Route path="/avatar-basic" element={<AvatarBasic />} />
           <Route path="/avatar-advanced" element={<AvatarAdvanced />} />

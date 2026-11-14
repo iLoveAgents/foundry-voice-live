@@ -13,6 +13,44 @@
 
 **React hooks and components for [Microsoft Foundry Voice Live API](https://learn.microsoft.com/azure/ai-services/speech-service/voice-live).** Build real-time voice AI apps with Azure video avatars, Live2D avatars, 3D avatars, audio visualizers, function calling, and TypeScript support.
 
+## API compatibility and current capabilities
+
+Reviewed against Microsoft's [stable `2026-07-15` API reference](https://learn.microsoft.com/azure/ai-services/speech-service/voice-live-api-reference-2026-07-15) on **2026-11-14**. New direct connections and the bundled proxy default to that version. Explicit `connection.apiVersion` or proxy `API_VERSION` overrides remain available for existing deployments.
+
+| Capability | SDK support |
+| --- | --- |
+| WebRTC voice (preview) | `connection.transport: 'webrtc'`; RTP audio, data-channel transcripts, WebSocket signaling and tools |
+| Azure Realtime native voices | `voice: { type: 'azure-realtime-native', name: 'ava' }`; requires model `azure-realtime` |
+| OpenAI, Azure standard/custom/personal voices | Typed configuration, including custom endpoint, locale, lexicon and prosody fields |
+| MAI Transcribe | `inputAudioTranscription.model: 'mai-transcribe-2'` or the `mai-transcribe` alias |
+| Parallel tool calls | `parallelToolCalls: false` for sequential calls |
+| MCP / Foundry agents as tools | Typed `MCPTool` / `FoundryAgentTool`; approval and lifecycle events through `sendEvent` / `onEvent` |
+| Streamed user text | `appendText(id, delta)`, then `finishText(id)`, then `createResponse()` |
+| Hosted invocation input | `createResponse({ invokeInput: ... })`; deltas through `onEvent` |
+| Session expiration | Read-only `sessionExpiresAt`, Unix seconds, from server events |
+| Reasoning and tracing | `reasoningEffort` and session `metadata` |
+| Animation / photo avatars | Blendshapes, visemes, photo-avatar model, scene and output settings serialize to the protocol |
+| Image input | `buildResponseConfig` maps `imageUrl` to the current `image_url` wire field |
+
+For example:
+
+```tsx
+const voice = useVoiceLive({
+  connection: { proxyUrl: 'ws://localhost:8080/ws', model: 'azure-realtime' },
+  session: {
+    voice: { type: 'azure-realtime-native', name: 'ava' },
+    inputAudioTranscription: { model: 'mai-transcribe-2', language: 'de-DE' },
+    parallelToolCalls: false,
+  },
+});
+```
+
+Tools retain API snake_case fields, so JSON schemas and MCP configurations pass through unchanged. The legacy nested function choice `{ type: 'function', function: { name } }` is normalized to `{ type: 'function', name }`. `updateSession()` sends a patch without resetting unrelated defaults. Agent sessions retain audio/animation/metadata options while agent-owned instructions and model/tool policy are omitted.
+
+**Transports:** WebSocket audio remains the default. Set `connection.transport: 'webrtc'` for native WebRTC voice through the same hook; see [Voice over WebRTC](#voice-over-webrtc-preview) below. Avatar streaming remains available with the default WebSocket transport; Microsoft currently does not support avatar configuration with WebRTC voice sideband control. WebSocket avatar video and hosted-agent lifecycle events are available as raw events; applications must supply their own video renderer or lifecycle UI. With WebSocket audio, built-in microphone capture produces mono PCM16. Client-supplied echo reference requires custom interleaved stereo PCM16 input through `sendEvent`, `autoStartMic: false`, and `connection.previewFeatures: ['client_ec_reference']`. Smart end-of-turn detection and client echo reference remain explicitly opt-in preview settings; service support depends on model and region.
+
+The [interim-response guide](https://learn.microsoft.com/azure/ai-services/speech-service/how-to-voice-live-interim-response) specifies underscore wire fields (`interim_response`, `llm_interim_response`, `latency_threshold_ms`). This SDK follows its raw JSON examples; the API reference currently contains inconsistent hyphenated spellings. Interim responses apply to agent mode and supported cascaded text models, not realtime audio models.
+
 ## Install
 
 ```bash
@@ -21,7 +59,7 @@ npm install @iloveagents/foundry-voice-live-react
 
 ## Quick Start
 
-> **Region Availability:** The default model (`gpt-realtime`) is only available in **East US 2** and **Sweden Central** regions. Make sure your Azure AI Foundry resource is deployed in one of these regions. See [Microsoft docs](https://learn.microsoft.com/azure/ai-foundry/openai/concepts/models#global-standard-model-availability) for current availability.
+> **Availability:** Choose a model and resource region from the current [Voice Live region matrix](https://learn.microsoft.com/azure/ai-services/speech-service/regions?tabs=voice-live#regions). Capabilities vary by model and region.
 
 ### Voice Only
 
@@ -31,8 +69,7 @@ import { useVoiceLive } from '@iloveagents/foundry-voice-live-react';
 function App() {
   const { connect, disconnect, connectionState, audioStream } = useVoiceLive({
     connection: {
-      resourceName: 'your-foundry-resource',  // Azure AI Foundry resource name
-      apiKey: 'your-foundry-api-key',         // For dev only - see "Production" below
+      proxyUrl: 'ws://localhost:8080/ws?model=gpt-realtime',
     },
     session: {
       instructions: 'You are a helpful assistant.',
@@ -50,6 +87,83 @@ function App() {
 }
 ```
 
+### Voice over WebRTC (preview)
+
+The same `useVoiceLive` hook supports native WebRTC audio. Select `connection.transport: 'webrtc'` and keep credentials on the proxy:
+
+```tsx
+import { useEffect, useRef } from 'react';
+import { useVoiceLive } from '@iloveagents/foundry-voice-live-react';
+
+function WebRTCVoice() {
+  const audioRef = useRef<HTMLAudioElement>(null);
+  const voice = useVoiceLive({
+    connection: {
+      proxyUrl: 'ws://localhost:8080/ws?model=azure-realtime',
+      transport: 'webrtc',
+    },
+    autoStartMic: false,
+    session: {
+      voice: { type: 'azure-realtime-native', name: 'ava' },
+      inputAudioTranscription: { model: 'mai-transcribe-2' },
+    },
+    onTranscript: (role, text, isFinal) => console.log(role, text, isFinal),
+  });
+
+  useEffect(() => {
+    if (audioRef.current) audioRef.current.srcObject = voice.audioStream;
+  }, [voice.audioStream]);
+
+  return (
+    <>
+      <button onClick={voice.connect} disabled={voice.connectionState === 'connecting' || voice.connectionState === 'connected'}>Connect</button>
+      <button onClick={() => { void voice.startMic().catch(console.error); }} disabled={!voice.isReady || voice.isMicActive}>Enable microphone</button>
+      <button onClick={voice.toggleMute} disabled={!voice.isMicActive}>{voice.isMuted ? 'Unmute' : 'Mute'}</button>
+      <button onClick={voice.stopMic} disabled={!voice.isMicActive}>Stop microphone</button>
+      <button onClick={voice.disconnect}>Disconnect</button>
+      <p>{voice.error}</p>
+      <audio ref={audioRef} autoPlay controls />
+    </>
+  );
+}
+```
+
+With `autoStartMic: false`, connecting does not request microphone permission. You can receive spoken responses to text immediately, then call `startMic()` when the user wants to speak. Stopping the microphone releases capture; mute keeps capture active while suppressing outgoing microphone audio. Attach `audioStream` to an audio element for playback, including a user-initiated playback control if the browser blocks autoplay.
+
+The SDK uses Microsoft's WebSocket signaling flow:
+
+| Channel | Purpose |
+| --- | --- |
+| WebSocket through the proxy | Authenticated `/voice-live/realtime/calls` signaling with `rtc.call.sdp.create` / `rtc.call.sdp.created`, session updates, tool calls, and control events |
+| WebRTC `voice-live-events` data channel | Transcripts, VAD, and response lifecycle events delivered through the hook callbacks |
+| WebRTC RTP media tracks | Microphone input and continuous assistant audio; audio is not carried in `response.audio.delta` events |
+
+`sendEvent`, `createResponse`, `updateSession`, `onEvent`, `onTranscript`, and `toolExecutor` retain the same public API. The hook forwards `transport=webrtc` to the bundled proxy so it selects the calls endpoint. Keep the proxy connection open for the lifetime of the WebRTC call. Custom proxies must support this signaling route and forward the control events unchanged. This implementation uses WebSocket signaling; the service's alternative HTTP SDP exchange is not used.
+
+All outgoing client commands share the ordered WebSocket connection, so a tool result arrives before its subsequent `response.create`. Incoming events are accepted from both channels and deduplicated by `event_id`.
+
+For microphone selection, set `audioConstraints: { deviceId: { exact: selectedDeviceId } }` on the hook. Stop capture before changing the selection, then call `startMic()` again. WebRTC uses the latest constraints without reconnecting the session. `await getMicrophoneStatus()` reports the selected track, browser/OS source mute state, input level and outgoing RTP counters. It returns `null` when no WebRTC microphone is attached; individual statistics are `null` when the browser does not provide them. A live track alone does not prove that the microphone is delivering audible input.
+
+Optional connection settings allow custom ICE servers and bounded negotiation:
+
+```ts
+connection: {
+  proxyUrl: 'wss://your-proxy.example.com/ws?model=azure-realtime',
+  transport: 'webrtc',
+  webRTC: {
+    rtcConfiguration: {
+      iceServers: [{ urls: 'stun:your-stun-server.example.com:3478' }],
+    },
+    connectionTimeoutMs: 30000,
+    iceGatheringTimeoutMs: 10000,
+  },
+}
+```
+
+WebRTC voice remains **preview**. Microsoft currently uses **global standard deployments with automatic regional routing** for this transport; check the [WebRTC guide](https://learn.microsoft.com/azure/ai-services/speech-service/voice-live-webrtc) and [region support](https://learn.microsoft.com/azure/ai-services/speech-service/regions?tabs=voice-live) before choosing it for workloads with regional processing requirements. The service currently does not support avatar configuration with sideband control, so the hook rejects `transport: 'webrtc'` together with `session.avatar`. Use the default WebSocket transport for avatars and for custom base64 audio input.
+
+See the complete [WebRTC voice example](../../examples/src/pages/WebRTCVoice.tsx) for text input, function calling, microphone controls, playback, and error handling.
+
 ### With Avatar
 
 ```tsx
@@ -58,8 +172,7 @@ import { useVoiceLive, VoiceLiveAvatar } from '@iloveagents/foundry-voice-live-r
 function App() {
   const { videoStream, audioStream, connect, disconnect } = useVoiceLive({
     connection: {
-      resourceName: 'your-foundry-resource',
-      apiKey: 'your-foundry-api-key',
+      proxyUrl: 'ws://localhost:8080/ws?model=gpt-realtime',
     },
     session: {
       instructions: 'You are a helpful assistant.',
@@ -162,7 +275,7 @@ function App() {
 }
 ```
 
-Proxy needs `FOUNDRY_RESOURCE_NAME` and `API_VERSION=2026-01-01-preview`. For MSAL auth, also pass `token` in the URL.
+Proxy needs `FOUNDRY_RESOURCE_NAME` and `API_VERSION=2026-07-15`. For MSAL auth, also pass `token` in the URL.
 
 To resume a previous conversation, add `conversationId` to the URL:
 
@@ -199,7 +312,7 @@ const config = sessionConfig()
   .build();
 
 const { videoStream, audioStream } = useVoiceLive({
-  connection: { resourceName: 'your-foundry-resource', apiKey: 'your-key' },
+  connection: { proxyUrl: 'ws://localhost:8080/ws?model=gpt-realtime' },
   session: config,
 });
 ```
@@ -211,7 +324,9 @@ const { videoStream, audioStream } = useVoiceLive({
 | `.instructions(text)` | Set system prompt |
 | `.voice(name)` | Set voice by name |
 | `.hdVoice(name, { temperature?, rate? })` | Set HD voice with options |
-| `.customVoice(name)` | Set custom voice |
+| `.customVoice(name, endpointId)` | Set custom voice with its deployed endpoint |
+| `.realtimeVoice(name)` | Set an Azure native voice (azure-realtime model only) |
+| `.parallelToolCalls(enabled)` | Control parallel tool calls |
 | `.avatar(character, style, options?)` | Configure avatar |
 | `.transparentBackground()` | Enable chroma key background |
 | `.backgroundImage(url)` | Set avatar background image |
@@ -223,7 +338,7 @@ const { videoStream, audioStream } = useVoiceLive({
 | `.transcription(options?)` | Configure input transcription |
 | `.viseme()` | Enable viseme output (lip-sync) |
 | `.wordTimestamps()` | Enable word timestamps |
-| `.tools(tools)` | Add function tools |
+| `.tools(tools)` | Add function, MCP, or Foundry-agent tools |
 | `.toolChoice(choice)` | Set tool choice mode |
 | `.build()` | Build the final config |
 
@@ -241,7 +356,7 @@ const config = sessionConfig()
   .build();
 ```
 
-> **Note:** `phraseList` and `customSpeech` require `model: 'azure-speech'` and don't work with gpt-realtime models.
+> **Note:** `phraseList` supports `azure-speech`, `mai-transcribe`, and `mai-transcribe-2`. `customSpeech` requires `azure-speech` and maps locales to deployed custom-speech **endpoint IDs** on the same resource. Model combinations and availability are defined in the [API reference](https://learn.microsoft.com/azure/ai-services/speech-service/voice-live-api-reference-2026-07-15#realtimeaudioinputtranscriptionsettings).
 
 ## Function Calling
 
@@ -270,7 +385,7 @@ const toolExecutor = useCallback((name: string, args: string, callId: string) =>
 }, []);
 
 const { connect, sendEvent } = useVoiceLive({
-  connection: { resourceName: 'your-foundry-resource', apiKey: 'your-key' },
+  connection: { proxyUrl: 'ws://localhost:8080/ws?model=gpt-realtime' },
   session: {
     instructions: 'You can check the weather.',
     tools: [{
@@ -291,7 +406,7 @@ sendEventRef.current = sendEvent;
 
 ```tsx
 const { connect } = useVoiceLive({
-  connection: { resourceName: 'your-foundry-resource', apiKey: 'your-key' },
+  connection: { proxyUrl: 'ws://localhost:8080/ws?model=gpt-realtime' },
   onEvent: (event) => {
     switch (event.type) {
       case 'session.created':
@@ -319,7 +434,7 @@ Returns:
 
 ```typescript
 {
-  connectionState: 'disconnected' | 'connecting' | 'connected';
+  connectionState: 'disconnected' | 'connecting' | 'connected' | 'error';
   videoStream: MediaStream | null;    // Avatar video
   audioStream: MediaStream | null;    // Audio playback
   audioAnalyser: AnalyserNode | null; // For visualization
@@ -328,6 +443,10 @@ Returns:
   disconnect: () => void;
   sendEvent: (event: any) => void;
   updateSession: (config) => void;
+  sessionExpiresAt: number | null; // Unix seconds, server-set
+  appendText: (id: string, delta: string, contentIndex?: number) => void;
+  finishText: (id: string, contentIndex?: number) => void;
+  createResponse: (options?: ResponseCreateOptions) => void;
   error: string | null;
 }
 ```
@@ -338,17 +457,15 @@ Returns:
 <VoiceLiveAvatar
   videoStream={videoStream}        // Required: video from useVoiceLive
   audioStream={audioStream}        // Required: audio from useVoiceLive
-  enableChromaKey={true}           // Remove green background
-  chromaKeyColor="#00FF00"         // Key color
-  chromaKeySimilarity={0.4}        // Color match threshold
-  chromaKeySmoothness={0.1}        // Edge smoothness
+  transparentBackground={true}
+  chromaKeyConfig={{ keyColor: [0, 1, 0], similarity: 0.4, smoothness: 0.1 }}
   loadingMessage="Loading..."      // Shown before video starts
 />
 ```
 
 ## Examples
 
-Working examples for all features:
+Runnable examples for common features:
 
 | Example | Description |
 | --- | --- |

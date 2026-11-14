@@ -1,8 +1,6 @@
 /// <reference types="vite/client" />
 
 interface ImportMetaEnv {
-  readonly VITE_FOUNDRY_RESOURCE_NAME: string;
-  readonly VITE_FOUNDRY_API_KEY: string;
   readonly VITE_AVATAR_CHARACTER?: string;
   readonly VITE_AVATAR_STYLE?: string;
   readonly VITE_AZURE_CLIENT_ID?: string;

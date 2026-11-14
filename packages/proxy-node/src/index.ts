@@ -17,14 +17,20 @@ import expressWs from "express-ws";
 import cors from "cors";
 import rateLimit from "express-rate-limit";
 import helmet from "helmet";
-import { WebSocket } from "ws";
 import dotenv from "dotenv";
 import { parse } from "url";
 import * as appInsights from "applicationinsights";
 import { DefaultAzureCredential } from "@azure/identity";
+import {
+  buildAzureUrl,
+  DEFAULT_API_VERSION,
+  isOriginAllowed,
+  redactConnectionUrl,
+  resolveAgentName,
+} from "./connection.js";
+import { relayWebSocket } from "./relay.js";
 import type {
   QueryParams,
-  AzureConnectionConfig,
   ProxyConfig,
   SecurityConfig,
   Logger,
@@ -91,7 +97,7 @@ const { app } = expressWs(express());
 // Configuration - API key secured in backend (not exposed to browser)
 const config: ProxyConfig = {
   port: parseInt(process.env.PORT || "8080", 10),
-  apiVersion: process.env.API_VERSION || "2025-10-01",
+  apiVersion: process.env.API_VERSION || DEFAULT_API_VERSION,
   azureResourceName: process.env.FOUNDRY_RESOURCE_NAME || "",
   foundryApiKey: process.env.FOUNDRY_API_KEY,
   foundryAgentName: process.env.FOUNDRY_AGENT_NAME,
@@ -162,10 +168,7 @@ app.use(
       }
 
       // Check if origin is in allowed list or if wildcard is set
-      if (
-        securityConfig.allowedOrigins.includes("*") ||
-        securityConfig.allowedOrigins.some((allowed) => origin.startsWith(allowed))
-      ) {
+      if (isOriginAllowed(origin, securityConfig.allowedOrigins)) {
         callback(null, true);
       } else {
         logger.warn(`[Security] Blocked origin: ${origin}`, { origin });
@@ -197,143 +200,6 @@ app.use("/ws", limiter);
 
 // JSON parsing for HTTP endpoints
 app.use(express.json());
-
-/**
- * Build Azure WebSocket URL based on connection parameters
- *
- * Mode is automatically inferred from URL parameters (with .env fallback):
- * - Foundry Agents (v2): If agentName is present (URL or .env)
- * - Agent Service (v1): If agentId is present
- * - Standard mode: Otherwise (Voice/Avatar)
- *
- * Authentication methods:
- * - Foundry Agents: MSAL token from browser OR server-side DefaultAzureCredential
- * - Agent Service v1: MSAL token from browser (required)
- * - Standard mode: MSAL token from browser OR API key from backend
- */
-async function buildAzureUrl(query: QueryParams): Promise<AzureConnectionConfig> {
-  const apiVersion = query.apiVersion || config.apiVersion;
-  const base = `wss://${config.azureResourceName}.services.ai.azure.com/voice-live/realtime?api-version=${apiVersion}`;
-
-  // Resolve agentName/projectName: URL params take priority, .env as fallback.
-  // Only use .env fallback when model param is absent from the URL,
-  // so standard Voice/Avatar requests (which pass model=gpt-realtime) are not
-  // accidentally routed through agent mode.
-  const modelParamAbsent = query.model === undefined;
-  const agentName = query.agentName || (modelParamAbsent ? config.foundryAgentName : undefined);
-  const projectName = query.projectName || (modelParamAbsent ? config.foundryProjectName : undefined);
-
-  // ===== Foundry Agents (v2): agentName-based =====
-  if (agentName) {
-    if (!projectName) {
-      throw new Error("Foundry Agents requires both agentName and projectName (URL params or .env)");
-    }
-
-    logger.info("[Proxy] Mode: Foundry Agents (v2)", {
-      agentName,
-      projectName,
-      source: query.agentName ? "url" : "env",
-    });
-
-    let agentUrl = `${base}&agent-name=${encodeURIComponent(agentName)}&agent-project-name=${encodeURIComponent(projectName)}`;
-
-    if (query.conversationId) {
-      agentUrl += `&conversation-id=${encodeURIComponent(query.conversationId)}`;
-    }
-    if (query.agentVersion) {
-      agentUrl += `&agent-version=${encodeURIComponent(query.agentVersion)}`;
-    }
-
-    // Auth priority: browser MSAL token > server-side DefaultAzureCredential
-    if (query.token) {
-      logger.info("[Proxy] Auth: MSAL token (browser passthrough)");
-      return {
-        url: agentUrl,
-        headers: { Authorization: `Bearer ${query.token}` },
-      };
-    }
-
-    // Server-side: acquire token via DefaultAzureCredential (Azure CLI, managed identity, etc.)
-    logger.info("[Proxy] Auth: DefaultAzureCredential (server-side)");
-    const token = await getEntraToken();
-    return {
-      url: agentUrl,
-      headers: { Authorization: `Bearer ${token}` },
-    };
-  }
-
-  // ===== Agent Service (v1 classic): agentId-based =====
-  if (query.agentId) {
-    if (!query.projectName) {
-      throw new Error("Agent Service v1 requires both agentId and projectName in URL");
-    }
-    if (!query.token) {
-      throw new Error("Agent Service v1 requires token parameter (MSAL)");
-    }
-
-    logger.info("[Proxy] Mode: Agent Service (v1 classic)", {
-      agentId: query.agentId,
-      projectName: query.projectName,
-    });
-
-    const agentUrl = `${base}&agent-id=${query.agentId}&agent-project-name=${query.projectName}`;
-    return {
-      url: agentUrl,
-      headers: { Authorization: `Bearer ${query.token}` },
-    };
-  }
-
-  // ===== Standard mode: Voice/Avatar =====
-  const model = query.model || "gpt-realtime";
-  logger.info("[Proxy] Mode: Standard (Voice/Avatar)", { model });
-
-  // Option 1: Token-based auth (MSAL from browser)
-  if (query.token) {
-    logger.info("[Proxy] Auth: MSAL token (user-level)");
-    return {
-      url: `${base}&model=${model}`,
-      headers: { Authorization: `Bearer ${query.token}` },
-    };
-  }
-
-  // Option 2: API key auth (from backend .env)
-  if (config.foundryApiKey) {
-    logger.info("[Proxy] Auth: API key (shared)");
-    return {
-      url: `${base}&model=${model}&api-key=${encodeURIComponent(config.foundryApiKey)}`,
-      headers: {},
-    };
-  }
-
-  throw new Error(
-    "Standard mode requires either token parameter (MSAL) or FOUNDRY_API_KEY in .env"
-  );
-}
-
-/**
- * Connect to Azure with appropriate authentication
- */
-async function connectToAzure(query: QueryParams): Promise<WebSocket> {
-  const { url, headers } = await buildAzureUrl(query);
-
-  logger.info("[Proxy] Connecting to Azure...", {
-    hasAuthHeader: !!headers.Authorization,
-    headerCount: Object.keys(headers).length,
-  });
-
-  const azureWs = new WebSocket(url, { headers });
-
-  return new Promise((resolve, reject) => {
-    azureWs.once("open", () => {
-      logger.info("[Proxy] Azure WebSocket opened successfully");
-      resolve(azureWs);
-    });
-    azureWs.once("error", (error) => {
-      logger.error("[Proxy] Azure WebSocket error during connection", error);
-      reject(error);
-    });
-  });
-}
 
 /**
  * Health check endpoint
@@ -377,120 +243,48 @@ app.ws("/ws", async (ws, req) => {
   activeConnections++;
 
   // Redact sensitive params (token, api-key) before logging
-  const safeUrl = (req.url || "").replace(/([?&])(token|api-key|agent-access-token)=[^&]*/gi, "$1$2=REDACTED");
+  const safeUrl = redactConnectionUrl(req.url || "");
   logger.info(
     `\n[Proxy] Client connected (${activeConnections}/${securityConfig.maxConnections})`,
     { url: safeUrl, activeConnections }
   );
   logger.trackMetric("activeConnections", activeConnections);
 
-  let azureWs: WebSocket | undefined;
-
-  try {
-    const parsed = parse(req.url || "", true);
-    const query: QueryParams = parsed.query as QueryParams;
-
-    azureWs = await connectToAzure(query);
-    logger.info("[Proxy] Connected to Azure");
-
-    // Determine mode for telemetry
-    const agentNameResolved = query.agentName || (query.model === undefined ? config.foundryAgentName : undefined);
-    const mode = agentNameResolved ? "foundry-agent" : query.agentId ? "agent-v1" : "standard";
-    const model = query.model || "gpt-realtime";
-    logger.trackEvent("WebSocketConnected", { mode, model, agentName: agentNameResolved });
-
-    // Bidirectional message proxy
-    ws.on("message", (msg) => {
-      const text = msg.toString("utf8");
-      try {
-        const parsed = JSON.parse(text);
-
-        // Skip logging audio buffer messages to reduce console spam
-        if (parsed.type !== "input_audio_buffer.append") {
-          logger.info(`[Proxy] Browser → Azure: ${parsed.type}`, {
-            direction: "client-to-azure",
-            messageType: parsed.type,
-          });
-        }
-      } catch {
-        logger.info("[Proxy] Browser → Azure: (non-JSON message)", {
-          direction: "client-to-azure",
-        });
-      }
-
-      if (azureWs?.readyState === WebSocket.OPEN) {
-        azureWs.send(text);
-      }
-    });
-
-    azureWs.on("message", (msg) => {
-      const text = msg.toString("utf8");
-      try {
-        const parsed = JSON.parse(text);
-
-        // Skip logging high-frequency messages to reduce console spam
-        const skipTypes = ["response.audio.delta", "response.audio_transcript.delta"];
-        if (!skipTypes.includes(parsed.type)) {
-          logger.info(`[Proxy] Azure → Browser: ${parsed.type}`, {
-            direction: "azure-to-client",
-            messageType: parsed.type,
-          });
-        }
-      } catch {
-        logger.info("[Proxy] Azure → Browser: (non-JSON message)", {
-          direction: "azure-to-client",
-        });
-      }
-
-      if (ws.readyState === WebSocket.OPEN) {
-        ws.send(text);
-      }
-    });
-
-    // Connection cleanup
-    const cleanup = () => {
+  const parsed = parse(req.url || "", true);
+  const query = parsed.query as QueryParams;
+  await relayWebSocket(ws, () => buildAzureUrl(query, config, getEntraToken), {
+    onOpen: () => {
+      logger.info("[Proxy] Connected to Azure");
+      const agentName = resolveAgentName(query, config);
+      const mode = agentName ? "foundry-agent" : query.agentId ? "agent-v1" : "standard";
+      logger.trackEvent("WebSocketConnected", {
+        mode,
+        model: query.model || "gpt-realtime",
+        agentName,
+        transport: query.transport || "websocket",
+      });
+    },
+    onClose: () => {
       activeConnections--;
-      logger.info(
-        `[Proxy] Client disconnected (${activeConnections}/${securityConfig.maxConnections})`,
-        { activeConnections }
-      );
+      logger.info(`[Proxy] Client disconnected (${activeConnections}/${securityConfig.maxConnections})`);
       logger.trackMetric("activeConnections", activeConnections);
-    };
-
-    ws.on("close", () => {
-      cleanup();
-      azureWs?.close();
-    });
-
-    azureWs.on("close", (code, reason) => {
-      logger.info(
-        `[Proxy] Azure WebSocket closed - Code: ${code}, Reason: ${reason.toString() || "No reason"}`,
-        {
-          source: "azure",
-          closeCode: code,
-          closeReason: reason.toString(),
+    },
+    onError: (error) => {
+      logger.error("[Proxy] WebSocket connection error", error);
+      logger.trackEvent("WebSocketError", { errorMessage: error.message });
+    },
+    onMessage: (direction, text) => {
+      try {
+        const event = JSON.parse(text);
+        const skipTypes = ["input_audio_buffer.append", "response.audio.delta", "response.audio_transcript.delta"];
+        if (!skipTypes.includes(event.type)) {
+          logger.info(`[Proxy] ${direction}: ${event.type}`, { direction, messageType: event.type });
         }
-      );
-      ws.close();
-    });
-
-    ws.on("error", (error) => {
-      logger.error("[Proxy] Client WebSocket error:", error, { source: "client" });
-      cleanup();
-    });
-
-    azureWs.on("error", (error) => {
-      logger.error("[Proxy] Azure WebSocket error:", error, { source: "azure" });
-    });
-  } catch (error) {
-    activeConnections--;
-    const errorMessage = error instanceof Error ? error.message : "Unknown error";
-    logger.error("[Proxy] Error:", error instanceof Error ? error : undefined, { errorMessage });
-    logger.trackEvent("WebSocketError", { errorMessage });
-    ws.send(JSON.stringify({ type: "error", error: { message: errorMessage } }));
-    ws.close();
-    azureWs?.close();
-  }
+      } catch {
+        logger.info(`[Proxy] ${direction}: (non-JSON message)`, { direction });
+      }
+    },
+  });
 });
 
 /**

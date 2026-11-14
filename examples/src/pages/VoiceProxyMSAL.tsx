@@ -13,6 +13,8 @@ import {
 import { useMsal } from '@azure/msal-react';
 import { InteractionRequiredAuthError } from '@azure/msal-browser';
 
+import { modelProxyUrl } from '../utils/proxyUrl';
+
 export function VoiceProxyMSAL(): JSX.Element {
   const audioRef = useRef<HTMLAudioElement>(null);
   const [wsUrl, setWsUrl] = useState<string | null>(null);
@@ -45,7 +47,7 @@ export function VoiceProxyMSAL(): JSX.Element {
       });
       setAccessToken(response.accessToken);
       setWsUrl(
-        `ws://localhost:8080/ws?model=gpt-realtime&token=${encodeURIComponent(response.accessToken)}`
+        `${modelProxyUrl()}&token=${encodeURIComponent(response.accessToken)}`
       );
       console.log('Access token acquired successfully');
     } catch (err) {
@@ -57,7 +59,7 @@ export function VoiceProxyMSAL(): JSX.Element {
           });
           setAccessToken(response.accessToken);
           setWsUrl(
-            `ws://localhost:8080/ws?model=gpt-realtime&token=${encodeURIComponent(response.accessToken)}`
+            `${modelProxyUrl()}&token=${encodeURIComponent(response.accessToken)}`
           );
           console.log('Access token acquired via popup');
         } catch (popupError) {

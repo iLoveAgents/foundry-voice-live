@@ -13,6 +13,8 @@ import {
   AvatarContainer,
 } from '../components';
 
+import { modelProxyUrl } from '../utils/proxyUrl';
+
 export function AvatarProxy(): JSX.Element {
   const [error, setError] = useState<string | null>(null);
 
@@ -20,7 +22,7 @@ export function AvatarProxy(): JSX.Element {
     connection: {
       // Proxy mode: API key secured in backend
       // Mode is auto-detected (standard mode - no agentId/projectName)
-      proxyUrl: 'ws://localhost:8080/ws?model=gpt-realtime',
+      proxyUrl: modelProxyUrl(),
     },
     session: {
       voice: {

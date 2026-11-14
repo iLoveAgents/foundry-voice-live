@@ -19,6 +19,10 @@ import type {
   StandardVoice,
   TurnDetectionConfig,
   Tool,
+  ToolChoice,
+  AzureRealtimeVoice,
+  InputAudioTranscription,
+  InputAudioSamplingRate,
   GreetingConfig,
   InterimResponseConfig,
 } from '../types/voiceLive';
@@ -100,13 +104,15 @@ export function withHDVoice(
  */
 export function withCustomVoice(
   voiceName: string,
-  config: Partial<VoiceLiveSessionConfig> = {}
+  config: Partial<VoiceLiveSessionConfig> = {},
+  endpointId?: string
 ): Partial<VoiceLiveSessionConfig> {
   return {
     ...config,
     voice: {
       name: voiceName,
       type: 'azure-custom',
+      ...(endpointId !== undefined ? { endpointId } : {}),
     },
   };
 }
@@ -150,7 +156,7 @@ export function withAvatar(
       style,
       customized: options.customized,
       video: {
-        codec: options.codec || 'vp9',
+        codec: options.codec || 'h264',
         resolution: options.resolution || { width: 1920, height: 1080 },
         bitrate: options.bitrate || 1000000,
       },
@@ -193,7 +199,7 @@ export function withTransparentBackground(
       style: config.avatar?.style || '',
       video: {
         ...config.avatar?.video,
-        codec: config.avatar?.video?.codec || 'vp9',
+        codec: config.avatar?.video?.codec || 'h264',
         resolution: config.avatar?.video?.resolution || { width: 1920, height: 1080 },
         bitrate: config.avatar?.video?.bitrate || 1000000,
         background: {
@@ -228,7 +234,7 @@ export function withBackgroundImage(
       style: config.avatar?.style || '',
       video: {
         ...config.avatar?.video,
-        codec: config.avatar?.video?.codec || 'vp9',
+        codec: config.avatar?.video?.codec || 'h264',
         resolution: config.avatar?.video?.resolution || { width: 1920, height: 1080 },
         bitrate: config.avatar?.video?.bitrate || 1000000,
         background: {
@@ -269,7 +275,7 @@ export function withAvatarCrop(
       style: config.avatar?.style || '',
       video: {
         ...config.avatar?.video,
-        codec: config.avatar?.video?.codec || 'vp9',
+        codec: config.avatar?.video?.codec || 'h264',
         resolution: config.avatar?.video?.resolution || { width: 1920, height: 1080 },
         bitrate: config.avatar?.video?.bitrate || 1000000,
         crop: {
@@ -550,7 +556,7 @@ export function withoutNoiseReduction(
 /**
  * Set input audio sampling rate
  *
- * @param sampleRate - Sample rate (16000 or 24000)
+ * @param sampleRate - Sample rate (8000, 16000, or 24000)
  * @param config - Session configuration to update
  * @returns Updated configuration
  *
@@ -560,7 +566,7 @@ export function withoutNoiseReduction(
  * ```
  */
 export function withSampleRate(
-  sampleRate: 16000 | 24000,
+  sampleRate: InputAudioSamplingRate,
   config: Partial<VoiceLiveSessionConfig> = {}
 ): Partial<VoiceLiveSessionConfig> {
   return {
@@ -654,20 +660,12 @@ export function withWordTimestamps(
  * const config = withTranscription({
  *   model: 'azure-speech',
  *   language: 'en',
- *   customSpeech: { 'zh-CN': 'your-custom-model-id' }
+ *   customSpeech: { 'zh-CN': 'your-custom-endpoint-id' }
  * }, baseConfig);
  * ```
  */
 export function withTranscription(
-  options: {
-    model?: 'azure-speech' | 'whisper-1' | 'gpt-4o-transcribe' | 'gpt-4o-mini-transcribe';
-    language?: string;
-    prompt?: string;
-    /** Phrase list for recognition improvement (Voice Live, azure-speech only) */
-    phraseList?: string[];
-    /** Custom speech models per locale (Voice Live, azure-speech only) */
-    customSpeech?: Record<string, string>;
-  } = {},
+  options: InputAudioTranscription = {},
   config: Partial<VoiceLiveSessionConfig> = {}
 ): Partial<VoiceLiveSessionConfig> {
   return {
@@ -744,7 +742,7 @@ export function withTools(
  * ```
  */
 export function withToolChoice(
-  toolChoice: 'auto' | 'none' | 'required',
+  toolChoice: ToolChoice,
   config: Partial<VoiceLiveSessionConfig> = {}
 ): Partial<VoiceLiveSessionConfig> {
   return {
@@ -800,7 +798,7 @@ export function compose<T>(
  *   .noiseReduction();
  *
  * useVoiceLive({
- *   connection: { resourceName: 'my-resource', apiKey: 'key' },
+ *   connection: { proxyUrl: 'ws://localhost:8080/ws?model=gpt-realtime' },
  *   session: config,  // works directly, no .build() needed
  * });
  * ```
@@ -820,6 +818,18 @@ export class SessionConfigBuilder {
     return this;
   }
 
+  /** Azure native voice; connect using model azure-realtime. */
+  realtimeVoice(name: AzureRealtimeVoice = 'ava'): this {
+    this.config.voice = { type: 'azure-realtime-native', name };
+    return this;
+  }
+
+  /** Control parallel tool execution. */
+  parallelToolCalls(enabled: boolean): this {
+    this.config.parallelToolCalls = enabled;
+    return this;
+  }
+
   /** Set HD voice with options */
   hdVoice(
     name: string,
@@ -830,8 +840,8 @@ export class SessionConfigBuilder {
   }
 
   /** Set custom voice */
-  customVoice(name: string): this {
-    this.config = withCustomVoice(name, this.config);
+  customVoice(name: string, endpointId?: string): this {
+    this.config = withCustomVoice(name, this.config, endpointId);
     return this;
   }
 
@@ -926,7 +936,7 @@ export class SessionConfigBuilder {
   }
 
   /** Set input audio sample rate */
-  sampleRate(rate: 16000 | 24000): this {
+  sampleRate(rate: InputAudioSamplingRate): this {
     this.config = withSampleRate(rate, this.config);
     return this;
   }
@@ -945,17 +955,7 @@ export class SessionConfigBuilder {
 
   /** Configure input transcription */
   transcription(
-    options: {
-      model?:
-        | 'azure-speech'
-        | 'whisper-1'
-        | 'gpt-4o-transcribe'
-        | 'gpt-4o-mini-transcribe';
-      language?: string;
-      prompt?: string;
-      phraseList?: string[];
-      customSpeech?: Record<string, string>;
-    } = {}
+    options: InputAudioTranscription = {}
   ): this {
     this.config = withTranscription(options, this.config);
     return this;
@@ -968,7 +968,7 @@ export class SessionConfigBuilder {
   }
 
   /** Set tool choice mode */
-  toolChoice(choice: 'auto' | 'none' | 'required'): this {
+  toolChoice(choice: ToolChoice): this {
     this.config = withToolChoice(choice, this.config);
     return this;
   }
@@ -1036,7 +1036,7 @@ export class SessionConfigBuilder {
  *   .build();
  *
  * const { connect } = useVoiceLive({
- *   connection: { resourceName: 'my-resource', apiKey: 'key' },
+ *   connection: { proxyUrl: 'ws://localhost:8080/ws?model=gpt-realtime' },
  *   session: config,
  * });
  * ```

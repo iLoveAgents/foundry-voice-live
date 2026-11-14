@@ -1,248 +1,248 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
-import type { QueryParams } from "../types.js";
+import { describe, it, expect, vi } from "vitest";
+import {
+  buildAzureUrl,
+  DEFAULT_API_VERSION,
+  isOriginAllowed,
+  redactConnectionUrl,
+} from "../connection.js";
+import type { ProxyConfig, QueryParams } from "../types.js";
 
-describe("Microsoft Foundry Voice Live Proxy", () => {
-  const mockResourceName = "test-resource";
-  const mockApiVersion = "2025-10-01";
-  const mockApiKey = "test-api-key";
-  const mockToken = "test-msal-token";
+const config: ProxyConfig = {
+  port: 8080,
+  apiVersion: DEFAULT_API_VERSION,
+  azureResourceName: "test-resource",
+  foundryApiKey: "server-secret",
+};
 
-  beforeEach(() => {
-    vi.clearAllMocks();
+function credential(): ReturnType<typeof vi.fn<() => Promise<string>>> {
+  return vi.fn<() => Promise<string>>().mockResolvedValue("server-token");
+}
+
+describe("Voice Live service connection", () => {
+  it("routes WebRTC signaling to calls with the realtime subprotocol and server authentication", async () => {
+    const result = await buildAzureUrl(
+      { transport: "webrtc", model: "azure-realtime", features: "client_ec_reference:true" },
+      config,
+      credential()
+    );
+    const url = new URL(result.url);
+    expect(url.pathname).toBe("/voice-live/realtime/calls");
+    expect(url.searchParams.get("api-version")).toBe("2026-07-15");
+    expect(url.searchParams.get("model")).toBe("azure-realtime");
+    expect(url.searchParams.get("features")).toBe("client_ec_reference:true");
+    expect(url.searchParams.has("transport")).toBe(false);
+    expect(result.protocols).toEqual(["realtime"]);
+    expect(result.headers).toEqual({ "api-key": "server-secret" });
   });
 
-  describe("buildAzureUrl", () => {
-    it("should build standard mode URL with API key (auto-detected)", () => {
-      // Standard mode is auto-detected when no agentId/projectName
-      const query: QueryParams = { model: "gpt-realtime" };
-      const base = `wss://${mockResourceName}.services.ai.azure.com/voice-live/realtime?api-version=${mockApiVersion}`;
-      const expected = `${base}&model=gpt-realtime&api-key=${encodeURIComponent(mockApiKey)}`;
-
-      expect(query.agentId).toBeUndefined();
-      expect(query.projectName).toBeUndefined();
-      expect(expected).toContain("voice-live/realtime");
-      expect(expected).toContain("model=gpt-realtime");
-    });
-
-    it("should build standard mode URL with MSAL token (auto-detected)", () => {
-      // Standard mode is auto-detected when no agentId/projectName
-      const query: QueryParams = { model: "gpt-realtime", token: mockToken };
-      const base = `wss://${mockResourceName}.services.ai.azure.com/voice-live/realtime?api-version=${mockApiVersion}`;
-      const expected = `${base}&model=gpt-realtime`;
-
-      expect(query.agentId).toBeUndefined();
-      expect(query.projectName).toBeUndefined();
-      expect(query.token).toBe(mockToken);
-      expect(expected).toContain("voice-live/realtime");
-      expect(expected).toContain("model=gpt-realtime");
-    });
-
-    it("should build agent mode URL with required parameters (auto-detected)", () => {
-      // Agent mode is auto-detected when agentId or projectName is present
-      const query: QueryParams = {
-        token: mockToken,
-        agentId: "test-agent",
-        projectName: "test-project",
-      };
-      const base = `wss://${mockResourceName}.services.ai.azure.com/voice-live/realtime?api-version=${mockApiVersion}`;
-      const expected = `${base}&agent-id=test-agent&agent-project-name=test-project&agent-access-token=${encodeURIComponent(mockToken)}`;
-
-      expect(query.agentId).toBe("test-agent");
-      expect(query.projectName).toBe("test-project");
-      expect(query.token).toBe(mockToken);
-      expect(expected).toContain("agent-id=test-agent");
-      expect(expected).toContain("agent-project-name=test-project");
-      expect(expected).toContain("agent-access-token=");
-    });
-
-    it("should throw error for agent mode without token", () => {
-      // Agent mode is auto-detected when agentId or projectName is present
-      const query: QueryParams = {
-        agentId: "test-agent",
-        projectName: "test-project",
-      };
-
-      expect(() => {
-        if (!query.token) {
-          throw new Error("Agent mode requires token parameter (MSAL)");
-        }
-      }).toThrow("Agent mode requires token parameter (MSAL)");
-    });
-
-    it("should throw error for agent mode without both agentId and projectName", () => {
-      // If only agentId is provided, should throw error
-      const query: QueryParams = { agentId: "test-agent", token: mockToken };
-
-      expect(() => {
-        if (!query.agentId || !query.projectName) {
-          throw new Error("Agent mode requires both agentId and projectName");
-        }
-      }).toThrow("Agent mode requires both agentId and projectName");
-    });
-
-    it("should auto-detect agent mode with only projectName present", () => {
-      // Agent mode is auto-detected when either agentId or projectName is present
-      const query: QueryParams = { projectName: "test-project", token: mockToken };
-
-      // Should detect as agent mode and throw error for missing agentId
-      expect(() => {
-        const isAgentMode = !!(query.agentId || query.projectName);
-        if (isAgentMode && (!query.agentId || !query.projectName)) {
-          throw new Error("Agent mode requires both agentId and projectName");
-        }
-      }).toThrow("Agent mode requires both agentId and projectName");
-    });
+  it("keeps explicit WebSocket connections on the original endpoint", async () => {
+    const result = await buildAzureUrl({ transport: "websocket" }, config, credential());
+    expect(new URL(result.url).pathname).toBe("/voice-live/realtime");
+    expect(result.protocols).toBeUndefined();
   });
 
-  describe("Configuration Validation", () => {
-    it("should validate required environment variables", () => {
-      const foundryResourceName = process.env.FOUNDRY_RESOURCE_NAME || "";
-
-      if (!foundryResourceName) {
-        expect(() => {
-          throw new Error("FOUNDRY_RESOURCE_NAME required in .env");
-        }).toThrow("FOUNDRY_RESOURCE_NAME required in .env");
-      }
-    });
-
-    it("should parse security configuration from environment", () => {
-      const allowedOrigins = "http://localhost:3000,http://localhost:5173";
-      const parsed = allowedOrigins.split(",").map((o) => o.trim());
-
-      expect(parsed).toHaveLength(2);
-      expect(parsed[0]).toBe("http://localhost:3000");
-      expect(parsed[1]).toBe("http://localhost:5173");
-    });
-
-    it("should parse numeric configuration values", () => {
-      const port = parseInt("8080", 10);
-      const rateLimitMax = parseInt("100", 10);
-      const maxConnections = parseInt("1000", 10);
-
-      expect(port).toBe(8080);
-      expect(rateLimitMax).toBe(100);
-      expect(maxConnections).toBe(1000);
-    });
+  it("preserves agent routing and Entra auth for WebRTC control", async () => {
+    const result = await buildAzureUrl(
+      { transport: "webrtc", agentName: "agent", projectName: "project", token: "caller-token" },
+      config,
+      credential()
+    );
+    const url = new URL(result.url);
+    expect(url.pathname).toBe("/voice-live/realtime/calls");
+    expect(url.searchParams.get("agent-name")).toBe("agent");
+    expect(url.searchParams.get("agent-project-name")).toBe("project");
+    expect(result.headers).toEqual({ Authorization: "Bearer caller-token" });
   });
 
-  describe("Message Filtering", () => {
-    it("should identify high-frequency message types", () => {
-      const skipTypes = ["response.audio.delta", "response.audio_transcript.delta"];
-
-      expect(skipTypes).toContain("response.audio.delta");
-      expect(skipTypes).toContain("response.audio_transcript.delta");
-    });
-
-    it("should identify audio buffer messages", () => {
-      const message = { type: "input_audio_buffer.append" };
-
-      expect(message.type).toBe("input_audio_buffer.append");
-    });
-
-    it("should parse JSON messages correctly", () => {
-      const msg = JSON.stringify({ type: "session.created", session: {} });
-      const parsed = JSON.parse(msg);
-
-      expect(parsed.type).toBe("session.created");
-      expect(parsed).toHaveProperty("session");
-    });
+  it("rejects unsupported transports before acquiring credentials", async () => {
+    const getToken = credential();
+    await expect(
+      buildAzureUrl({ transport: "http" } as unknown as QueryParams, config, getToken)
+    ).rejects.toThrow("Unsupported transport");
+    expect(getToken).not.toHaveBeenCalled();
   });
 
-  describe("CORS Validation", () => {
-    it("should allow origin in allowed list", () => {
-      const allowedOrigins = ["http://localhost:3000", "https://app.example.com"];
-      const origin = "http://localhost:3000";
-
-      const isAllowed =
-        allowedOrigins.includes("*") ||
-        allowedOrigins.some((allowed) => origin.startsWith(allowed));
-
-      expect(isAllowed).toBe(true);
-    });
-
-    it("should block origin not in allowed list", () => {
-      const allowedOrigins = ["http://localhost:3000"];
-      const origin = "http://malicious.com";
-
-      const isAllowed =
-        allowedOrigins.includes("*") ||
-        allowedOrigins.some((allowed) => origin.startsWith(allowed));
-
-      expect(isAllowed).toBe(false);
-    });
-
-    it("should allow all origins with wildcard", () => {
-      const allowedOrigins = ["*"];
-      const origin = "http://any-origin.com";
-
-      const isAllowed = allowedOrigins.includes("*");
-
-      expect(origin).toBeTruthy();
-      expect(isAllowed).toBe(true);
-    });
+  it("uses the GA API and keeps API keys in headers, not URLs", async () => {
+    const getToken = credential();
+    const result = await buildAzureUrl({}, config, getToken);
+    const url = new URL(result.url);
+    expect(url.origin).toBe("wss://test-resource.services.ai.azure.com");
+    expect(url.pathname).toBe("/voice-live/realtime");
+    expect(url.searchParams.get("api-version")).toBe("2026-07-15");
+    expect(url.searchParams.get("model")).toBe("gpt-realtime");
+    expect(result.headers).toEqual({ "api-key": "server-secret" });
+    expect(result.url).not.toContain("server-secret");
+    expect(getToken).not.toHaveBeenCalled();
   });
 
-  describe("Connection Tracking", () => {
-    it("should increment active connections on connect", () => {
-      let activeConnections = 0;
-      activeConnections++;
-
-      expect(activeConnections).toBe(1);
-    });
-
-    it("should decrement active connections on disconnect", () => {
-      let activeConnections = 5;
-      activeConnections--;
-
-      expect(activeConnections).toBe(4);
-    });
-
-    it("should enforce max connections limit", () => {
-      const activeConnections = 1000;
-      const maxConnections = 1000;
-
-      const shouldBlock = activeConnections >= maxConnections;
-
-      expect(shouldBlock).toBe(true);
-    });
+  it("prioritizes caller Entra credentials over a configured API key", async () => {
+    const getToken = credential();
+    const result = await buildAzureUrl({ token: "user-token" }, config, getToken);
+    expect(result.headers).toEqual({ Authorization: "Bearer user-token" });
+    expect(result.url).not.toContain("user-token");
+    expect(getToken).not.toHaveBeenCalled();
   });
 
-  describe("Health Check Response", () => {
-    it("should return health status with metrics", () => {
-      const activeConnections = 5;
-      const maxConnections = 1000;
-
-      const health = {
-        status: "ok",
-        activeConnections,
-        maxConnections,
-        timestamp: new Date().toISOString(),
-      };
-
-      expect(health.status).toBe("ok");
-      expect(health.activeConnections).toBe(5);
-      expect(health.maxConnections).toBe(1000);
-      expect(health.timestamp).toBeTruthy();
-    });
+  it("uses server-side Entra authentication for keyless standard sessions", async () => {
+    const getToken = credential();
+    const result = await buildAzureUrl({}, { ...config, foundryApiKey: undefined }, getToken);
+    expect(getToken).toHaveBeenCalledOnce();
+    expect(result.headers.Authorization).toBe("Bearer server-token");
   });
 
-  describe("API Info Response", () => {
-    it("should return API information", () => {
-      const info = {
-        name: "@iloveagents/foundry-voice-live-proxy-node",
-        version: "1.1.0",
-        description: "Secure WebSocket proxy for Microsoft Foundry Voice Live API",
-        endpoints: {
-          health: "GET /health",
-          websocket: "WS /ws",
-        },
-        documentation: "https://github.com/iLoveAgents/foundry-voice-live-proxy",
-      };
+  it("preserves feature flags and BYOM routing without permitting parameter injection", async () => {
+    const result = await buildAzureUrl(
+      {
+        model: "deployment&api-key=injected",
+        apiVersion: "2026-06-01-preview",
+        profile: "byom-foundry-openai-responses",
+        foundryResourceOverride: "model-resource",
+        features: "client_ec_reference:true",
+      },
+      config,
+      credential()
+    );
+    const query = new URL(result.url).searchParams;
+    expect(query.get("model")).toBe("deployment&api-key=injected");
+    expect(query.has("api-key")).toBe(false);
+    expect(query.get("api-version")).toBe("2026-06-01-preview");
+    expect(query.get("profile")).toBe("byom-foundry-openai-responses");
+    expect(query.get("foundry-resource-override")).toBe("model-resource");
+    expect(query.get("features")).toBe("client_ec_reference:true");
+  });
 
-      expect(info.name).toBe("@iloveagents/foundry-voice-live-proxy-node");
-      expect(info.version).toBe("1.1.0");
-      expect(info.endpoints).toHaveProperty("health");
-      expect(info.endpoints).toHaveProperty("websocket");
+  it("connects a Foundry agent with version, conversation, and cross-resource identity", async () => {
+    const getToken = credential();
+    const result = await buildAzureUrl(
+      {
+        agentName: "My Agent",
+        projectName: "project&name",
+        agentVersion: "4",
+        conversationId: "conv_123",
+        foundryResourceOverride: "agent-resource",
+        authenticationIdentityClientId: "identity-id",
+      },
+      config,
+      getToken
+    );
+    const query = new URL(result.url).searchParams;
+    expect(Object.fromEntries(query)).toEqual({
+      "api-version": "2026-07-15",
+      "foundry-resource-override": "agent-resource",
+      "agent-name": "My Agent",
+      "agent-project-name": "project&name",
+      "agent-version": "4",
+      "conversation-id": "conv_123",
+      "agent-authentication-identity-client-id": "identity-id",
     });
+    expect(result.headers).toEqual({ Authorization: "Bearer server-token" });
+    expect(getToken).toHaveBeenCalledOnce();
+  });
+
+  it("uses caller credentials for Foundry agents without acquiring a server token", async () => {
+    const getToken = credential();
+    const result = await buildAzureUrl(
+      { agentName: "agent", projectName: "project", token: "user-token" },
+      config,
+      getToken
+    );
+    expect(result.headers.Authorization).toBe("Bearer user-token");
+    expect(getToken).not.toHaveBeenCalled();
+  });
+
+  it("uses configured default agents only when neither model nor classic agent is selected", async () => {
+    const defaults = {
+      ...config,
+      foundryAgentName: "default-agent",
+      foundryProjectName: "default-project",
+    };
+    const inherited = await buildAzureUrl({}, defaults, credential());
+    expect(new URL(inherited.url).searchParams.get("agent-name")).toBe("default-agent");
+    const standard = await buildAzureUrl({ model: "azure-realtime" }, defaults, credential());
+    expect(new URL(standard.url).searchParams.has("agent-name")).toBe(false);
+    const classic = await buildAzureUrl(
+      { agentId: "asst_1", projectName: "classic", token: "classic-token" },
+      defaults,
+      credential()
+    );
+    expect(new URL(classic.url).searchParams.has("agent-name")).toBe(false);
+    expect(new URL(classic.url).searchParams.get("agent-id")).toBe("asst_1");
+  });
+
+  it("forwards the classic agent token separately from the Voice Live handshake", async () => {
+    const result = await buildAzureUrl(
+      {
+        agentId: "asst_1",
+        projectName: "classic",
+        agentAccessToken: "agent-token",
+        token: "voice-token",
+      },
+      config,
+      credential()
+    );
+    expect(new URL(result.url).searchParams.get("agent-access-token")).toBe("agent-token");
+    expect(result.headers.Authorization).toBe("Bearer voice-token");
+  });
+
+  it("supports API-key Voice Live authentication with a separate classic agent token", async () => {
+    const result = await buildAzureUrl(
+      { agentId: "asst_1", projectName: "classic", agentAccessToken: "agent-token" },
+      config,
+      credential()
+    );
+    expect(new URL(result.url).searchParams.get("agent-access-token")).toBe("agent-token");
+    expect(result.headers).toEqual({ "api-key": "server-secret" });
+  });
+
+  it("retains the single-token classic connection shorthand", async () => {
+    const result = await buildAzureUrl(
+      { agentId: "asst_1", projectName: "classic", token: "user-token" },
+      config,
+      credential()
+    );
+    expect(new URL(result.url).searchParams.get("agent-access-token")).toBe("user-token");
+    expect(result.headers.Authorization).toBe("Bearer user-token");
+  });
+
+  it.each([
+    [{ agentName: "agent" }, "projectName"],
+    [{ agentId: "asst_1", token: "token" }, "projectName"],
+    [{ agentId: "asst_1", projectName: "project" }, "token"],
+  ])("rejects incomplete agent configuration %o", async (query, message) => {
+    const getToken = credential();
+    await expect(buildAzureUrl(query, config, getToken)).rejects.toThrow(message);
+    expect(getToken).not.toHaveBeenCalled();
+  });
+
+  it("rejects repeated query parameters instead of coercing arrays", async () => {
+    const query = { token: ["first", "second"] } as unknown as QueryParams;
+    await expect(buildAzureUrl(query, config, credential())).rejects.toThrow("single string value");
+  });
+
+  it("propagates credential acquisition failures", async () => {
+    const getToken = vi.fn().mockRejectedValue(new Error("credential unavailable"));
+    await expect(
+      buildAzureUrl({ agentName: "agent", projectName: "project" }, config, getToken)
+    ).rejects.toThrow("credential unavailable");
+  });
+});
+
+describe("connection logging and origins", () => {
+  it("redacts every supported secret, including repeated and encoded names", () => {
+    const sanitized = redactConnectionUrl(
+      "/ws?model=azure-realtime&token=secret1&token=secret2&%41uthorization=secret3&agentAccessToken=secret4&api-key=secret5&agent-access-token=secret6"
+    );
+    expect(sanitized).not.toContain("secret");
+    expect(sanitized).toContain("model=azure-realtime");
+    expect(sanitized).toContain("REDACTED");
+  });
+
+  it("matches allowed origins exactly", () => {
+    const allowed = ["https://app.example.com"];
+    expect(isOriginAllowed("https://app.example.com", allowed)).toBe(true);
+    expect(isOriginAllowed("https://app.example.com.attacker.test", allowed)).toBe(false);
+    expect(isOriginAllowed("https://app.example.com:444", allowed)).toBe(false);
+    expect(isOriginAllowed("https://other.example.com", ["*"])).toBe(true);
+    expect(isOriginAllowed(undefined, allowed)).toBe(true);
   });
 });
