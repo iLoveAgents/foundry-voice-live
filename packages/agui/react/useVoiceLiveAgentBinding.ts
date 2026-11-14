@@ -177,20 +177,21 @@ export function useVoiceLiveAgentBinding(
   // Wrap sendToolResult so a deferred tool output (the app sends it itself, rather than returning it
   // from the executor) also reaches the agent as a tool_result. Together with the executor wrapper,
   // exactly one path forwards each result, so the tool cluster always closes.
+  const { sendToolResult: sendVoiceToolResult, disconnect: disconnectVoice } = voice;
   const sendToolResult = useCallback<UseVoiceLiveReturn['sendToolResult']>(
     (callId, output, opts) => {
       agent.ingestHostEvent({ type: 'tool_result', callId, output });
-      voice.sendToolResult(callId, output, opts);
+      sendVoiceToolResult(callId, output, opts);
     },
-    [agent, voice.sendToolResult]
+    [agent, sendVoiceToolResult]
   );
 
   const disconnect = useCallback((): void => {
     sessionScopeRef.current?.abort();
     readyRef.current = false;
     agent.ingestHostEvent({ type: 'disconnected' });
-    voice.disconnect();
-  }, [agent, voice.disconnect]);
+    disconnectVoice();
+  }, [agent, disconnectVoice]);
 
   useEffect(
     () => () => {
