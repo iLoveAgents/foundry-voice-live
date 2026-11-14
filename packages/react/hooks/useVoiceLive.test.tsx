@@ -1195,3 +1195,37 @@ describe('useVoiceLive (websocket)', () => {
     hook.unmount();
   });
 });
+
+it('streams text using item IDs and preserves deferred response options', async () => {
+  const { hook, ws } = await connectAndOpen(baseConfig);
+  await deliver(ws, { type: 'session.updated', session: { id: 's1' } });
+  act(() => {
+    hook.result.current.appendText('item-1', 'Hello ', 0);
+    hook.result.current.appendText('item-1', 'world', 0);
+    hook.result.current.finishText('item-1', 0);
+    hook.result.current.createResponse({ instructions: 'First' });
+  });
+  expect(ws.sent.filter((e) => e.type === 'input_text.delta')).toEqual([
+    { type: 'input_text.delta', id: 'item-1', content_index: 0, delta: 'Hello ' },
+    { type: 'input_text.delta', id: 'item-1', content_index: 0, delta: 'world' },
+  ]);
+  expect(ws.lastSent('input_text.done')).toEqual({
+    type: 'input_text.done',
+    id: 'item-1',
+    content_index: 0,
+  });
+  await deliver(ws, { type: 'response.created', response: { id: 'r1' } });
+  act(() => {
+    hook.result.current.createResponse({ instructions: 'Second', metadata: { test: 'queued' } });
+  });
+  expect(ws.sent.filter((e) => e.type === 'response.create')).toHaveLength(1);
+  await deliver(ws, {
+    type: 'response.done',
+    response: { id: 'r1', status: 'completed', output: [] },
+  });
+  expect(ws.lastSent('response.create').response).toEqual({
+    instructions: 'Second',
+    metadata: { test: 'queued' },
+  });
+  hook.unmount();
+});

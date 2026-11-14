@@ -3,7 +3,19 @@
 All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [Unreleased]
+## [0.7.0] - 2026-11-14
+
+- Harden AG-UI React binding readiness, reconnect callbacks, unmount cleanup, and stale tool-result handling. Add six binding integration tests and live tool calling/manual microphone controls to `/agui-voice`.
+
+- Default both voice transports to API `2026-07-15`, verified against Azure with Entra ID.
+- Add WebRTC microphone diagnostics (input level, source state, and RTP counters), device selection, and recovery after the input device ends.
+- Add streaming text helpers and typed per-response options through the existing response gate.
+- Add photo-avatar scene, output protocol, audit audio, GOP size, and animation model configuration.
+- Refresh the WebRTC example layout and add the streaming text example. Route model examples through the backend proxy and accept proxy URLs ending in `/ws`.
+- Update dependencies, build the proxy image on Node 26, and validate Node 22, 24, and 26 in CI.
+- Preserve the 0.6.0 reconnect, tool batching, BYOM, AG-UI, proxy security, and tokenless publishing behavior.
+
+## [0.6.0]
 
 ### `@iloveagents/foundry-voice-live-agui` (new package)
 

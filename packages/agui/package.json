@@ -1,6 +1,6 @@
 {
   "name": "@iloveagents/foundry-voice-live-agui",
-  "version": "0.1.0",
+  "version": "0.7.0",
   "description": "AG-UI protocol bridge for Microsoft Foundry Voice Live: render a live voice session in CopilotKit or any AG-UI frontend, and verify AG-UI backends for voice readiness.",
   "keywords": [
     "ag-ui",
@@ -101,7 +101,7 @@
   },
   "peerDependencies": {
     "@ag-ui/client": ">=0.0.57",
-    "@iloveagents/foundry-voice-live-react": ">=0.5.0",
+    "@iloveagents/foundry-voice-live-react": ">=0.7.0",
     "react": ">=16.8.0",
     "rxjs": "^7.8.0"
   },
@@ -116,24 +116,24 @@
   "devDependencies": {
     "@ag-ui/client": "0.0.58",
     "@iloveagents/foundry-voice-live-react": "workspace:*",
-    "@testing-library/react": "^14.0.0",
-    "@types/react": "^18.2.0",
-    "@types/react-dom": "^18.2.0",
-    "@typescript-eslint/eslint-plugin": "^6.0.0",
-    "@typescript-eslint/parser": "^6.0.0",
-    "eslint": "^8.0.0",
-    "eslint-plugin-react": "^7.33.0",
-    "eslint-plugin-react-hooks": "^4.6.0",
+    "@testing-library/react": "^16.3.3",
+    "@types/react": "^18.3.31",
+    "@types/react-dom": "^18.3.7",
+    "@typescript-eslint/eslint-plugin": "^8.72.2",
+    "@typescript-eslint/parser": "^8.72.2",
+    "eslint": "^8.57.1",
+    "eslint-plugin-react": "^7.37.5",
+    "eslint-plugin-react-hooks": "^4.6.2",
     "fast-json-patch": "^3.1.1",
-    "jsdom": "^23.0.0",
-    "prettier": "^3.0.0",
-    "react": "^18.2.0",
-    "react-dom": "^18.2.0",
+    "jsdom": "^31.0.1",
+    "prettier": "^3.10.1",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
     "rxjs": "7.8.1",
-    "tsup": "^8.0.0",
-    "typescript": "^5.0.0",
-    "vitest": "^1.0.0",
-    "@types/node": "^20.0.0"
+    "tsup": "^9.0.0",
+    "typescript": "^5.9.3",
+    "vitest": "^5.1.0",
+    "@types/node": "^22.19.0"
   },
   "sideEffects": false,
   "publishConfig": {

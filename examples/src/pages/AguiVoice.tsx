@@ -26,6 +26,7 @@ import type { TranscriptEntry } from '../lib/useTranscripts';
  * can watch a spoken turn become a legal AG-UI run. The same agent drops into any AG-UI UI.
  */
 export function AguiVoice(): JSX.Element {
+  const [localError, setLocalError] = useState<string | null>(null);
   const [transport, setTransport] = useState<'websocket' | 'webrtc'>('websocket');
   // The agent is transport-agnostic — the connection below carries the transport and the status row
   // reads the live value from `voice.transport`. We deliberately don't pass `transport` into the
@@ -37,12 +38,30 @@ export function AguiVoice(): JSX.Element {
       createVoiceLiveConfig({
         // The bridge is transport-agnostic: `onEvent` fires the same Voice Live server events over a
         // WebSocket or a WebRTC data channel, so `transport: 'webrtc'` is the only change needed.
-        connection: directOrProxyConnection({ transport }),
+        connection: directOrProxyConnection({ transport, model: 'azure-realtime' }),
+        autoStartMic: false,
         session: {
           instructions:
-            'You are a friendly voice assistant. Answer in one or two short sentences so replies are quick to speak.',
-          voice: { name: 'en-US-AvaMultilingualNeural', type: 'azure-standard' },
+            'Answer in one or two short sentences. Always call get_time when asked for the current time.',
+          voice: { name: 'ava', type: 'azure-realtime-native' },
+          inputAudioTranscription: { model: 'mai-transcribe-2' },
+          tools: [
+            {
+              type: 'function',
+              name: 'get_time',
+              description: 'Get the current time and timezone.',
+              parameters: { type: 'object', properties: {}, additionalProperties: false },
+            },
+          ],
         },
+        toolExecutor: (name) =>
+          name === 'get_time'
+            ? {
+                time: new Date().toISOString(),
+                localTime: new Date().toLocaleString(),
+                timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+              }
+            : undefined,
       }),
     [transport]
   );
@@ -52,17 +71,20 @@ export function AguiVoice(): JSX.Element {
 
   const audioRef = useRef<HTMLAudioElement>(null);
   useEffect(() => {
-    if (audioRef.current && voice.audioStream) {
-      audioRef.current.srcObject = voice.audioStream;
-      audioRef.current.play().catch(() => {});
-    }
+    const audio = audioRef.current;
+    if (!audio) return;
+    audio.srcObject = voice.audioStream;
+    if (voice.audioStream) void audio.play().catch(() => {});
+    return () => {
+      audio.srcObject = null;
+    };
   }, [voice.audioStream]);
 
   const connected = voice.connectionState === 'connected';
   const vs = (view.state.voice ?? {}) as VoiceStateShape;
 
   const transcripts: TranscriptEntry[] = view.messages
-    .filter((m) => m.role === 'user' || m.role === 'assistant')
+    .filter((m) => (m.role === 'user' || m.role === 'assistant') && messageText(m).trim())
     .map((m) => ({
       role: m.role as 'user' | 'assistant',
       text: messageText(m),
@@ -71,9 +93,13 @@ export function AguiVoice(): JSX.Element {
 
   const handleType = (text: string): void => {
     // Drive the agent's typed-turn path: it forwards to the wire and streams the answer back.
+    if (!voice.isReady) return;
+    setLocalError(null);
     const id = newId('typed');
     agent.addMessage({ id, role: 'user', content: text });
-    void agent.runAgent();
+    void agent
+      .runAgent()
+      .catch((err: unknown) => setLocalError(err instanceof Error ? err.message : String(err)));
   };
 
   return (
@@ -81,7 +107,7 @@ export function AguiVoice(): JSX.Element {
       title="AG-UI Voice"
       description="Bridge a live Voice Live session to the AG-UI protocol and render it with plain React — messages, state, and the raw AG-UI event stream, no agent UI framework required."
     >
-      <ErrorPanel error={voice.error} />
+      <ErrorPanel error={voice.error || localError} />
 
       <div
         className="agui-status-row"
@@ -96,13 +122,34 @@ export function AguiVoice(): JSX.Element {
 
       <Section>
         <ControlGroup>
-          <button onClick={() => void voice.connect()} disabled={connected}>
+          <button
+            onClick={() => void voice.connect()}
+            disabled={connected || voice.connectionState === 'connecting'}
+          >
             Start Conversation
           </button>
           <button onClick={() => voice.disconnect()} disabled={!connected}>
             Stop
           </button>
-          <button onClick={() => voice.toggleMute()} disabled={!connected}>
+          <button
+            onClick={() => {
+              void voice
+                .startMic()
+                .catch((err: unknown) =>
+                  setLocalError(err instanceof Error ? err.message : String(err))
+                );
+            }}
+            disabled={!voice.isReady || voice.isMicActive}
+          >
+            Enable microphone
+          </button>
+          <button onClick={() => voice.stopMic()} disabled={!voice.isMicActive}>
+            Stop microphone
+          </button>
+          <button onClick={() => voice.cancelResponse()} disabled={!voice.isReady}>
+            Interrupt response
+          </button>
+          <button onClick={() => voice.toggleMute()} disabled={!voice.isMicActive}>
             {voice.isMuted ? 'Unmute' : 'Mute'}
           </button>
         </ControlGroup>
@@ -145,8 +192,8 @@ export function AguiVoice(): JSX.Element {
 
       <TextInput
         onSend={handleType}
-        disabled={!connected}
-        title="Type a turn"
+        disabled={!voice.isReady}
+        title="Type a turn — ask for the current time to test tool calling"
         placeholder={connected ? 'Type instead of talking…' : 'Connect first, then type…'}
       />
 
@@ -156,7 +203,12 @@ export function AguiVoice(): JSX.Element {
           AG-UI run without connecting.
         </p>
         <ControlGroup>
-          <button onClick={() => simulateTurn(agent)}>Simulate a spoken turn</button>
+          <button
+            onClick={() => simulateTurn(agent)}
+            disabled={voice.connectionState !== 'disconnected'}
+          >
+            Simulate a spoken turn
+          </button>
         </ControlGroup>
       </Section>
 

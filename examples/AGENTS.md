@@ -33,10 +33,10 @@ src/
 ## Conventions
 
 - Use `SampleLayout` + `StatusBadge` + `ControlGroup` + `ErrorPanel`; put caveats in an `AlertBox`.
-- Read credentials from `import.meta.env` (declared in `src/vite-env.d.ts`, documented in `.env.example`). Every non-proxy page uses `directOrProxyConnection()` from `src/lib/connection.ts` (direct with `VITE_FOUNDRY_API_KEY`, otherwise the proxy) and proxy pages use `proxyWsUrl()` (honours `VITE_BACKEND_PROXY_URL`, default `ws://localhost:8080`) — never build connection configs or URLs by hand, so all pages work keyless.
+- Keep resource credentials on the proxy; read non-secret configuration from `import.meta.env` (declared in `src/vite-env.d.ts`, documented in `.env.example`). Every non-proxy page uses `directOrProxyConnection()` from `src/lib/connection.ts` (always through the proxy) and proxy pages use `proxyWsUrl()` (honours `VITE_BACKEND_PROXY_URL`, default `ws://localhost:8080`) — never build connection configs or URLs by hand, so all pages work keyless.
 - Use `useTranscripts()` + `<TranscriptPanel>` for transcripts and `sessionStateLabel()` for the session state; add `<TextInput onSend={sendText} />` so pages work without a microphone.
 - Foundry agent pages use `.transcription({ model: 'azure-speech' })`.
 - Pass `logLevel: 'debug'` to `useVoiceLive` so the dev console stays informative.
 - Bind `audioStream` to a hidden `<audio ref autoPlay hidden>` element (also for the WebRTC transport, where it is the remote RTP track).
 - Prefer the `sessionConfig()` builder; return the result from `toolExecutor` instead of sending `function_call_output` manually.
-- Do not hardcode `apiVersion` - the SDK default is the GA version (WebRTC has its own preview default).
+- Do not hardcode `apiVersion` - the SDK default is the GA version (including the WebRTC preview transport).

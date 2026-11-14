@@ -16,7 +16,7 @@
  */
 
 import { useCallback, useEffect, useRef } from 'react';
-import { useVoiceLive } from '@iloveagents/foundry-voice-live-react';
+import { useVoiceLive, Scope } from '@iloveagents/foundry-voice-live-react';
 import type {
   ToolResult,
   UseVoiceLiveConfig,
@@ -43,6 +43,8 @@ export function useVoiceLiveAgentBinding(
   // The bridge's canSend() reads the live connection state through this ref (the bridge object is
   // attached once and must not go stale). prevConnectionRef gates the one-time mount 'disconnected'.
   const connectionStateRef = useRef<UseVoiceLiveReturn['connectionState']>('disconnected');
+  const readyRef = useRef(false);
+  const sessionScopeRef = useRef<Scope | null>(null);
   const prevConnectionRef = useRef<UseVoiceLiveReturn['connectionState'] | null>(null);
 
   const onEvent = useCallback(
@@ -50,6 +52,10 @@ export function useVoiceLiveAgentBinding(
       // Ingest first, and never let a throwing consumer callback strand the bridge: useVoiceLive
       // catches exceptions around this wrapper, so if the caller's onEvent threw before we ingested,
       // the run would hang until the idle watchdog. Ingest is guaranteed; the callback is guarded.
+      if (event.type === 'session.created') {
+        sessionScopeRef.current?.abort();
+        sessionScopeRef.current = new Scope('agui-session');
+      }
       const { runOpened } = agent.ingestServerEvent(event);
       if (runOpened) void agent.pump();
       try {
@@ -67,19 +73,21 @@ export function useVoiceLiveAgentBinding(
   const toolExecutor = useCallback(
     async (name: string, args: string, callId: string): Promise<void | ToolResult> => {
       const original = configRef.current.toolExecutor;
+      const scope = sessionScopeRef.current;
       try {
         const result = original ? await original(name, args, callId) : undefined;
         // A returned result is auto-sent by useVoiceLive; mirror it to the agent. `undefined` means
         // the app will send it later via sendToolResult (wrapped below), so don't forward here.
-        if (result !== undefined)
+        if (result !== undefined && scope?.isActive)
           agent.ingestHostEvent({ type: 'tool_result', callId, output: result });
         return result;
       } catch (err) {
-        agent.ingestHostEvent({
-          type: 'tool_error',
-          callId,
-          error: err instanceof Error ? err.message : String(err),
-        });
+        if (scope?.isActive)
+          agent.ingestHostEvent({
+            type: 'tool_error',
+            callId,
+            error: err instanceof Error ? err.message : String(err),
+          });
         throw err;
       }
     },
@@ -88,15 +96,17 @@ export function useVoiceLiveAgentBinding(
 
   const onReconnecting = useCallback(
     (attempt: number, delayMs: number) => {
-      configRef.current.onReconnecting?.(attempt, delayMs);
+      sessionScopeRef.current?.abort();
+      readyRef.current = false;
       agent.ingestHostEvent({ type: 'reconnecting', attempt, delayMs });
+      configRef.current.onReconnecting?.(attempt, delayMs);
     },
     [agent]
   );
 
   const onReconnected = useCallback(() => {
-    configRef.current.onReconnected?.();
     agent.ingestHostEvent({ type: 'reconnected' });
+    configRef.current.onReconnected?.();
   }, [agent]);
 
   const voice = useVoiceLive({
@@ -110,6 +120,7 @@ export function useVoiceLiveAgentBinding(
   });
 
   connectionStateRef.current = voice.connectionState;
+  readyRef.current = voice.isReady;
 
   // Wire the write side once the session controls exist (and whenever their identity changes).
   // canSend() reflects the live connection so a typed turn while disconnected is rejected, not dropped.
@@ -117,7 +128,7 @@ export function useVoiceLiveAgentBinding(
     agent.attachBridge({
       sendEvent: voice.sendEvent,
       cancelResponse: voice.cancelResponse,
-      canSend: () => connectionStateRef.current === 'connected',
+      canSend: () => connectionStateRef.current === 'connected' && readyRef.current,
     });
   }, [agent, voice.sendEvent, voice.cancelResponse]);
 
@@ -126,7 +137,12 @@ export function useVoiceLiveAgentBinding(
   useEffect(() => {
     agent.ingestHostEvent({ type: 'connection_state', state: voice.connectionState });
     const prev = prevConnectionRef.current;
-    if (voice.connectionState === 'disconnected' && prev !== null && prev !== 'disconnected') {
+    if (voice.connectionState !== 'connected') sessionScopeRef.current?.abort();
+    if (
+      (voice.connectionState === 'disconnected' || voice.connectionState === 'error') &&
+      prev !== null &&
+      prev !== 'disconnected'
+    ) {
       agent.ingestHostEvent({ type: 'disconnected' });
     }
     prevConnectionRef.current = voice.connectionState;
@@ -161,13 +177,31 @@ export function useVoiceLiveAgentBinding(
   // Wrap sendToolResult so a deferred tool output (the app sends it itself, rather than returning it
   // from the executor) also reaches the agent as a tool_result. Together with the executor wrapper,
   // exactly one path forwards each result, so the tool cluster always closes.
+  const { sendToolResult: sendVoiceToolResult, disconnect: disconnectVoice } = voice;
   const sendToolResult = useCallback<UseVoiceLiveReturn['sendToolResult']>(
     (callId, output, opts) => {
       agent.ingestHostEvent({ type: 'tool_result', callId, output });
-      voice.sendToolResult(callId, output, opts);
+      sendVoiceToolResult(callId, output, opts);
     },
-    [agent, voice]
+    [agent, sendVoiceToolResult]
   );
 
-  return { ...voice, sendToolResult };
+  const disconnect = useCallback((): void => {
+    sessionScopeRef.current?.abort();
+    readyRef.current = false;
+    agent.ingestHostEvent({ type: 'disconnected' });
+    disconnectVoice();
+  }, [agent, disconnectVoice]);
+
+  useEffect(
+    () => () => {
+      sessionScopeRef.current?.abort();
+      readyRef.current = false;
+      agent.detachBridge();
+      agent.ingestHostEvent({ type: 'disconnected' });
+    },
+    [agent]
+  );
+
+  return { ...voice, sendToolResult, disconnect };
 }

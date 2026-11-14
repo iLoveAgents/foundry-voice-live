@@ -13,13 +13,8 @@
  */
 export const DEFAULT_API_VERSION = '2026-07-15';
 
-/**
- * Default API version for the WebRTC transport (preview feature).
- * Live-verified (August 2026): the `/voice-live/realtime/calls` control channel is only
- * served on `2026-01-01-preview` — `2026-04-10` returns 404 and `2026-06-01-preview` 401.
- * Override via `connection.apiVersion` once Microsoft ships WebRTC on a newer version.
- */
-export const DEFAULT_WEBRTC_API_VERSION = '2026-01-01-preview';
+/** WebRTC control channel version, live-verified with Azure in November 2026. */
+export const DEFAULT_WEBRTC_API_VERSION = DEFAULT_API_VERSION;
 
 /**
  * Minimum API version that supports the WebRTC transport (`/voice-live/realtime/calls`).

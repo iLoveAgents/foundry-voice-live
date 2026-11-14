@@ -45,7 +45,7 @@ function Voice() {
 
 Switching to WebRTC is one line — `connection: { ..., transport: 'webrtc' }`. The mapper produces the same AG-UI events either way, and it already handles WebRTC's out-of-order case where `response.done` can arrive before its tool-call arguments.
 
-A full working example (transcript, live event stream, transport toggle, offline simulate) is in the repo at `examples/src/pages/AguiVoice.tsx`.
+A full working example (transcript, live event stream, WebSocket/WebRTC toggle, `get_time` tool calling, manual microphone controls, response interruption, and offline simulation) is in the repo at `examples/src/pages/AguiVoice.tsx`.
 
 ## Bring your own AG-UI backend
 
@@ -76,3 +76,7 @@ console.log(formatReport(report));
 ## License
 
 MIT
+
+Run `just dev-proxy` and `just dev-examples`, then open [AG-UI Voice](http://localhost:3001/agui-voice). Choose WebSocket or WebRTC, start the conversation, and type “What time is it?” to see the tool events and result in the AG-UI stream. Enable the microphone explicitly to speak. Offline simulation is available while disconnected.
+
+The binding gates typed turns on full session readiness, forwards automatic and manual tool results, discards asynchronous executor results from ended sessions, and detaches the bridge on unmount. It requires Voice Live React SDK 0.7.0 or later.

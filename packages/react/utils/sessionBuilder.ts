@@ -352,6 +352,9 @@ export function convertToSessionUpdate(config: VoiceLiveSessionConfig): any {
   if (config.animation) {
     session.animation = {
       outputs: config.animation.outputs,
+      ...(config.animation.modelName !== undefined
+        ? { model_name: config.animation.modelName }
+        : {}),
     };
   }
 
@@ -384,6 +387,27 @@ export function convertToSessionUpdate(config: VoiceLiveSessionConfig): any {
   if (config.avatar) {
     session.avatar = {
       character: config.avatar.character,
+      ...(config.avatar.type !== undefined ? { type: config.avatar.type } : {}),
+      ...(config.avatar.model !== undefined ? { model: config.avatar.model } : {}),
+      ...(config.avatar.outputProtocol !== undefined
+        ? { output_protocol: config.avatar.outputProtocol }
+        : {}),
+      ...(config.avatar.outputAuditAudio !== undefined
+        ? { output_audit_audio: config.avatar.outputAuditAudio }
+        : {}),
+      ...(config.avatar.scene
+        ? {
+            scene: {
+              zoom: config.avatar.scene.zoom,
+              position_x: config.avatar.scene.positionX,
+              position_y: config.avatar.scene.positionY,
+              rotation_x: config.avatar.scene.rotationX,
+              rotation_y: config.avatar.scene.rotationY,
+              rotation_z: config.avatar.scene.rotationZ,
+              amplitude: config.avatar.scene.amplitude,
+            },
+          }
+        : {}),
       style: config.avatar.style,
       customized: config.avatar.customized,
     };
@@ -395,6 +419,9 @@ export function convertToSessionUpdate(config: VoiceLiveSessionConfig): any {
     if (config.avatar.video) {
       session.avatar.video = {
         codec: config.avatar.video.codec,
+        ...(config.avatar.video.gopSize !== undefined
+          ? { gop_size: config.avatar.video.gopSize }
+          : {}),
         bitrate: config.avatar.video.bitrate,
         resolution: config.avatar.video.resolution,
       };
@@ -791,7 +818,11 @@ export function validateConfig(
   // Transcription model compatibility: whisper-1 / gpt-4o-transcribe* only with the gpt-realtime family;
   // azure-speech only with other models and agents (mai-transcribe works everywhere)
   const transcriptionModel = config.inputAudioTranscription?.model;
-  if (transcriptionModel && transcriptionModel !== 'mai-transcribe') {
+  if (
+    transcriptionModel &&
+    transcriptionModel !== 'mai-transcribe' &&
+    transcriptionModel !== 'mai-transcribe-2'
+  ) {
     const openAiTranscription = transcriptionModel !== 'azure-speech';
     const realtimeFamily = family.known && family.realtimeFamily;
     if (openAiTranscription && (isAgentMode || (family.known && !realtimeFamily))) {

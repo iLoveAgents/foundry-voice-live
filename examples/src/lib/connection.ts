@@ -11,7 +11,7 @@ export const DEFAULT_PROXY_BASE = 'ws://localhost:8080';
  */
 export function getProxyBaseUrl(): string {
   const base = import.meta.env.VITE_BACKEND_PROXY_URL || DEFAULT_PROXY_BASE;
-  return base.replace(/\/+$/, '');
+  return base.replace(/\/+$/, '').replace(/\/ws$/, '');
 }
 
 /**
@@ -29,8 +29,7 @@ export function proxyWsUrl(params: Record<string, string | undefined> = {}): str
 }
 
 /**
- * Direct connection with the dev API key when one is configured; otherwise route
- * through the proxy (API key or DefaultAzureCredential on the server).
+ * Route examples through the proxy; credentials stay on the server.
  *
  * `model` and other options are passed straight to `useVoiceLive` in direct mode and
  * appended as query parameters in proxy mode, so pages work in both setups.
@@ -42,13 +41,6 @@ export function directOrProxyConnection(
   > = {}
 ): VoiceLiveConnectionConfig {
   const { model, profile, foundryResourceOverride, ...rest } = options;
-  const apiKey = import.meta.env.VITE_FOUNDRY_API_KEY;
-  const resourceName = import.meta.env.VITE_FOUNDRY_RESOURCE_NAME;
-
-  if (apiKey && resourceName) {
-    return { resourceName, apiKey, model, profile, foundryResourceOverride, ...rest };
-  }
-
   // Always name the model for the proxy: without a `model` param the proxy falls back to its
   // .env Foundry agent (if configured), which would turn a standard-mode page into an agent session.
   // BYOM settings are proxy query params too; the SDK would also add them from the config, but

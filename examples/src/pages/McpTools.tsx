@@ -121,8 +121,7 @@ export function McpTools(): JSX.Element {
 
         case 'conversation.item.retrieved': {
           const item = event.item as
-            | { type?: string; server_label?: string; tools?: Array<{ name?: string }> }
-            | undefined;
+            { type?: string; server_label?: string; tools?: Array<{ name?: string }> } | undefined;
           if (item?.type === 'mcp_list_tools') {
             const names = (item.tools ?? []).map((tool) => tool.name ?? '?');
             setDiscoveredTools(names);

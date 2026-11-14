@@ -63,5 +63,6 @@ export interface VoiceLiveTransport {
   /** Release everything (handlers detached first, so no callbacks fire afterwards) */
   close(): void;
   /** WebRTC: set or replace the outgoing microphone track (no-op on WebSocket) */
+  getMicrophoneStats?(): Promise<RTCStatsReport | null>;
   setMicrophoneTrack(track: MediaStreamTrack | null): Promise<void>;
 }

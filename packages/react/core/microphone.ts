@@ -6,6 +6,8 @@
 import { buildMicConstraints } from '../utils/audioHelpers';
 
 export interface WebRtcMicrophoneOptions {
+  /** The browser or device ended the active microphone track. */
+  onEnded?: () => void;
   /** Test seam */
   getUserMedia?: (constraints: MediaStreamConstraints) => Promise<MediaStream>;
 }
@@ -61,7 +63,14 @@ export class WebRtcMicrophone {
       }
       this.stream = stream;
       const track = this.track;
-      if (track) track.enabled = !this.mutedFlag;
+      if (track) {
+        track.enabled = !this.mutedFlag;
+        track.onended = (): void => {
+          if (this.stream !== stream) return;
+          this.stop();
+          this.options.onEnded?.();
+        };
+      }
       return track;
     })();
     this.pendingStart = attempt;
@@ -76,7 +85,10 @@ export class WebRtcMicrophone {
   stop(): void {
     this.generation += 1;
     this.pendingStart = null;
-    this.stream?.getTracks().forEach((t) => t.stop());
+    this.stream?.getTracks().forEach((t) => {
+      t.onended = null;
+      t.stop();
+    });
     this.stream = null;
   }
 

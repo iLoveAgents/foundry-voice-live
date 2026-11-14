@@ -169,7 +169,11 @@ export class FakePeerConnection extends EventTarget {
   remoteDescription: { type: string; sdp: string } | null = null;
   ontrack: ((ev: any) => void) | null = null;
   onconnectionstatechange: (() => void) | null = null;
-  transceivers: Array<{ kindOrTrack: any; init: any; sender: { replaceTrack: any } }> = [];
+  transceivers: Array<{
+    kindOrTrack: any;
+    init: any;
+    sender: { replaceTrack: any; getStats: any };
+  }> = [];
   dataChannels: FakeDataChannel[] = [];
   closed = false;
 
@@ -178,7 +182,14 @@ export class FakePeerConnection extends EventTarget {
     FakePeerConnection.instances.push(this);
   }
   addTransceiver(kindOrTrack: any, init?: any) {
-    const t = { kindOrTrack, init, sender: { replaceTrack: vi.fn(async () => undefined) } };
+    const t = {
+      kindOrTrack,
+      init,
+      sender: {
+        replaceTrack: vi.fn(async () => undefined),
+        getStats: vi.fn(async () => new Map()),
+      },
+    };
     this.transceivers.push(t);
     return t as any;
   }
@@ -214,7 +225,17 @@ export class FakePeerConnection extends EventTarget {
 }
 
 export function makeFakeMicStream() {
-  const track = { kind: 'audio', enabled: true, stop: vi.fn() };
+  const track = {
+    kind: 'audio',
+    id: 'mic-track',
+    label: 'Test microphone',
+    readyState: 'live',
+    muted: false,
+    enabled: true,
+    stop: vi.fn(),
+    getSettings: () => ({ deviceId: 'mic-device' }),
+    onended: null as (() => void) | null,
+  };
   const stream = {
     getAudioTracks: () => [track],
     getTracks: () => [track],
@@ -248,10 +269,10 @@ export function installBrowserFakes(options: { getUserMedia?: () => Promise<any>
       }
     }
   );
-  if (!(URL as any).createObjectURL) {
-    (URL as any).createObjectURL = vi.fn(() => 'blob:fake');
-    (URL as any).revokeObjectURL = vi.fn();
-  }
+  const originalCreateObjectURL = URL.createObjectURL;
+  const originalRevokeObjectURL = URL.revokeObjectURL;
+  URL.createObjectURL = vi.fn(() => 'blob:fake');
+  URL.revokeObjectURL = vi.fn();
   const getUserMedia = options.getUserMedia ?? (async () => makeFakeMicStream().stream);
   Object.defineProperty(navigator, 'mediaDevices', {
     configurable: true,
@@ -259,6 +280,8 @@ export function installBrowserFakes(options: { getUserMedia?: () => Promise<any>
   });
 
   return () => {
+    URL.createObjectURL = originalCreateObjectURL;
+    URL.revokeObjectURL = originalRevokeObjectURL;
     vi.unstubAllGlobals();
   };
 }

@@ -9,6 +9,16 @@ interface SampleInfo {
 const samples: Record<string, SampleInfo[]> = {
   'Voice Examples': [
     {
+      path: '/current-capabilities',
+      title: 'Streaming Text',
+      description: 'Incremental text input, native Azure voices, MAI transcription, and tools',
+    },
+    {
+      path: '/voice-webrtc-waveform',
+      title: 'WebRTC Waveform',
+      description: 'WebRTC audio with realtime visualisation',
+    },
+    {
       path: '/voice-basic',
       title: 'Basic Voice Chat',
       description: 'Minimal setup with auto-start microphone',

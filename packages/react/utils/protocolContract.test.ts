@@ -443,3 +443,34 @@ describe('client events match the official SDK serializers', () => {
     );
   });
 });
+
+it('serializes photo-avatar scene, GOP, audit audio, and animation model like the official SDK', () => {
+  const config: VoiceLiveSessionConfig = {
+    avatar: {
+      type: 'photo-avatar',
+      model: 'vasa-1',
+      character: 'photo',
+      outputProtocol: 'webrtc',
+      outputAuditAudio: false,
+      video: { gopSize: 12 },
+      scene: {
+        zoom: 1.2,
+        positionX: 0,
+        positionY: 0.1,
+        rotationX: 1,
+        rotationY: 2,
+        rotationZ: 3,
+        amplitude: 0.5,
+      },
+    },
+    animation: { outputs: ['viseme_id'], modelName: 'arkit' },
+  };
+  const ours = convertToSessionUpdate(config);
+  const theirs = azure.requestSessionSerializer(config);
+  expect(JSON.parse(JSON.stringify(ours.avatar))).toEqual(
+    JSON.parse(JSON.stringify(theirs.avatar))
+  );
+  expect(JSON.parse(JSON.stringify(ours.animation))).toEqual(
+    JSON.parse(JSON.stringify(theirs.animation))
+  );
+});

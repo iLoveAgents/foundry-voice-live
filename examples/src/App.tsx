@@ -5,6 +5,8 @@ import { PublicClientApplication } from '@azure/msal-browser';
 import { HomePage } from './pages/HomePage';
 import { VoiceOnlyBasic } from './pages/VoiceOnlyBasic';
 import { VoiceAdvanced } from './pages/VoiceAdvanced';
+import { WebRTCVoice } from './pages/WebRTCVoice';
+import { CurrentCapabilities } from './pages/CurrentCapabilities';
 import { VoiceWebRTC } from './pages/VoiceWebRTC';
 import { VoiceProxy } from './pages/VoiceProxy';
 import { VoiceProxyMSAL } from './pages/VoiceProxyMSAL';
@@ -63,7 +65,9 @@ function App(): JSX.Element {
           <Route path="/" element={<HomePage />} />
           <Route path="/voice-basic" element={<VoiceOnlyBasic />} />
           <Route path="/voice-advanced" element={<VoiceAdvanced />} />
-          <Route path="/voice-webrtc" element={<VoiceWebRTC />} />
+          <Route path="/voice-webrtc" element={<WebRTCVoice />} />
+          <Route path="/voice-webrtc-waveform" element={<VoiceWebRTC />} />
+          <Route path="/current-capabilities" element={<CurrentCapabilities />} />
           <Route path="/voice-proxy" element={<VoiceProxy />} />
           <Route path="/voice-proxy-msal" element={<VoiceProxyMSAL />} />
           <Route path="/avatar-basic" element={<AvatarBasic />} />

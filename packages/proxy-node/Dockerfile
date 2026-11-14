@@ -4,13 +4,13 @@
 #
 #   docker build -f packages/proxy-node/Dockerfile -t foundry-voice-live-proxy .
 #
-# pnpm itself is pinned by the root `packageManager` field via corepack, and dependencies
+# pnpm itself is pinned by the root `packageManager` field, and dependencies
 # are installed with --frozen-lockfile, so the image is reproducible.
 
 # Stage 1: build the TypeScript sources
-FROM node:22-alpine AS builder
+FROM node:26-alpine AS builder
 
-RUN corepack enable
+RUN npm install --global pnpm@9.15.0
 
 WORKDIR /repo
 
@@ -28,7 +28,7 @@ RUN pnpm --filter @iloveagents/foundry-voice-live-proxy-node run build
 RUN pnpm --filter @iloveagents/foundry-voice-live-proxy-node deploy --prod /app
 
 # Stage 2: runtime (no pnpm, no build toolchain)
-FROM node:22-alpine
+FROM node:26-alpine
 
 RUN addgroup -g 1001 -S nodejs && \
   adduser -S nodejs -u 1001

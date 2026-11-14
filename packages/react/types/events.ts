@@ -519,10 +519,14 @@ export interface InputAudioBufferClearClientEvent extends ClientEventBase {
 }
 export interface InputTextDeltaClientEvent extends ClientEventBase {
   type: 'input_text.delta';
+  id: string;
+  content_index?: number;
   delta: string;
 }
 export interface InputTextDoneClientEvent extends ClientEventBase {
   type: 'input_text.done';
+  id: string;
+  content_index?: number;
 }
 export interface ConversationItemCreateClientEvent extends ClientEventBase {
   type: 'conversation.item.create';

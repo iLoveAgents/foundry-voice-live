@@ -125,7 +125,7 @@ Verified live (August 2026) through the proxy with `DefaultAzureCredential`: neg
 Limitations (preview):
 
 - Voice only — **avatar is not supported** (`connect()` throws for `session.avatar` + `webrtc`).
-- Requires api-version `2026-01-01-preview`; the SDK defaults WebRTC to it (`DEFAULT_WEBRTC_API_VERSION`). Live-verified August 2026: `/calls` is not served on `2026-04-10` (404) or `2026-06-01-preview` (401) — override `connection.apiVersion` once Microsoft ships WebRTC on a newer version.
+- Defaults to api-version `2026-07-15`, live-verified in November 2026. WebRTC remains a preview feature; override `connection.apiVersion` when needed.
 - Uses global standard deployments (auto-routed to the nearest region).
 - Needs UDP. On locked-down networks pass TURN servers via `connection.rtcConfiguration` or fall back to `transport: 'websocket'`.
 - No `response.audio.delta` events → visemes / word timestamps and `getAudioPlaybackTime()` are unavailable.
@@ -599,7 +599,7 @@ Returns:
 
 ### Constants
 
-`DEFAULT_API_VERSION` (`2026-07-15`), `DEFAULT_WEBRTC_API_VERSION` (`2026-01-01-preview`), `MIN_WEBRTC_API_VERSION`, `DEFAULT_MODEL` (`gpt-realtime`), `VOICE_LIVE_DATA_CHANNEL`, `OPENAI_VOICES`, `AZURE_REALTIME_NATIVE_VOICES`, `AGENT_OWNED_FIELDS`, `SERVER_EVENT_TYPES` / `CLIENT_EVENT_TYPES` (and the `TYPED_SERVER_EVENT_TYPES` / `OTHER_SERVER_EVENT_TYPES` they are built from), `DEFAULT_SESSION_CONFIG`, `DEFAULT_CONNECT_TIMEOUT_MS`, `DEFAULT_RECONNECT_OPTIONS`, and the close codes `RECONNECT_SETUP_FAILED_CLOSE_CODE` (4001), `CONNECT_TIMEOUT_CLOSE_CODE` (4002), `RTC_SDP_ANSWER_FAILED_CLOSE_CODE` (4009), `RTC_CALL_ERROR_CLOSE_CODE` (4010), `RTC_MEDIA_FAILED_CLOSE_CODE` (4011), `CONTROL_CHANNEL_SETUP_FAILED_CLOSE_CODE` (4012).
+`DEFAULT_API_VERSION` (`2026-07-15`), `DEFAULT_WEBRTC_API_VERSION` (`2026-07-15`), `MIN_WEBRTC_API_VERSION`, `DEFAULT_MODEL` (`gpt-realtime`), `VOICE_LIVE_DATA_CHANNEL`, `OPENAI_VOICES`, `AZURE_REALTIME_NATIVE_VOICES`, `AGENT_OWNED_FIELDS`, `SERVER_EVENT_TYPES` / `CLIENT_EVENT_TYPES` (and the `TYPED_SERVER_EVENT_TYPES` / `OTHER_SERVER_EVENT_TYPES` they are built from), `DEFAULT_SESSION_CONFIG`, `DEFAULT_CONNECT_TIMEOUT_MS`, `DEFAULT_RECONNECT_OPTIONS`, and the close codes `RECONNECT_SETUP_FAILED_CLOSE_CODE` (4001), `CONNECT_TIMEOUT_CLOSE_CODE` (4002), `RTC_SDP_ANSWER_FAILED_CLOSE_CODE` (4009), `RTC_CALL_ERROR_CLOSE_CODE` (4010), `RTC_MEDIA_FAILED_CLOSE_CODE` (4011), `CONTROL_CHANNEL_SETUP_FAILED_CLOSE_CODE` (4012).
 
 ### Core building blocks (advanced)
 
@@ -664,3 +664,11 @@ It directly supports maintenance and future features.
 ## License
 
 MIT - [iLoveAgents](https://iloveagents.ai)
+
+### Microphone diagnostics and streamed text
+
+`getMicrophoneStatus()` returns the WebRTC track label, source mute state, input level and outbound RTP counters (unsupported statistics are `null`). It returns `null` when the microphone is inactive. If an input device ends, the SDK releases it so `startMic()` can acquire the current device constraints again. The `/voice-webrtc` example includes a device selector, level meter and source diagnostics.
+
+For incremental user text, create a conversation item with an empty `input_text` content part, call `appendText(itemId, chunk, contentIndex?)` for each chunk, then `finishText(itemId, contentIndex?)` and `createResponse()`. The `/current-capabilities` example demonstrates this flow. `createResponse(options?)` accepts `WireResponseCreateOptions` and preserves the payload when the response gate defers it behind another response.
+
+Photo-avatar configuration supports `type`, `model`, `scene`, `outputProtocol`, `outputAuditAudio` and `video.gopSize`; animation supports `modelName`. These map to the [2026-07-15 API fields](https://learn.microsoft.com/azure/ai-services/speech-service/voice-live-api-reference-2026-07-15). WebRTC remains a preview feature.

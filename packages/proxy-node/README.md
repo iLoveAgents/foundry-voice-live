@@ -216,14 +216,14 @@ too — see the [BYOM guide](https://learn.microsoft.com/azure/ai-services/speec
 
 ## Transports
 
-| Transport           | Client URL                                    | Upstream path                | Default API version                   |
-| ------------------- | --------------------------------------------- | ---------------------------- | ------------------------------------- |
-| WebSocket (default) | `ws://localhost:8080/ws?...`                  | `/voice-live/realtime`       | `API_VERSION` or `2026-07-15`         |
-| WebRTC (preview)    | `ws://localhost:8080/ws?...&transport=webrtc` | `/voice-live/realtime/calls` | `API_VERSION` or `2026-01-01-preview` |
+| Transport           | Client URL                                    | Upstream path                | Default API version           |
+| ------------------- | --------------------------------------------- | ---------------------------- | ----------------------------- |
+| WebSocket (default) | `ws://localhost:8080/ws?...`                  | `/voice-live/realtime`       | `API_VERSION` or `2026-07-15` |
+| WebRTC (preview)    | `ws://localhost:8080/ws?...&transport=webrtc` | `/voice-live/realtime/calls` | `API_VERSION` or `2026-07-15` |
 
 With `transport=webrtc` the proxied WebSocket becomes the WebRTC control channel (`rtc.call.*` events for SDP offer/answer plus the usual session events); audio flows directly between the browser and Azure over the WebRTC peer connection, not through the proxy. The React SDK appends `transport=webrtc` (and `apiVersion` when configured) automatically when you set `connection.transport: 'webrtc'`.
 
-> **Live-verified (August 2026):** the WebRTC control channel is only served on api-version `2026-01-01-preview` (`2026-04-10` → 404, `2026-06-01-preview` → 401); all three auth methods (token, API key, `DefaultAzureCredential`) work with it. If you pin `API_VERSION` to a GA version, WebRTC clients must pass `?apiVersion=2026-01-01-preview`.
+> **Live-verified (November 2026):** WebRTC works with `2026-07-15` and Entra ID on the `/voice-live/realtime/calls` control channel. WebRTC itself remains in preview.
 
 ## Deployment
 
@@ -305,7 +305,7 @@ Prefer keyless: assign a managed identity to the container app with the "Cogniti
 | `profile`                             | No          | BYOM profile; requires `model` = deployment name, not with `agentName` | `byom-azure-openai-chat-completion`    |
 | `foundryResourceOverride`             | No          | Override the Foundry resource (agent mode, or BYOM cross-resource)     | `other-resource`                       |
 | `transport`                           | No          | `websocket` (default) or `webrtc` (preview)                            | `webrtc`                               |
-| `apiVersion`                          | No          | Override the API version for this connection                           | `2026-01-01-preview`                   |
+| `apiVersion`                          | No          | Override the API version for this connection                           | `2026-07-15`                           |
 
 Upstream parameter names: `agentName` → `agent-name`, `projectName` → `agent-project-name`, `conversationId` → `conversation-id`, `agentVersion` → `agent-version`, `agentAuthenticationIdentityClientId` → `agent-authentication-identity-client-id`, `foundryResourceOverride` → `foundry-resource-override`. `token` and `transport` are consumed by the proxy and not forwarded.
 
@@ -318,7 +318,7 @@ Upstream parameter names: `agentName` → `agent-name`, `projectName` → `agent
 | `FOUNDRY_AGENT_NAME`                    | No       | -                       | Default agent name (fallback when the URL has no `agentName`/`model`)                                                          |
 | `FOUNDRY_PROJECT_NAME`                  | No       | -                       | Default project name (fallback)                                                                                                |
 | `PORT`                                  | No       | `8080`                  | Server port                                                                                                                    |
-| `API_VERSION`                           | No       | `2026-07-15`            | Voice Live API version (WebRTC defaults to `2026-01-01-preview` when unset)                                                    |
+| `API_VERSION`                           | No       | `2026-07-15`            | Voice Live API version (WebRTC defaults to `2026-07-15` when unset)                                                            |
 | `ALLOWED_ORIGINS`                       | No       | `http://localhost:3000` | CORS origins (comma-sep)                                                                                                       |
 | `RATE_LIMIT_MAX_REQUESTS`               | No       | `100`                   | Max requests per window                                                                                                        |
 | `RATE_LIMIT_WINDOW_MS`                  | No       | `60000`                 | Rate limit window (ms)                                                                                                         |
@@ -348,7 +348,7 @@ Upstream parameter names: `agentName` → `agent-name`, `projectName` → `agent
 | "Entra ID token acquisition failed"       | No `token`/`FOUNDRY_API_KEY` → proxy used `DefaultAzureCredential`: run `az login` or configure managed identity |
 | "requires both agentName and projectName" | Pass both URL params, or set `FOUNDRY_AGENT_NAME` + `FOUNDRY_PROJECT_NAME` in `.env`                             |
 | "Unsupported transport"                   | `transport` must be `websocket` or `webrtc`                                                                      |
-| WebRTC connection rejected upstream       | Ensure the API version is a preview that supports WebRTC (`?apiVersion=2026-01-01-preview`)                      |
+| WebRTC connection rejected upstream       | Ensure the API version supports WebRTC (`?apiVersion=2026-07-15`)                                                |
 
 ## Support
 

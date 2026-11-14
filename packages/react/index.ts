@@ -295,6 +295,9 @@ export type {
   // Hook configuration and return types
   UseVoiceLiveConfig,
   UseVoiceLiveReturn,
+  MicrophoneStatus,
+  AvatarScene,
+  OutputAudioFormat,
   SessionState,
   ReconnectOptions,
   LogLevel,

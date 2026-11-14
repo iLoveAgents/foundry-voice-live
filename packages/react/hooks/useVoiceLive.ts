@@ -54,8 +54,13 @@ import type {
   SessionState,
   ConnectionState,
   ToolResult,
+  MicrophoneStatus,
 } from '../types/voiceLive';
-import type { VoiceLiveServerEvent, VoiceLiveClientEvent } from '../types/events';
+import type {
+  VoiceLiveServerEvent,
+  VoiceLiveClientEvent,
+  WireResponseCreateOptions,
+} from '../types/events';
 import {
   buildSessionConfig,
   buildAgentSessionConfig,
@@ -282,7 +287,13 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
   const playerRef = useRef<PcmPlayer | null>(null);
   const avatarRef = useRef<AvatarConnection | null>(null);
   const micRef = useRef<WebRtcMicrophone | null>(null);
-  if (!micRef.current) micRef.current = new WebRtcMicrophone();
+  if (!micRef.current)
+    micRef.current = new WebRtcMicrophone({
+      onEnded: () => {
+        setRtcMicActive(false);
+        sessionRef.current?.transport.setMicrophoneTrack(null).catch(() => undefined);
+      },
+    });
 
   // ===== Protocol state =====
   const isAgentModeRef = useRef<boolean>(false);
@@ -697,9 +708,70 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
    * Ask the model to respond now (manual turn control, or continuing after a server-side tool).
    * Goes through the same gate as `sendText()`, so it can never overlap another response.
    */
-  const createResponse = useCallback((): void => {
-    requestResponse();
-  }, [requestResponse]);
+  const createResponse = useCallback(
+    (options?: WireResponseCreateOptions): void => {
+      requestResponse(
+        options ? { event: { type: 'response.create', response: options } } : undefined
+      );
+    },
+    [requestResponse]
+  );
+
+  const appendText = useCallback(
+    (itemId: string, delta: string, contentIndex = 0): void => {
+      sendEvent({ type: 'input_text.delta', id: itemId, content_index: contentIndex, delta });
+    },
+    [sendEvent]
+  );
+
+  const finishText = useCallback(
+    (itemId: string, contentIndex = 0): void => {
+      sendEvent({ type: 'input_text.done', id: itemId, content_index: contentIndex });
+    },
+    [sendEvent]
+  );
+
+  const getMicrophoneStatus = useCallback(async (): Promise<MicrophoneStatus | null> => {
+    const track = micRef.current?.track;
+    const transport = sessionRef.current?.transport;
+    if (!track || transport?.kind !== 'webrtc') return null;
+    const status: MicrophoneStatus = {
+      deviceLabel: track.label,
+      deviceId: track.getSettings().deviceId ?? '',
+      readyState: track.readyState,
+      enabled: track.enabled,
+      sourceMuted: track.muted,
+      audioLevel: null,
+      totalAudioEnergy: null,
+      packetsSent: null,
+      bytesSent: null,
+    };
+    try {
+      const stats = await transport.getMicrophoneStats?.();
+      stats?.forEach((report) => {
+        if (
+          report.type === 'media-source' &&
+          report.kind === 'audio' &&
+          (!report.trackIdentifier || report.trackIdentifier === track.id)
+        ) {
+          status.audioLevel = report.audioLevel ?? null;
+          status.totalAudioEnergy = report.totalAudioEnergy ?? null;
+        }
+        if (
+          report.type === 'outbound-rtp' &&
+          (report.kind === 'audio' || report.mediaType === 'audio')
+        ) {
+          status.packetsSent = report.packetsSent ?? null;
+          status.bytesSent = report.bytesSent ?? null;
+        }
+      });
+    } catch {
+      /* Track details remain useful when a browser omits sender statistics. */
+    }
+    return micRef.current?.track === track && sessionRef.current?.transport === transport
+      ? status
+      : null;
+  }, []);
 
   /** Approve or deny a pending MCP tool call */
   const approveMcpCall = useCallback(
@@ -1786,6 +1858,9 @@ export function useVoiceLive(config: UseVoiceLiveConfig): UseVoiceLiveReturn {
     clearInputAudio,
     commitInputAudio,
     createResponse,
+    appendText,
+    finishText,
+    getMicrophoneStatus,
     approveMcpCall,
     getAudioPlaybackTime,
   };

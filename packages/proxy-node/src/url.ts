@@ -24,9 +24,9 @@ export const DEFAULT_API_VERSION = "2026-07-15";
 
 /**
  * Default API version for the WebRTC transport (preview feature).
- * The WebRTC control channel (`rtc.call.*` events) is only documented for preview versions.
+ * The control channel was live-verified with this API version in November 2026.
  */
-export const DEFAULT_WEBRTC_API_VERSION = "2026-01-01-preview";
+export const DEFAULT_WEBRTC_API_VERSION = "2026-07-15";
 
 /** Default model for standard (Voice/Avatar) mode */
 export const DEFAULT_MODEL = "gpt-realtime";

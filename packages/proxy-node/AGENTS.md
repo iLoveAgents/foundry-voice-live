@@ -50,7 +50,7 @@ docker-compose.yml
   it decodes parameter names first, because the server reads `?to%6Ben=` as `token` too. Any new
   logging site that touches `req.url` must go through it.
 - Transport: `?transport=webrtc` → upstream `/voice-live/realtime/calls` (WebRTC control channel,
-  default api-version `2026-01-01-preview`); default → `/voice-live/realtime` (`2026-07-15`).
+  default api-version `2026-07-15`); default → `/voice-live/realtime` (`2026-07-15`).
   The relay is identical for both — `rtc.call.*` are plain JSON text frames.
 - API version precedence: `?apiVersion=` > `API_VERSION` env > built-in default per transport
 - Origin is checked in three places, on purpose: `verifyClient` (rejects the _handshake_ with HTTP

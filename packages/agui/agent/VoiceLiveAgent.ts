@@ -103,6 +103,11 @@ export class VoiceLiveAgent extends AbstractAgent {
     this.bridge = bridge;
   }
 
+  /** Release the write side when its React binding unmounts. */
+  detachBridge(): void {
+    this.bridge = null;
+  }
+
   // ---- fed by the glue ------------------------------------------------------
 
   /** A raw Voice Live server event (from the hook's `onEvent`). Returns whether a run just opened. */

@@ -9,11 +9,21 @@
 // EVENTS
 // ============================================================================
 
-/**
- * Base Voice Live API event structure
- * All events from the API follow this pattern.
- * See `types/events.ts` for the typed server/client event unions.
- */
+/** WebRTC source state and outbound audio statistics. */
+export interface MicrophoneStatus {
+  deviceLabel: string;
+  deviceId: string;
+  readyState: MediaStreamTrackState;
+  enabled: boolean;
+  /** Browser/OS source is temporarily unable to provide audio. */
+  sourceMuted: boolean;
+  /** Linear input level (0–1); null if the browser does not report it. */
+  audioLevel: number | null;
+  totalAudioEnergy: number | null;
+  packetsSent: number | null;
+  bytesSent: number | null;
+}
+
 export interface VoiceLiveEvent {
   type: string;
   event_id?: string;
@@ -39,6 +49,11 @@ export type {
  * Known Voice Live models with their pricing tiers
  */
 export type KnownVoiceLiveModel =
+  | 'gpt-5.6-terra'
+  | 'gpt-5.6-luna'
+  | 'gpt-5.4'
+  | 'gpt-5.2'
+  | 'gpt-5.1'
   // Pro tier - Best quality
   | 'gpt-realtime' // Native audio, best quality
   | 'azure-realtime' // Azure native speech-to-speech (GA 2026-07-15); use with 'azure-realtime-native' voices
@@ -62,7 +77,6 @@ export type KnownVoiceLiveModel =
  */
 // `(string & {})` keeps the known literals in autocompletion while still accepting any string
 // (`string & Record<string, never>` looks equivalent but rejects every arbitrary string).
-// eslint-disable-next-line @typescript-eslint/ban-types
 export type VoiceLiveModel = KnownVoiceLiveModel | (string & {});
 
 /**
@@ -84,7 +98,6 @@ export type KnownVoiceLiveProfile =
   | 'byom-foundry-anthropic-messages';
 
 /** BYOM profile — extensible so a profile Microsoft ships later is not a type error */
-// eslint-disable-next-line @typescript-eslint/ban-types
 export type VoiceLiveProfile = KnownVoiceLiveProfile | (string & {});
 
 /**
@@ -152,7 +165,7 @@ export interface VoiceLiveConnectionConfig {
   /**
    * Voice Live API version.
    * @default '2026-07-15' (DEFAULT_API_VERSION); WebRTC transport defaults to
-   *   '2026-01-01-preview' (DEFAULT_WEBRTC_API_VERSION)
+   *   '2026-07-15' (DEFAULT_WEBRTC_API_VERSION)
    */
   apiVersion?: string;
 
@@ -262,7 +275,9 @@ export type AudioFormat = 'pcm16' | 'g711_ulaw' | 'g711_alaw';
 /**
  * Input audio sampling rate (Voice Live)
  */
-export type InputAudioSamplingRate = 16000 | 24000;
+export type OutputAudioFormat = AudioFormat | 'pcm16_8000hz' | 'pcm16_16000hz';
+
+export type InputAudioSamplingRate = 8000 | 16000 | 24000;
 
 // ============================================================================
 // INPUT AUDIO CONFIGURATION
@@ -319,6 +334,7 @@ export type TranscriptionModel =
   | 'gpt-4o-transcribe'
   | 'gpt-4o-mini-transcribe'
   | 'gpt-4o-transcribe-diarize'
+  | 'mai-transcribe-2'
   | 'mai-transcribe'; // Preview: works with all models and agents
 
 /**
@@ -589,8 +605,7 @@ export const AZURE_REALTIME_NATIVE_VOICES = [
  * (which in turn only accepts this voice type). Extensible to future names.
  */
 export type AzureRealtimeNativeVoiceName =
-  | (typeof AZURE_REALTIME_NATIVE_VOICES)[number]
-  | (string & Record<string, never>);
+  (typeof AZURE_REALTIME_NATIVE_VOICES)[number] | (string & Record<string, never>);
 
 /**
  * Underlying neural model for Azure personal voices
@@ -688,16 +703,17 @@ export type TimestampType = 'word';
 /**
  * Animation output type (Voice Live)
  */
-export type AnimationOutput = 'viseme_id';
+export type AnimationOutput = 'viseme_id' | 'blendshapes';
 
 /**
  * Animation configuration (Voice Live)
  * Enable viseme output for lip-sync animation
  */
 export interface AnimationConfig {
+  modelName?: string;
   /**
    * Animation outputs to enable
-   * Currently only supports 'viseme_id'
+   * Viseme IDs and/or blendshape frames.
    */
   outputs?: AnimationOutput[];
 }
@@ -741,6 +757,8 @@ export interface AvatarBackground {
  * Avatar video configuration
  */
 export interface AvatarVideoConfig {
+  /** Group of pictures size, 1–2000. */
+  gopSize?: number;
   /**
    * Video codec
    * @default 'h264'
@@ -775,7 +793,23 @@ export interface AvatarVideoConfig {
 /**
  * Avatar configuration (Voice Live)
  */
+export interface AvatarScene {
+  zoom?: number;
+  positionX?: number;
+  positionY?: number;
+  rotationX?: number;
+  rotationY?: number;
+  rotationZ?: number;
+  amplitude?: number;
+}
+
 export interface AvatarConfig {
+  type?: 'video-avatar' | 'photo-avatar';
+  /** Required for photo-avatar. */
+  model?: 'vasa-1';
+  outputProtocol?: 'websocket' | 'webrtc';
+  outputAuditAudio?: boolean;
+  scene?: AvatarScene;
   /**
    * Avatar character
    * @example 'lisa'
@@ -786,7 +820,7 @@ export interface AvatarConfig {
    * Avatar style
    * @example 'casual-sitting', 'casual-standing'
    */
-  style: string;
+  style?: string;
 
   /**
    * Whether using custom avatar
@@ -962,7 +996,7 @@ export interface VoiceLiveSessionConfig {
    * Output audio format
    * @default 'pcm16'
    */
-  outputAudioFormat?: AudioFormat;
+  outputAudioFormat?: OutputAudioFormat;
 
   /**
    * Turn detection configuration
@@ -1342,11 +1376,7 @@ export type SessionState = 'idle' | 'listening' | 'thinking' | 'speaking';
  * `'reconnecting'` is only reached with the `reconnect` option.
  */
 export type ConnectionState =
-  | 'disconnected'
-  | 'connecting'
-  | 'reconnecting'
-  | 'connected'
-  | 'error';
+  'disconnected' | 'connecting' | 'reconnecting' | 'connected' | 'error';
 
 /**
  * Auto-reconnect policy (see `UseVoiceLiveConfig.reconnect`)
@@ -1464,7 +1494,13 @@ export interface UseVoiceLiveReturn {
    * Ask the model to respond now (manual turn control, or after a tool result you sent yourself).
    * Serialized with every other turn, so it can never overlap a running response.
    */
-  createResponse: () => void;
+  createResponse: (options?: import('./events').WireResponseCreateOptions) => void;
+  /** Append text to an existing conversation item's input-text content. */
+  appendText: (itemId: string, delta: string, contentIndex?: number) => void;
+  /** Finish streaming text for a conversation item. */
+  finishText: (itemId: string, contentIndex?: number) => void;
+  /** Inspect the current WebRTC microphone source and outbound RTP counters. */
+  getMicrophoneStatus: () => Promise<MicrophoneStatus | null>;
 
   /** Approve or deny a pending MCP tool call (`mcp_approval_response`) */
   approveMcpCall: (approvalRequestId: string, approve: boolean) => void;

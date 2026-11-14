@@ -1,0 +1,46 @@
+.webrtc-field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 12px 0 16px;
+}
+
+.webrtc-field label {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.webrtc-field textarea,
+.webrtc-field select {
+  width: 100%;
+  padding: 12px;
+  border: 1px solid #a19f9d;
+  border-radius: 6px;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font: inherit;
+}
+
+.webrtc-field textarea {
+  min-height: 104px;
+  resize: vertical;
+  line-height: 1.5;
+}
+
+.webrtc-field textarea:focus,
+.webrtc-field select:focus {
+  outline: 2px solid var(--brand-primary);
+  outline-offset: 2px;
+}
+
+.webrtc-help {
+  margin: 4px 0 12px;
+  font-size: 14px;
+}
+
+.webrtc-level {
+  display: block;
+  width: 100%;
+  height: 24px;
+  margin: 8px 0;
+}

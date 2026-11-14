@@ -49,7 +49,7 @@ describe("constants", () => {
   });
 
   it("exposes the WebRTC (preview) default API version", () => {
-    expect(DEFAULT_WEBRTC_API_VERSION).toBe("2026-01-01-preview");
+    expect(DEFAULT_WEBRTC_API_VERSION).toBe("2026-07-15");
   });
 
   it("exposes the default model and Entra scope", () => {

@@ -18,13 +18,12 @@ Copy the example environment file and add your Azure credentials:
 cp .env.example .env
 ```
 
-| Variable                                               | Used by                                                                                                                                                                                                                                            |
-| ------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `VITE_FOUNDRY_RESOURCE_NAME`, `VITE_FOUNDRY_API_KEY`   | Optional: when both are set, the non-proxy examples connect directly with the key (dev only — never ship API keys in client code). When unset they go through the proxy instead, so every example works keyless with `just dev-proxy` + `az login` |
-| `VITE_BACKEND_PROXY_URL`                               | Proxy, MSAL and Foundry Agent examples, and the keyless fallback of all other pages (defaults to `ws://localhost:8080`, see `packages/proxy-node`)                                                                                                 |
-| `VITE_FOUNDRY_AGENT_NAME`, `VITE_FOUNDRY_PROJECT_NAME` | Foundry Agent examples                                                                                                                                                                                                                             |
-| `VITE_AZURE_CLIENT_ID`, `VITE_AZURE_TENANT_ID`         | MSAL (Entra ID) examples                                                                                                                                                                                                                           |
-| `VITE_AVATAR_CHARACTER`, `VITE_AVATAR_STYLE`           | Avatar examples (optional)                                                                                                                                                                                                                         |
+| Variable                                               | Used by                                                                                                                                            |
+| ------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `VITE_BACKEND_PROXY_URL`                               | Proxy, MSAL and Foundry Agent examples, and the keyless fallback of all other pages (defaults to `ws://localhost:8080`, see `packages/proxy-node`) |
+| `VITE_FOUNDRY_AGENT_NAME`, `VITE_FOUNDRY_PROJECT_NAME` | Foundry Agent examples                                                                                                                             |
+| `VITE_AZURE_CLIENT_ID`, `VITE_AZURE_TENANT_ID`         | MSAL (Entra ID) examples                                                                                                                           |
+| `VITE_AVATAR_CHARACTER`, `VITE_AVATAR_STYLE`           | Avatar examples (optional)                                                                                                                         |
 
 ### 3. Download Live2D Model (Optional)
 

@@ -74,7 +74,7 @@ Tests: `core/*.test.ts` (transports, audio, avatar, mic, reconnect), `hooks/useV
   `agentMode`; `buildAgentSessionConfig()` strips the agent-owned fields listed in `AGENT_OWNED_FIELDS`
   (`instructions`, `temperature`, `tools`, `toolChoice`, `maxResponseOutputTokens`, `reasoningEffort`,
   `parallelToolCalls`), sends no default voice (the agent's portal voice wins), and `updateSession()` is agent-aware.
-- **Readiness/WebRTC quirks**: the control channel is only served on api-version `2026-01-01-preview`
+- **Readiness/WebRTC quirks**: the control channel defaults to api-version `2026-07-15`
   (`DEFAULT_WEBRTC_API_VERSION`); `isReady` waits for the data channel to open (some events arrive on both
   channels and are de-duplicated by `event_id`); the greeting is sent once `isReady`. Mic constraints for both
   transports come from `buildMicConstraints()` in `utils/audioHelpers.ts`.

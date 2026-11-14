@@ -60,7 +60,7 @@ describe('useVoiceLive (webrtc)', () => {
 
     expect(hook.result.current.transport).toBe('webrtc');
     expect(ws.url).toContain('wss://my-res.services.ai.azure.com/voice-live/realtime/calls?');
-    expect(ws.url).toContain('api-version=2026-01-01-preview');
+    expect(ws.url).toContain('api-version=2026-07-15');
     expect(pc.dataChannels[0]?.label).toBe('voice-live-events');
     expect(pc.transceivers[0]).toMatchObject({
       kindOrTrack: 'audio',
@@ -375,6 +375,84 @@ describe('useVoiceLive (webrtc)', () => {
     });
     expect(ws.lastSent('session.update')).toBeDefined();
     expect(FakePeerConnection.instances).toHaveLength(0);
+    hook.unmount();
+  });
+});
+
+describe('WebRTC microphone diagnostics', () => {
+  it('reports source state and outbound counters, clears them after stop', async () => {
+    const { hook, pc } = await connectWebRtc(baseConfig);
+    expect(await hook.result.current.getMicrophoneStatus()).toBeNull();
+    await act(async () => {
+      await hook.result.current.startMic();
+    });
+    pc.transceivers[0]!.sender.getStats.mockResolvedValue(
+      new Map([
+        [
+          'source',
+          {
+            type: 'media-source',
+            kind: 'audio',
+            trackIdentifier: 'mic-track',
+            audioLevel: 0.4,
+            totalAudioEnergy: 2,
+          },
+        ],
+        ['out', { type: 'outbound-rtp', kind: 'audio', packetsSent: 21, bytesSent: 400 }],
+      ])
+    );
+    expect(await hook.result.current.getMicrophoneStatus()).toMatchObject({
+      deviceLabel: 'Test microphone',
+      deviceId: 'mic-device',
+      sourceMuted: false,
+      audioLevel: 0.4,
+      totalAudioEnergy: 2,
+      packetsSent: 21,
+      bytesSent: 400,
+    });
+    act(() => {
+      hook.result.current.stopMic();
+    });
+    expect(await hook.result.current.getMicrophoneStatus()).toBeNull();
+    hook.unmount();
+  });
+
+  it('discards statistics that resolve after disconnect', async () => {
+    const { hook, pc } = await connectWebRtc(baseConfig);
+    await act(async () => {
+      await hook.result.current.startMic();
+    });
+    let resolve!: (value: Map<string, unknown>) => void;
+    pc.transceivers[0]!.sender.getStats.mockReturnValue(
+      new Promise((r) => {
+        resolve = r;
+      })
+    );
+    const pending = hook.result.current.getMicrophoneStatus();
+    act(() => {
+      hook.result.current.disconnect();
+    });
+    resolve(new Map());
+    expect(await pending).toBeNull();
+    hook.unmount();
+  });
+
+  it('releases an ended microphone so the user can acquire a new device', async () => {
+    const { hook, pc } = await connectWebRtc(baseConfig);
+    await act(async () => {
+      await hook.result.current.startMic();
+    });
+    act(() => {
+      mic.track.onended?.();
+    });
+    expect(hook.result.current.isMicActive).toBe(false);
+    expect(mic.track.stop).toHaveBeenCalled();
+    expect(pc.transceivers[0]!.sender.replaceTrack).toHaveBeenLastCalledWith(null);
+    await act(async () => {
+      await hook.result.current.startMic();
+    });
+    expect(navigator.mediaDevices.getUserMedia).toHaveBeenCalledTimes(2);
+    expect(hook.result.current.isMicActive).toBe(true);
     hook.unmount();
   });
 });

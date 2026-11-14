@@ -198,7 +198,8 @@ export class WebRtcTransport implements VoiceLiveTransport {
     this.offerPromise = offerPromise;
 
     // 2. Control channel
-    const create = this.options.createWebSocket ?? ((u: string): WebSocket => new WebSocket(u));
+    const create =
+      this.options.createWebSocket ?? ((u: string): WebSocket => new WebSocket(u, ['realtime']));
     let ws: WebSocket;
     try {
       ws = create(url);
@@ -340,6 +341,10 @@ export class WebRtcTransport implements VoiceLiveTransport {
     }
     this.ws.send(json);
     return true;
+  }
+
+  async getMicrophoneStats(): Promise<RTCStatsReport | null> {
+    return this.handle?.audioTransceiver.sender.getStats() ?? null;
   }
 
   async setMicrophoneTrack(track: MediaStreamTrack | null): Promise<void> {

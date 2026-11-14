@@ -17,12 +17,7 @@ export type { BaseEvent, VoiceLiveClientEvent, VoiceLiveServerEvent };
 
 /** Why a run was closed */
 export type RunClosedReason =
-  | 'response_done'
-  | 'cancelled'
-  | 'error'
-  | 'interrupted'
-  | 'idle'
-  | 'session_end';
+  'response_done' | 'cancelled' | 'error' | 'interrupted' | 'idle' | 'session_end';
 
 /**
  * What one call into the mapper produced.
